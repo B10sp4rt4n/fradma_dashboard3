@@ -121,28 +121,64 @@ def run(archivo):
         "pct_vencido": "{:.1f}%"
     }))
 
-    # --- 6. ANÁLISIS DE ANTIGÜEDAD DE SALDOS (AGING) ---
-    st.subheader("📅 Antigüedad de Saldos Vencidos")
+    # --- 6. ANÁLISIS DE ANTIGÜEDAD DE SALDOS POR AGENTE ---
+    st.subheader("📅 Antigüedad de Saldos Vencidos por Agente")
     
     df_vencido = df[df["estado"] == "Vencida"].copy()
-    bins = [1, 30, 60, 90, 180, np.inf]
-    labels = ['1-30 días', '31-60 días', '61-90 días', '91-180 días', '>180 días']
-    df_vencido["rango_vencimiento"] = pd.cut(df_vencido["dias_vencidos"], bins=bins, labels=labels, right=False)
-
-    aging_summary = df_vencido.groupby("rango_vencimiento")["saldo"].sum().reset_index()
     
-    # Gráfico de Antigüedad
-    chart = alt.Chart(aging_summary).mark_bar().encode(
-        x=alt.X('rango_vencimiento', sort=labels, title="Rango de Vencimiento"),
-        y=alt.Y('saldo', title="Saldo Vencido (USD)"),
-        tooltip=[
-            alt.Tooltip('rango_vencimiento', title="Rango"),
-            alt.Tooltip('saldo', title="Saldo (USD)", format="$,.2f")
-        ]
-    ).properties(
-        title="Distribución de la Cartera Vencida"
-    )
-    st.altair_chart(chart, use_container_width=True)
+    if df_vencido.empty:
+        st.info("✅ No hay cartera vencida para analizar.")
+    else:
+        # Definición de rangos y etiquetas
+        bins = [1, 31, 61, 91, np.inf]
+        labels = ['1-30 días', '31-60 días', '61-90 días', '>90 días']
+        df_vencido["rango_vencimiento"] = pd.cut(df_vencido["dias_vencidos"], bins=bins, labels=labels, right=False)
+
+        # Tabla pivote resumen
+        aging_pivot = pd.pivot_table(
+            df_vencido,
+            values='saldo',
+            index='agente',
+            columns='rango_vencimiento',
+            aggfunc='sum',
+            fill_value=0
+        )
+        # Asegurar que todas las columnas de labels existan
+        for label in labels:
+            if label not in aging_pivot.columns:
+                aging_pivot[label] = 0
+        aging_pivot = aging_pivot[labels] # Reordenar columnas
+
+        st.write("Resumen de Cartera Vencida por Agente (USD):")
+        st.dataframe(aging_pivot.style.format("${:,.2f}"))
+
+        st.markdown("---")
+        st.write("Análisis Individual por Agente:")
+
+        # Gráfico y tabla para cada agente
+        for agente in aging_pivot.index:
+            with st.expander(f"Detalle para: **{agente}**"):
+                agente_data = aging_pivot.loc[[agente]].T.reset_index()
+                agente_data.columns = ['rango_vencimiento', 'saldo']
+                
+                col1, col2 = st.columns([1, 2])
+                
+                with col1:
+                    st.write("Tabla de Saldos:")
+                    st.dataframe(agente_data.style.format({"saldo": "${:,.2f}"}))
+
+                with col2:
+                    chart = alt.Chart(agente_data).mark_bar().encode(
+                        x=alt.X('rango_vencimiento', sort=labels, title="Rango de Vencimiento"),
+                        y=alt.Y('saldo', title="Saldo Vencido (USD)"),
+                        tooltip=[
+                            alt.Tooltip('rango_vencimiento', title="Rango"),
+                            alt.Tooltip('saldo', title="Saldo (USD)", format="$,.2f")
+                        ]
+                    ).properties(
+                        title=f"Distribución de Cartera Vencida para {agente}"
+                    )
+                    st.altair_chart(chart, use_container_width=True)
 
     # --- 7. DETALLE Y FILTROS ---
     st.subheader("🔍 Análisis Detallado")
