@@ -11,7 +11,7 @@ def run(df):
         "linea_producto": ["linea_de_negocio", "linea_producto", "producto", "descripcion"],
         "agente": ["vendedor", "agente", "ejecutivo"],
         "cantidad": ["cantidad", "unidades", "piezas", "importe"],
-        "valor_usd": ["valor_usd", "ventas_usd", "total_usd"]
+        "valor_usd": ["valor_usd", "ventas_usd", "total_usd", "ventas_usd_con_iva"]
     }
 
     for estandar, posibles in mapa_nombres.items():
