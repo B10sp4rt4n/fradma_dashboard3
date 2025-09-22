@@ -94,17 +94,41 @@ if archivo:
         if "ano" in df.columns:
             df["ano"] = pd.to_numeric(df["ano"], errors='coerce').dropna()
 
-        # Detectar columna de ventas
-        columnas_ventas_usd = ["valor_usd", "ventas_usd", "ventas_usd_con_iva"]
-        columna_encontrada = next((col for col in columnas_ventas_usd if col in df.columns), None)
+        # Detectar columna de ventas con lógica de prioridad
+        columna_ventas_prioridad = {
+            "sin_iva": ["total_usd_sin_iva", "valor_usd", "ventas_usd"],
+            "con_iva": ["ventas_usd_con_iva"]
+        }
+        
+        columna_encontrada = None
+        tipo_calculo = None
+
+        # 1. Buscar columnas sin IVA
+        for col in columna_ventas_prioridad["sin_iva"]:
+            if col in df.columns:
+                columna_encontrada = col
+                tipo_calculo = "sin IVA"
+                break
+        
+        # 2. Si no se encuentra, buscar con IVA
+        if not columna_encontrada:
+            for col in columna_ventas_prioridad["con_iva"]:
+                if col in df.columns:
+                    columna_encontrada = col
+                    tipo_calculo = "con IVA"
+                    st.warning("⚠️ Se está usando una columna con IVA para el análisis. Los cálculos pueden no ser precisos.")
+                    break
 
         if not columna_encontrada:
-            st.warning("⚠️ No se encontró una columna de ventas compatible ('valor_usd', 'ventas_usd', etc.).")
+            st.error("❌ No se encontró ninguna columna de ventas en USD compatible.")
             with st.expander("Columnas detectadas"):
                 st.write(df.columns.tolist())
         else:
-            st.success(f"✅ Columna de ventas detectada: **{columna_encontrada}**")
-            st.session_state["columna_ventas"] = columna_encontrada
+            st.success(f"✅ Columna de ventas detectada: **{columna_encontrada}** (Cálculo {tipo_calculo}).")
+            # Estandarizar la columna encontrada a 'valor_usd'
+            if columna_encontrada != "valor_usd":
+                df = df.rename(columns={columna_encontrada: "valor_usd"})
+            st.session_state["columna_ventas"] = "valor_usd"
 
         st.session_state["df"] = df
 
