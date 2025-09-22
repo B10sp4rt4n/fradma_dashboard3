@@ -97,8 +97,23 @@ def run(archivo):
     col2.metric("Cartera Corriente (USD)", f"${cartera_corriente:,.2f}")
     col3.metric("Cartera Vencida (USD)", f"${cartera_vencida:,.2f}", delta=f"{pct_vencido:.1f}% Vencido", delta_color="inverse")
 
-    # --- 5. SEMÁFORO DE SALUD DE CARTERA POR AGENTE ---
-    st.subheader("🚦 Semáforo de Salud por Agente")
+    # --- 5. SEMÁFORO DE RIESGO POR ANTIGÜEDAD ---
+    st.subheader("🚦 Semáforo de Riesgo por Antigüedad")
+    df_vencido_sem = df[df["estado"] == "Vencida"].copy()
+    
+    monto_amarillo = df_vencido_sem[df_vencido_sem["dias_vencidos"].between(31, 60, inclusive='both')]["saldo"].sum()
+    monto_naranja = df_vencido_sem[df_vencido_sem["dias_vencidos"].between(61, 90, inclusive='both')]["saldo"].sum()
+    monto_rojo = df_vencido_sem[df_vencido_sem["dias_vencidos"] > 90]["saldo"].sum()
+
+    sem_col1, sem_col2, sem_col3 = st.columns(3)
+    sem_col1.markdown(f"<p style='background-color:#F9E79F; color:#7D6608; padding: 10px; border-radius: 7px;'><b>31-60 Días:</b><br>${monto_amarillo:,.2f} USD</p>", unsafe_allow_html=True)
+    sem_col2.markdown(f"<p style='background-color:#F5CBA7; color:#943126; padding: 10px; border-radius: 7px;'><b>61-90 Días:</b><br>${monto_naranja:,.2f} USD</p>", unsafe_allow_html=True)
+    sem_col3.markdown(f"<p style='background-color:#F1948A; color:#78281F; padding: 10px; border-radius: 7px;'><b>&gt;90 Días:</b><br>${monto_rojo:,.2f} USD</p>", unsafe_allow_html=True)
+    
+    st.markdown("---")
+
+    # --- 6. SEMÁFORO DE SALUD DE CARTERA POR AGENTE ---
+    st.subheader("� Semáforo de Salud por Agente")
 
     resumen_agente = df.groupby("agente").agg(
         total_agente=("saldo", "sum"),
@@ -150,8 +165,7 @@ def run(archivo):
         aging_pivot = aging_pivot[labels] # Reordenar columnas
 
         st.write("Resumen de Cartera Vencida por Agente (USD):")
-        st.dataframe(aging_pivot.style.background_gradient(cmap='YlOrRd', subset=labels)
-                                  .format("${:,.2f}"))
+        st.dataframe(aging_pivot.style.format("${:,.2f}"))
 
         st.markdown("---")
         st.write("Análisis Individual por Agente:")
