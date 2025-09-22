@@ -3,7 +3,7 @@ import pandas as pd
 from unidecode import unidecode
 from main import main_kpi, main_comparativo, heatmap_ventas
 from main import kpi_cpc
-import main.analisis_productos_agentes
+from main.analisis_productos_agentes import run as analisis_productos_agentes  # Importación corregida
 
 st.set_page_config(layout="wide")
 
@@ -154,6 +154,6 @@ elif menu == "💳 KPI Cartera CxC":
 
 elif menu == "📊 Análisis Productos y Agentes":
     if "df" in st.session_state:
-        main.analisis_productos_agentes.run(st.session_state["df"])  # Llamada explícita
+        analisis_productos_agentes(st.session_state["df"])  # Llamada a la función run del módulo de análisis
     else:
-        st.warning("⚠️ Primero sube un archivo para visualizar el análisis de productos y agentes.")
+        st.warning("⚠️ Primero sube un archivo válido para visualizar el análisis de productos y agentes.")
