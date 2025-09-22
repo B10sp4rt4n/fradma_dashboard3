@@ -8,15 +8,27 @@ import io
 def run(df):
     st.title("Heatmap de Ventas (USD)")
 
-    # --- 1. VALIDACIÓN DE DATOS ---
+    # --- 1. VALIDACIÓN Y ESTANDARIZACIÓN DE DATOS ---
     columna_ventas = st.session_state.get("columna_ventas", "valor_usd")
     if columna_ventas not in df.columns:
         st.error(f"Columna de ventas '{columna_ventas}' no encontrada.")
         return
 
-    columnas_requeridas = {"fecha", "linea_producto", "ano", "mes"}
+    # Detección flexible de la columna de línea de producto
+    posibles_nombres_linea = ["linea_producto", "linea de producto", "linea_de_negocio", "linea"]
+    columna_linea = next((col for col in df.columns if col.lower().strip() in posibles_nombres_linea), None)
+
+    if not columna_linea:
+        st.error("No se encontró una columna para 'Línea de Producto'.")
+        st.info(f"Columnas disponibles: {df.columns.tolist()}")
+        return
+    
+    # Estandarizar el nombre de la columna para el resto del script
+    df = df.rename(columns={columna_linea: "linea_producto"})
+
+    columnas_requeridas = {"fecha", "ano", "mes"}
     if not columnas_requeridas.issubset(df.columns):
-        st.error(f"Faltan columnas requeridas. Se necesitan: {', '.join(columnas_requeridas - set(df.columns))}")
+        st.error(f"Faltan columnas de fecha requeridas. Se necesitan: {', '.join(columnas_requeridas - set(df.columns))}")
         return
 
     df[columna_ventas] = pd.to_numeric(df[columna_ventas], errors='coerce').fillna(0)
