@@ -3,6 +3,7 @@ import pandas as pd
 from unidecode import unidecode
 from main import main_kpi, main_comparativo, heatmap_ventas
 from main import kpi_cpc
+from main.analisis_productos_agentes import analisis_productos_agentes  # Importación del módulo
 
 st.set_page_config(layout="wide")
 
@@ -122,7 +123,8 @@ menu = st.sidebar.radio("Navegación", [
     "📈 KPIs Generales",
     "📊 Comparativo Año vs Año",
     "🔥 Heatmap Ventas",
-    "💳 KPI Cartera CxC" 
+    "💳 KPI Cartera CxC",
+    "📊 Análisis Productos y Agentes"  # Opción para análisis de productos y agentes
 ])
 
 if menu == "📈 KPIs Generales":
@@ -149,3 +151,9 @@ elif menu == "💳 KPI Cartera CxC":
         kpi_cpc.run(st.session_state["archivo_excel"])
     else:
         st.warning("⚠️ Primero sube un archivo para visualizar el KPI de Cartera CxC.")
+
+elif menu == "📊 Análisis Productos y Agentes":
+    if "df" in st.session_state:
+        analisis_productos_agentes(st.session_state["df"])  # Llamada al módulo de análisis
+    else:
+        st.warning("⚠️ Primero sube un archivo para visualizar el análisis de productos y agentes.")
