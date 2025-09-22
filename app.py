@@ -154,6 +154,6 @@ elif menu == "💳 KPI Cartera CxC":
 
 elif menu == "📊 Análisis Productos y Agentes":
     if "df" in st.session_state:
-        analisis_productos_agentes(st.session_state["df"])  # Llamada al módulo de análisis
+        analisis_productos_agentes.run(st.session_state["df"])  # Llamada a la función run del módulo
     else:
         st.warning("⚠️ Primero sube un archivo para visualizar el análisis de productos y agentes.")
