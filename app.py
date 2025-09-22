@@ -18,103 +18,105 @@ def normalizar_columnas(df):
 
 # 🛠️ FUNCIÓN: Carga de Excel con detección de múltiples hojas y CONTPAQi
 def detectar_y_cargar_archivo(archivo):
-    xls = pd.ExcelFile(archivo)
-    hojas = xls.sheet_names
+    """
+    Carga un archivo Excel, detectando si es de CONTPAQi o si tiene múltiples hojas.
+    Normaliza las columnas y genera columnas de fecha si es necesario.
+    """
+    try:
+        xls = pd.ExcelFile(archivo)
+        hojas = xls.sheet_names
 
-    # Caso 1: Si hay múltiples hojas → Forzar lectura de "X AGENTE"
-    if len(hojas) > 1:
-        if "X AGENTE" in hojas:
-            hoja = "X AGENTE"
-            st.info(f"📌 Archivo con múltiples hojas detectado. Leyendo hoja 'X AGENTE'.")
-        else:
-            st.warning("⚠️ Múltiples hojas detectadas pero no se encontró la hoja 'X AGENTE'. Selecciona manualmente.")
-            hoja = st.sidebar.selectbox("📄 Selecciona la hoja a leer", hojas)
-        df = pd.read_excel(xls, sheet_name=hoja)
-        df = normalizar_columnas(df)
+        df = None
+        hoja_seleccionada = None
 
-        with st.expander("🛠️ Debug - Columnas leídas desde X AGENTE"):
-            st.write(df.columns.tolist())
-
-        # Generación virtual de columnas año y mes para X AGENTE
-        if hoja == "X AGENTE":
-            if "fecha" in df.columns:
-                try:
-                    df["fecha"] = pd.to_datetime(df["fecha"], errors="coerce")
-                    df["año"] = df["fecha"].dt.year
-                    df["mes"] = df["fecha"].dt.month
-                    st.success("✅ Columnas virtuales 'año' y 'mes' generadas correctamente desde 'fecha' en X AGENTE.")
-                except Exception as e:
-                    st.error(f"❌ Error al procesar la columna 'fecha' en X AGENTE: {e}")
+        # Caso 1: Múltiples hojas
+        if len(hojas) > 1:
+            if "X AGENTE" in hojas:
+                hoja_seleccionada = "X AGENTE"
+                st.info("📌 Archivo con múltiples hojas. Leyendo automáticamente la hoja 'X AGENTE'.")
             else:
-                st.error("❌ No existe columna 'fecha' en X AGENTE para poder generar 'año' y 'mes'.")
+                st.warning("⚠️ No se encontró la hoja 'X AGENTE'. Por favor, selecciona una manualmente.")
+                hoja_seleccionada = st.sidebar.selectbox("📄 Selecciona la hoja a analizar", hojas)
+        
+        # Caso 2: Una sola hoja
+        else:
+            hoja_seleccionada = hojas[0]
 
-    else:
-        # Caso 2: Solo una hoja → Detectar si es CONTPAQi
-        hoja = hojas[0]
-        st.info(f"✅ Solo una hoja encontrada: **{hoja}**. Procediendo con detección CONTPAQi.")
-        preview = pd.read_excel(xls, sheet_name=hoja, nrows=5, header=None)
-        contiene_contpaqi = preview.iloc[0, 0]
-        skiprows = 3 if isinstance(contiene_contpaqi, str) and "contpaqi" in contiene_contpaqi.lower() else 0
-        if skiprows:
-            st.info("📌 Archivo CONTPAQi detectado. Saltando primeras 3 filas.")
-        df = pd.read_excel(xls, sheet_name=hoja, skiprows=skiprows)
-        df = normalizar_columnas(df)
+        if hoja_seleccionada:
+            # Detección de CONTPAQi (solo si no es 'X AGENTE' para evitar lecturas innecesarias)
+            skiprows = 0
+            if hoja_seleccionada != "X AGENTE":
+                preview = pd.read_excel(xls, sheet_name=hoja_seleccionada, nrows=1, header=None)
+                # Comprueba si 'contpaqi' está en alguna de las celdas de la primera fila
+                if any("contpaqi" in str(cell).lower() for cell in preview.iloc[0]):
+                    skiprows = 3
+                    st.info("📌 Archivo tipo CONTPAQi detectado. Se omitirán las primeras 3 filas.")
 
-    return df
+            df = pd.read_excel(xls, sheet_name=hoja_seleccionada, skiprows=skiprows)
+            df = normalizar_columnas(df)
 
-archivo = st.sidebar.file_uploader("📂 Sube archivo de ventas (.csv o .xlsx)", type=["csv", "xlsx"])
+            # Generación de columnas de fecha si 'fecha' existe
+            if "fecha" in df.columns:
+                df["fecha"] = pd.to_datetime(df["fecha"], errors='coerce')
+                # Solo crea las columnas si la conversión fue exitosa en al menos una fila
+                if not df["fecha"].isnull().all():
+                    df["ano"] = df["fecha"].dt.year
+                    df["mes"] = df["fecha"].dt.month
+                    st.success("✅ Columnas 'ano' y 'mes' generadas a partir de la columna 'fecha'.")
+        
+        return df
+
+    except Exception as e:
+        st.error(f"❌ Error al leer el archivo Excel: {e}")
+        return None
+
+archivo = st.sidebar.file_uploader("📂 Sube tu archivo de ventas (.csv o .xlsx)", type=["csv", "xlsx"])
 
 if archivo:
-    if archivo.name.endswith(".csv"):
+    df = None
+    if archivo.name.endswith('.csv'):
         df = pd.read_csv(archivo)
         df = normalizar_columnas(df)
     else:
         df = detectar_y_cargar_archivo(archivo)
 
-    # Guardar archivo original para KPI CxC
-    st.session_state["archivo_excel"] = archivo
+    if df is not None:
+        # Guardar archivo original para KPI CxC
+        st.session_state["archivo_excel"] = archivo
 
-    # Detectar y renombrar columna de año
-    for col in df.columns:
-        if col in ["ano", "anio", "año", "aÃ±o", "aã±o"]:
-            df = df.rename(columns={col: "año"})
-            break
+        # Estandarizar columna de año a 'ano'
+        for col in ["ano", "anio", "año", "aã±o", "aã±o"]:
+            if col in df.columns:
+                df = df.rename(columns={col: "ano"})
+                break
+        
+        if "ano" in df.columns:
+            df["ano"] = pd.to_numeric(df["ano"], errors='coerce').dropna()
 
-    if "año" in df.columns:
-        df["año"] = pd.to_numeric(df["año"], errors="coerce")
+        # Detectar columna de ventas
+        columnas_ventas_usd = ["valor_usd", "ventas_usd", "ventas_usd_con_iva"]
+        columna_encontrada = next((col for col in columnas_ventas_usd if col in df.columns), None)
 
-    for col in df.select_dtypes(include='object').columns:
-        df[col] = df[col].astype(str)
+        if not columna_encontrada:
+            st.warning("⚠️ No se encontró una columna de ventas compatible ('valor_usd', 'ventas_usd', etc.).")
+            with st.expander("Columnas detectadas"):
+                st.write(df.columns.tolist())
+        else:
+            st.success(f"✅ Columna de ventas detectada: **{columna_encontrada}**")
+            st.session_state["columna_ventas"] = columna_encontrada
 
-    # Detectar columna de ventas
-    columnas_ventas_usd = ["valor_usd", "ventas_usd", "ventas_usd_con_iva"]
-    columna_encontrada = next((col for col in columnas_ventas_usd if col in df.columns), None)
+        st.session_state["df"] = df
 
-    if not columna_encontrada:
-        st.warning("⚠️ No se encontró la columna 'valor_usd', 'ventas_usd' ni 'ventas_usd_con_iva'.")
-        st.write("Columnas detectadas:")
-        st.write(df.columns.tolist())
-    else:
-        st.success(f"✅ Columna de ventas detectada: **{columna_encontrada}**")
-        st.session_state["columna_ventas"] = columna_encontrada
-
-    if "fecha" in df.columns:
-        df["fecha"] = pd.to_datetime(df["fecha"], errors="coerce")
-
-    st.session_state["df"] = df
-    st.session_state["archivo_path"] = archivo
-
-    if "año" in df.columns:
-        with st.expander("🛠️ Diagnóstico de columnas (debug)"):
-            st.write("Columnas detectadas:", df.columns.tolist())
-            st.write("Valores únicos en columna 'año':", df["año"].unique())
-
-        años_disponibles = sorted(df["año"].dropna().unique())
-        año_base = st.sidebar.selectbox("📅 Selecciona el año base", años_disponibles)
-        st.session_state["año_base"] = año_base
-        st.success(f"📌 Año base seleccionado: {año_base}")
-    else:
-        st.warning("⚠️ No se encontró columna 'año' para seleccionar año base.")
+        if "ano" in df.columns:
+            años_disponibles = sorted(df["ano"].dropna().unique().astype(int))
+            if años_disponibles:
+                año_base = st.sidebar.selectbox("📅 Selecciona el año base", años_disponibles, index=len(años_disponibles)-1)
+                st.session_state["año_base"] = año_base
+                st.success(f"📌 Año base seleccionado: {año_base}")
+            else:
+                st.warning("⚠️ No se encontraron años válidos en la columna 'ano'.")
+        else:
+            st.warning("⚠️ No se encontró la columna 'ano'. No se pueden filtrar datos por año.")
 
 menu = st.sidebar.radio("Navegación", [
     "📈 KPIs Generales",
@@ -127,11 +129,14 @@ if menu == "📈 KPIs Generales":
     main_kpi.run()
 
 elif menu == "📊 Comparativo Año vs Año":
-    if "df" in st.session_state:
-        año_base = st.session_state.get("año_base", None)
-        main_comparativo.run(st.session_state["df"], año_base=año_base)
+    if "df" in st.session_state and "ano" in st.session_state["df"].columns:
+        año_base = st.session_state.get("año_base")
+        if año_base:
+            main_comparativo.run(st.session_state["df"], año_base=año_base)
+        else:
+            st.warning("⚠️ Por favor, selecciona un año base para continuar.")
     else:
-        st.warning("⚠️ Primero sube un archivo para visualizar el comparativo año vs año.")
+        st.warning("⚠️ Sube un archivo con la columna 'ano' para ver el comparativo.")
 
 elif menu == "🔥 Heatmap Ventas":
     if "df" in st.session_state:
@@ -143,4 +148,4 @@ elif menu == "💳 KPI Cartera CxC":
     if "archivo_excel" in st.session_state:
         kpi_cpc.run(st.session_state["archivo_excel"])
     else:
-        st.warning("⚠️ Primero sube un archivo para visualizar CXC.")
+        st.warning("⚠️ Primero sube un archivo para visualizar el KPI de Cartera CxC.")
