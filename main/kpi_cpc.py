@@ -150,7 +150,8 @@ def run(archivo):
         aging_pivot = aging_pivot[labels] # Reordenar columnas
 
         st.write("Resumen de Cartera Vencida por Agente (USD):")
-        st.dataframe(aging_pivot.style.format("${:,.2f}"))
+        st.dataframe(aging_pivot.style.background_gradient(cmap='YlOrRd', subset=labels)
+                                  .format("${:,.2f}"))
 
         st.markdown("---")
         st.write("Análisis Individual por Agente:")
