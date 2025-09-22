@@ -3,7 +3,7 @@ import pandas as pd
 from unidecode import unidecode
 from main import main_kpi, main_comparativo, heatmap_ventas
 from main import kpi_cpc
-from main.analisis_productos_agentes import analisis_productos_agentes  # Importación del módulo
+from main import analisis_productos_agentes  # Importación del módulo
 
 st.set_page_config(layout="wide")
 
