@@ -1,2 +1,2 @@
 [server]
-folderWatchBlacklist = ["backups", "data"]
+folderWatchBlacklist = ["backups", "data", "__pycache__"]
