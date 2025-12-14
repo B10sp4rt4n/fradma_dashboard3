@@ -86,16 +86,16 @@ if archivo:
     for col in df.select_dtypes(include='object').columns:
         df[col] = df[col].astype(str)
 
-    # Detectar columna de ventas
-    columnas_ventas_usd = ["valor_usd", "ventas_usd", "ventas_usd_con_iva"]
+    # Detectar columna de ventas (solo USD)
+    columnas_ventas_usd = ["valor_usd", "ventas_usd"]
     columna_encontrada = next((col for col in columnas_ventas_usd if col in df.columns), None)
 
     if not columna_encontrada:
-        st.warning("⚠️ No se encontró la columna 'valor_usd', 'ventas_usd' ni 'ventas_usd_con_iva'.")
+        st.warning("⚠️ No se encontró la columna 'valor_usd' o 'ventas_usd'.")
         st.write("Columnas detectadas:")
         st.write(df.columns.tolist())
     else:
-        st.success(f"✅ Columna de ventas detectada: **{columna_encontrada}**")
+        st.success(f"✅ Columna de ventas detectada: **{columna_encontrada}** (USD)")
         st.session_state["columna_ventas"] = columna_encontrada
 
     if "fecha" in df.columns:

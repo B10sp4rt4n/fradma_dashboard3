@@ -26,7 +26,7 @@ def run(df):
 
     mapa_columnas = {
         "linea": ["linea_prodcucto", "linea_producto", "linea_de_negocio", "linea producto", "linea_de_producto"],
-        "importe": ["valor_mn", "importe", "valor_usd", "valor mn"]
+        "importe": ["valor_usd", "ventas_usd", "importe"]
     }
 
     df.columns = clean_columns(df.columns)
