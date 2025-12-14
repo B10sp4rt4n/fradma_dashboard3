@@ -128,8 +128,9 @@ def detectar_y_cargar_archivo(archivo):
         df = pd.read_excel(xls, sheet_name=hoja)
         df = normalizar_columnas(df)
 
-        with st.expander("🛠️ Debug - Columnas leídas desde X AGENTE"):
-            st.write(df.columns.tolist())
+        if st.session_state.get("modo_debug"):
+            with st.expander("🛠️ Debug - Columnas leídas desde X AGENTE"):
+                st.write(df.columns.tolist())
 
         # Generación virtual de columnas año y mes para X AGENTE
         if hoja == "X AGENTE":
@@ -163,6 +164,13 @@ def detectar_y_cargar_archivo(archivo):
 # =====================================================================
 
 st.sidebar.markdown("### 📂 Carga de Datos")
+
+modo_debug = st.sidebar.checkbox(
+    "🧪 Modo debug",
+    value=False,
+    help="Muestra secciones de diagnóstico (columnas detectadas, etc.)"
+)
+st.session_state["modo_debug"] = modo_debug
 
 archivo = st.sidebar.file_uploader(
     "Sube archivo de ventas",

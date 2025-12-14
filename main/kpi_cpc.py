@@ -342,8 +342,8 @@ def run(archivo):
         if len(clientes_sobre_umbral) > 0:
             alertas.append({
                 'tipo': '⚠️ ALTO MONTO',
-                'mensaje': f"{len(clientes_sobre_umbral)} cliente(s) superan ${umbral_critico:,.0f} individual",
-                'detalle': ', '.join([f"{c} (${m:,.0f})" for c, m in clientes_sobre_umbral.head(3).items()]),
+                'mensaje': f"{len(clientes_sobre_umbral)} cliente(s) superan ${umbral_critico:,.2f} individual",
+                'detalle': ', '.join([f"{c} (${m:,.2f})" for c, m in clientes_sobre_umbral.head(3).items()]),
                 'prioridad': 'ALTA'
             })
         
@@ -622,7 +622,7 @@ def run(archivo):
                                     mode="gauge+number",
                                     value=pct_total,
                                     domain={'x': [0, 1], 'y': [0, 1]},
-                                    title={'text': f"<b>{linea}</b><br>${total:,.0f}", 'font': {'size': 12}},
+                                    title={'text': f"<b>{linea}</b><br>${total:,.2f}", 'font': {'size': 12}},
                                     number={'suffix': '%', 'font': {'size': 18}},
                                     gauge={
                                         'axis': {'range': [None, 100], 'tickwidth': 1},
@@ -816,7 +816,7 @@ def run(archivo):
                                     mode="gauge+number+delta",
                                     value=pct,
                                     domain={'x': [0, 1], 'y': [0, 1]},
-                                    title={'text': f"{nivel}<br>${monto:,.0f}", 'font': {'size': 14}},
+                                    title={'text': f"{nivel}<br>${monto:,.2f}", 'font': {'size': 14}},
                                     delta={'reference': 100/num_categorias, 'suffix': 'pp'},
                                     number={'suffix': '%', 'font': {'size': 20}},
                                     gauge={
@@ -859,7 +859,7 @@ def run(archivo):
                 bars = ax.bar(riesgo_df['nivel_riesgo'], riesgo_df['saldo_adeudado'], color=colores)
                 ax.set_title('Distribución por Antigüedad de Deuda')
                 ax.set_ylabel('Monto Adeudado ($)')
-                ax.yaxis.set_major_formatter('${x:,.0f}')
+                ax.yaxis.set_major_formatter('${x:,.2f}')
                 plt.xticks(rotation=45)
                 
                 # Agregar etiquetas de valor
@@ -930,7 +930,7 @@ def run(archivo):
                 ax.set_xlabel('Agente', fontsize=12)
                 ax.tick_params(axis='x', rotation=45)
                 ax.legend(title='Días Vencidos', loc='upper right')
-                ax.yaxis.set_major_formatter('${x:,.0f}')
+                ax.yaxis.set_major_formatter('${x:,.2f}')
                 
                 st.pyplot(fig)
                 

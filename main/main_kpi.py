@@ -158,13 +158,13 @@ def run():
         mayor_volumen = df_eficiencia_ventas.loc[df_eficiencia_ventas['operaciones'].idxmax()]
         
         col_ef1.metric("💰 Mejor Ticket Promedio", 
-                      f"${mejor_ticket['ticket_promedio']:,.0f}",
+                      f"${mejor_ticket['ticket_promedio']:,.2f}",
                       delta=mejor_ticket['agente'])
         col_ef2.metric("📊 Mayor Volumen Ops", 
                       f"{mayor_volumen['operaciones']:,.0f}",
                       delta=mayor_volumen['agente'])
         col_ef3.metric("💵 Ticket Prom. General", 
-                      f"${df_eficiencia_ventas['ticket_promedio'].mean():,.0f}")
+                      f"${df_eficiencia_ventas['ticket_promedio'].mean():,.2f}")
         col_ef4.metric("🎯 Ops Promedio", 
                       f"{df_eficiencia_ventas['operaciones'].mean():,.0f}")
         
@@ -237,26 +237,26 @@ def run():
                 st.success(f"🌟 **Vendedores Elite ({len(elite)})**")
                 st.write("Mantienen alto volumen y alta eficiencia:")
                 for _, v in elite.iterrows():
-                    st.write(f"- {v['agente']}: ${v['total_ventas']:,.0f} ({v['operaciones']} ops)")
+                    st.write(f"- {v['agente']}: ${v['total_ventas']:,.2f} ({v['operaciones']} ops)")
             
             if len(alto_vol) > 0:
                 st.info(f"📊 **Alto Volumen ({len(alto_vol)})**")
                 st.write("Oportunidad: Mejorar ticket promedio")
                 for _, v in alto_vol.head(3).iterrows():
-                    st.write(f"- {v['agente']}: {v['operaciones']} ops, ticket ${v['ticket_promedio']:,.0f}")
+                    st.write(f"- {v['agente']}: {v['operaciones']} ops, ticket ${v['ticket_promedio']:,.2f}")
         
         with col_ins2:
             if len(alta_ef) > 0:
                 st.info(f"💎 **Alta Eficiencia ({len(alta_ef)})**")
                 st.write("Oportunidad: Aumentar volumen de operaciones")
                 for _, v in alta_ef.head(3).iterrows():
-                    st.write(f"- {v['agente']}: Ticket ${v['ticket_promedio']:,.0f}, {v['operaciones']} ops")
+                    st.write(f"- {v['agente']}: Ticket ${v['ticket_promedio']:,.2f}, {v['operaciones']} ops")
             
             if len(en_desarrollo) > 0:
                 st.warning(f"🔄 **En Desarrollo ({len(en_desarrollo)})**")
                 st.write("Requieren capacitación y seguimiento:")
                 for _, v in en_desarrollo.head(3).iterrows():
-                    st.write(f"- {v['agente']}: ${v['total_ventas']:,.0f} total")
+                    st.write(f"- {v['agente']}: ${v['total_ventas']:,.2f} total")
         
         st.write("---")
 
