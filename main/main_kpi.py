@@ -45,7 +45,7 @@ def run():
             break
 
     if columna_agente:
-        df["agente"] = df[columna_agente].astype(str)  # Estandarizar
+        df["agente"] = df[columna_agente]  # Ya normalizado en app.py
         agentes = sorted(df["agente"].dropna().unique())
         agente_sel = st.selectbox("Selecciona Ejecutivo:", ["Todos"] + agentes)
 

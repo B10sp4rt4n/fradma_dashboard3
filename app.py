@@ -3,6 +3,7 @@ import pandas as pd
 from unidecode import unidecode
 from main import main_kpi, main_comparativo, heatmap_ventas
 from main import kpi_cpc
+from utils.data_cleaner import limpiar_columnas_texto, detectar_duplicados_similares
 
 st.set_page_config(layout="wide")
 
@@ -100,6 +101,26 @@ if archivo:
 
     if "fecha" in df.columns:
         df["fecha"] = pd.to_datetime(df["fecha"], errors="coerce")
+
+    # Aplicar normalización de columnas de texto (agente, línea_producto, cliente, etc.)
+    columnas_a_normalizar = ['agente', 'vendedor', 'ejecutivo', 'linea_producto', 
+                              'linea_de_negocio', 'cliente', 'producto']
+    columnas_existentes = [col for col in columnas_a_normalizar if col in df.columns]
+    
+    if columnas_existentes:
+        df = limpiar_columnas_texto(df, columnas=columnas_existentes, usar_aliases=True)
+        st.success(f"✅ Datos normalizados: {', '.join(columnas_existentes)}")
+        
+        # Mostrar aviso si hay duplicados similares
+        for col in columnas_existentes:
+            duplicados = detectar_duplicados_similares(df[col], umbral_similitud=0.85)
+            if duplicados and len(duplicados) > 0:
+                with st.expander(f"⚠️ Posibles duplicados detectados en '{col}' ({len(duplicados)}):"):
+                    for val1, val2, sim in duplicados[:5]:  # Mostrar primeros 5
+                        st.write(f"- '{val1}' ≈ '{val2}' (similitud: {sim*100:.0f}%)")
+                    if len(duplicados) > 5:
+                        st.write(f"... y {len(duplicados)-5} más")
+                    st.info("💡 Puedes unificarlos editando config/aliases.json")
 
     st.session_state["df"] = df
     st.session_state["archivo_path"] = archivo
