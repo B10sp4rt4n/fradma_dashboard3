@@ -48,7 +48,14 @@ def run(df):
             "🗓️ Tipo de periodo:",
             ["Mensual", "Trimestral", "Anual", "Rango Personalizado"]
         )
-        mostrar_crecimiento = st.checkbox("📈 Mostrar % de crecimiento vs periodo anterior")
+        mostrar_crecimiento = st.checkbox("📈 Mostrar % de crecimiento")
+        
+        if mostrar_crecimiento:
+            tipo_comparacion = st.radio(
+                "Comparar contra:",
+                ["Período anterior", "Mismo período año anterior"],
+                help="Período anterior: mes vs mes previo, trimestre vs trimestre previo, etc.\nMismo período año anterior: ene-24 vs ene-23, Q1-24 vs Q1-23, etc."
+            )
 
     def generar_periodo_id(row, periodo_tipo):
         year_short = str(row['anio'])[-2:]
@@ -68,20 +75,24 @@ def run(df):
 
     if periodo_tipo == "Mensual":
         df['periodo'] = df['mes_anio']
-        growth_lag = 12
+        growth_lag_secuencial = 1  # Comparar con mes anterior
+        growth_lag_yoy = 12  # Comparar con mismo mes año anterior
     elif periodo_tipo == "Trimestral":
         df['periodo'] = df['trimestre']
-        growth_lag = 4
+        growth_lag_secuencial = 1  # Comparar con trimestre anterior
+        growth_lag_yoy = 4  # Comparar con mismo trimestre año anterior
     elif periodo_tipo == "Anual":
         df['periodo'] = df['anio'].astype(str)
-        growth_lag = 1
+        growth_lag_secuencial = 1  # Comparar con año anterior
+        growth_lag_yoy = 1  # Comparar con año anterior (mismo)
     elif periodo_tipo == "Rango Personalizado":
         with st.sidebar:
             start_date = st.date_input("📅 Fecha inicio:", value=df['fecha'].min())
             end_date = st.date_input("📅 Fecha fin:", value=df['fecha'].max())
         df = df[(df['fecha'] >= pd.to_datetime(start_date)) & (df['fecha'] <= pd.to_datetime(end_date))]
         df['periodo'] = "Rango Personalizado"
-        growth_lag = None
+        growth_lag_secuencial = None
+        growth_lag_yoy = None
 
     df['periodo_etiqueta'] = df['periodo_id'] + " - " + df['periodo']
     df = df.sort_values('periodo_id')
@@ -138,27 +149,31 @@ def run(df):
         annot_data = df_filtered.copy().astype(str)
         nuevas_lineas = set()
 
-        if mostrar_crecimiento and growth_lag:
+        if mostrar_crecimiento and growth_lag_secuencial:
             try:
+                # Calcular crecimiento según tipo de comparación seleccionado
                 df_growth = df_filtered.copy()
-                df_growth['periodo_id_num'] = df_period_ids.loc[df_filtered.index].astype(float)
-                df_growth = df_growth.sort_values('periodo_id_num').drop(columns='periodo_id_num')
-
-                if periodo_tipo == "Mensual":
-                    df_growth['periodo_base'] = [x.split(' - ')[1][:3] for x in df_growth.index]
-                elif periodo_tipo == "Trimestral":
-                    df_growth['periodo_base'] = [x.split(' - ')[1] for x in df_growth.index]
-                    df_growth['periodo_base'] = df_growth['periodo_base'].str.extract(r'(Q[1-4])')
-                elif periodo_tipo == "Anual":
-                    df_growth['periodo_base'] = [x.split(' - ')[1] for x in df_growth.index]
-                else:
-                    df_growth['periodo_base'] = np.nan
-
+                
+                # Ordenar por periodo_id para asegurar orden cronológico
+                df_growth['periodo_id_num'] = df_period_ids.loc[df_filtered.index]
+                df_growth = df_growth.sort_values('periodo_id_num')
+                df_growth = df_growth.drop(columns='periodo_id_num')
+                
                 if periodo_tipo != "Rango Personalizado":
-                    growth_table = df_growth.groupby('periodo_base').pct_change(periods=1) * 100
+                    # Determinar el lag según tipo de comparación
+                    if tipo_comparacion == "Período anterior":
+                        lag = growth_lag_secuencial
+                        comparacion_label = "vs período anterior"
+                    else:  # "Mismo período año anterior"
+                        lag = growth_lag_yoy
+                        comparacion_label = "vs mismo período año anterior"
+                    
+                    # pct_change con el lag correspondiente
+                    growth_table = df_growth.pct_change(periods=lag) * 100
                     growth_table = growth_table.loc[:, df_filtered.columns]
                 else:
                     growth_table = None
+                    comparacion_label = ""
 
                 for row in annot_data.index:
                     for col in annot_data.columns:
@@ -168,18 +183,18 @@ def run(df):
                             if pd.notna(growth) and not np.isinf(growth):
                                 annot_data.loc[row, col] = f"{format_currency(val)}\n({growth:.1f}%)"
                             elif np.isinf(growth):
-                                annot_data.loc[row, col] = "NEW"
+                                annot_data.loc[row, col] = f"{format_currency(val)}\nNEW"
                                 nuevas_lineas.add(col)
                             else:
                                 annot_data.loc[row, col] = f"{format_currency(val)}"
 
                 if nuevas_lineas:
-                    st.markdown("### 🟢 Líneas de negocio con nuevas ventas:")
-                    for linea in nuevas_lineas:
+                    st.info(f"🟢 **Líneas con ventas nuevas o reiniciadas** ({comparacion_label}):")
+                    for linea in sorted(nuevas_lineas):
                         st.markdown(f"- {linea}")
 
             except Exception as e:
-                st.warning(f"⚠️ Error calculando crecimiento YoY: {e}")
+                st.warning(f"⚠️ Error calculando crecimiento: {e}")
                 annot_data = df_filtered.applymap(lambda x: format_currency(x))
         else:
             annot_data = df_filtered.applymap(lambda x: format_currency(x))
