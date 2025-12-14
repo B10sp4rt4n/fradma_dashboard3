@@ -5,6 +5,8 @@ from unidecode import unidecode
 from datetime import datetime
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+import plotly.graph_objects as go
+import plotly.express as px
 
 def normalizar_columnas(df):
     nuevas_columnas = []
@@ -116,18 +118,45 @@ def run(archivo):
         
         # KPIs principales
         total_adeudado = df_deudas['saldo_adeudado'].sum()
-        col1, col2 = st.columns(2)
-        col1.metric("Total Adeudado a Fradma", f"${total_adeudado:,.2f}")
         
-        # Calcular vencimientos
+        # Calcular vencimientos para el total
         try:
             mask_vencida = df_deudas['estatus'].str.contains('VENCID', na=False)
             vencida = df_deudas[mask_vencida]['saldo_adeudado'].sum()
-            col2.metric("Deuda Vencida", f"${vencida:,.2f}", 
-                       delta=f"{(vencida/total_adeudado*100):.1f}%",
-                       delta_color="inverse")
+            vigente = total_adeudado - vencida
         except:
             vencida = 0
+            vigente = total_adeudado
+        
+        # Métricas principales en columnas
+        col1, col2, col3 = st.columns(3)
+        col1.metric("💰 Total Adeudado a Fradma", f"${total_adeudado:,.2f}")
+        col2.metric("✅ Cartera Vigente", f"${vigente:,.2f}", 
+                   delta=f"{(vigente/total_adeudado*100):.1f}%")
+        col3.metric("⚠️ Deuda Vencida", f"${vencida:,.2f}", 
+                   delta=f"{(vencida/total_adeudado*100):.1f}%",
+                   delta_color="inverse")
+        
+        # Pie Chart: Vigente vs Vencido
+        st.subheader("📊 Distribución General de Cartera")
+        col_pie1, col_pie2 = st.columns(2)
+        
+        with col_pie1:
+            st.write("**Vigente vs Vencido**")
+            fig_vigente = go.Figure(data=[go.Pie(
+                labels=['Vigente', 'Vencido'],
+                values=[vigente, vencida],
+                marker=dict(colors=['#4CAF50', '#F44336']),
+                hole=0.4,
+                textinfo='label+percent',
+                textposition='outside'
+            )])
+            fig_vigente.update_layout(
+                showlegend=True,
+                height=350,
+                margin=dict(t=20, b=20, l=20, r=20)
+            )
+            st.plotly_chart(fig_vigente, use_container_width=True)
 
         # Top 5 deudores (USANDO COLUMNA F - CLIENTE)
         st.subheader("🔝 Principales Deudores (Columna Cliente)")
@@ -173,28 +202,82 @@ def run(archivo):
                 # Ordenar por nivel de riesgo
                 riesgo_df = riesgo_df.sort_values('nivel_riesgo')
                 
-                # Mostrar semáforo visual
-                st.write("### 🔴🟠🟡🟢 Semáforo de Riesgo")
-                
-                # Crear tarjetas de colores para cada categoría
-                for idx, row in riesgo_df.iterrows():
-                    nivel = row['nivel_riesgo']
-                    monto = row['saldo_adeudado']
-                    pct = row['porcentaje']
-                    color = colores[idx]
-                    
-                    # Crear tarjeta con color de fondo
-                    st.markdown(
-                        f"""
-                        <div style="background-color:{color}; padding:10px; border-radius:5px; margin-bottom:10px; color:white; font-weight:bold;">
-                            <div style="display:flex; justify-content:space-between;">
-                                <span>{nivel}</span>
-                                <span>${monto:,.2f} ({pct:.1f}%)</span>
-                            </div>
-                        </div>
-                        """,
-                        unsafe_allow_html=True
+                # Pie Chart: Distribución por antigüedad
+                with col_pie2:
+                    st.write("**Distribución por Antigüedad**")
+                    fig_antiguedad = go.Figure(data=[go.Pie(
+                        labels=riesgo_df['nivel_riesgo'].tolist(),
+                        values=riesgo_df['saldo_adeudado'].tolist(),
+                        marker=dict(colors=colores),
+                        hole=0.4,
+                        textinfo='label+percent',
+                        textposition='outside'
+                    )])
+                    fig_antiguedad.update_layout(
+                        showlegend=True,
+                        height=350,
+                        margin=dict(t=20, b=20, l=20, r=20)
                     )
+                    st.plotly_chart(fig_antiguedad, use_container_width=True)
+                
+                # Gauges por categoría de riesgo
+                st.write("### 🎯 Indicadores de Riesgo por Antigüedad")
+                
+                # Crear gauges en filas de 3
+                num_categorias = len(riesgo_df)
+                for i in range(0, num_categorias, 3):
+                    cols_gauge = st.columns(3)
+                    
+                    for j in range(3):
+                        if i + j < num_categorias:
+                            row = riesgo_df.iloc[i + j]
+                            nivel = row['nivel_riesgo']
+                            pct = row['porcentaje']
+                            monto = row['saldo_adeudado']
+                            color = colores[i + j]
+                            
+                            with cols_gauge[j]:
+                                # Crear gauge con plotly
+                                fig_gauge = go.Figure(go.Indicator(
+                                    mode="gauge+number+delta",
+                                    value=pct,
+                                    domain={'x': [0, 1], 'y': [0, 1]},
+                                    title={'text': f"{nivel}<br>${monto:,.0f}", 'font': {'size': 14}},
+                                    delta={'reference': 100/num_categorias, 'suffix': 'pp'},
+                                    number={'suffix': '%', 'font': {'size': 20}},
+                                    gauge={
+                                        'axis': {'range': [None, 100], 'tickwidth': 1, 'tickcolor': "darkgray"},
+                                        'bar': {'color': color},
+                                        'bgcolor': "white",
+                                        'borderwidth': 2,
+                                        'bordercolor': "gray",
+                                        'steps': [
+                                            {'range': [0, 50], 'color': '#E8F5E9'},
+                                            {'range': [50, 100], 'color': '#FFEBEE'}
+                                        ],
+                                        'threshold': {
+                                            'line': {'color': "red", 'width': 4},
+                                            'thickness': 0.75,
+                                            'value': 100/num_categorias
+                                        }
+                                    }
+                                ))
+                                fig_gauge.update_layout(
+                                    height=250,
+                                    margin=dict(t=50, b=0, l=20, r=20)
+                                )
+                                st.plotly_chart(fig_gauge, use_container_width=True)
+                
+                st.write("---")
+                
+                # Mostrar tabla resumen (reemplaza tarjetas HTML)
+                st.write("### 📋 Resumen Detallado por Categoría")
+                resumen_tabla = riesgo_df.copy()
+                resumen_tabla['Monto'] = resumen_tabla['saldo_adeudado'].apply(lambda x: f"${x:,.2f}")
+                resumen_tabla['% del Total'] = resumen_tabla['porcentaje'].apply(lambda x: f"{x:.1f}%")
+                resumen_tabla = resumen_tabla[['nivel_riesgo', 'Monto', '% del Total']]
+                resumen_tabla.columns = ['Categoría', 'Monto Adeudado', '% del Total']
+                st.dataframe(resumen_tabla, use_container_width=True, hide_index=True)
                 
                 # Gráfico de barras con colores por categoría
                 st.write("### 📊 Distribución de Deuda por Antigüedad")
