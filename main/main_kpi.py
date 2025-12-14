@@ -32,7 +32,7 @@ def run():
     total_operaciones = len(df)
 
     col1, col2 = st.columns(2)
-    col1.metric("Total Ventas USD", f"${total_usd:,.0f}")
+    col1.metric("Total Ventas USD", f"${total_usd:,.2f}")
     col2.metric("Operaciones", f"{total_operaciones:,}")
 
     # === Filtros opcionales ===
@@ -68,7 +68,7 @@ def run():
     operaciones_filtradas = len(df)
 
     colf1, colf2 = st.columns(2)
-    colf1.metric("Ventas USD (filtro)", f"${total_filtrado_usd:,.0f}")
+    colf1.metric("Ventas USD (filtro)", f"${total_filtrado_usd:,.2f}")
     colf2.metric("Operaciones (filtro)", f"{operaciones_filtradas:,}")
 
     # Tabla de detalle
@@ -90,7 +90,7 @@ def run():
         ranking["total_usd"] = ranking["total_usd"].round(0)
 
         st.dataframe(ranking.style.format({
-            "total_usd": "${:,.0f}",
+            "total_usd": "${:,.2f}",
             "operaciones": "{:,}"
         }))
         
@@ -206,9 +206,9 @@ def run():
                                      'clientes_unicos', 'ventas_por_cliente', 'clasificacion']].copy()
         
         df_ef_table['total_ventas'] = df_ef_table['total_ventas'].apply(lambda x: f"${x:,.2f}")
-        df_ef_table['ticket_promedio'] = df_ef_table['ticket_promedio'].apply(lambda x: f"${x:,.0f}")
+        df_ef_table['ticket_promedio'] = df_ef_table['ticket_promedio'].apply(lambda x: f"${x:,.2f}")
         df_ef_table['ventas_por_cliente'] = df_ef_table['ventas_por_cliente'].apply(
-            lambda x: f"${x:,.0f}" if x > 0 else "N/A"
+            lambda x: f"${x:,.2f}" if x > 0 else "N/A"
         )
         df_ef_table['clientes_unicos'] = df_ef_table['clientes_unicos'].apply(
             lambda x: f"{int(x)}" if x > 0 else "N/A"

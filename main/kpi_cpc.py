@@ -298,11 +298,11 @@ def run(archivo):
                     "🟢" if pct_alto_riesgo <= 10 else "🟡" if pct_alto_riesgo <= 20 else "🔴"
                 ],
                 'Monto/Detalle': [
-                    f"${total_adeudado / (dso_estimado if dso_estimado > 0 else 1):,.0f}/día",
-                    f"${vencida:,.0f}",
-                    f"${total_adeudado / (rotacion_cxc if rotacion_cxc > 0 else 1):,.0f}/rotación",
-                    f"${top3_deuda:,.0f}",
-                    f"${deuda_alto_riesgo:,.0f}"
+                    f"${total_adeudado / (dso_estimado if dso_estimado > 0 else 1):,.2f}/día",
+                    f"${vencida:,.2f}",
+                    f"${total_adeudado / (rotacion_cxc if rotacion_cxc > 0 else 1):,.2f}/rotación",
+                    f"${top3_deuda:,.2f}",
+                    f"${deuda_alto_riesgo:,.2f}"
                 ]
             }
             
@@ -503,13 +503,13 @@ def run(archivo):
         baja_count = len(df_prioridades[df_prioridades['nivel_num'] == 4])
         
         col_acc1.metric("🔴 Urgente", urgente_count, 
-                       delta=f"${df_prioridades[df_prioridades['nivel_num'] == 1]['monto'].sum():,.0f}")
+                       delta=f"${df_prioridades[df_prioridades['nivel_num'] == 1]['monto'].sum():,.2f}")
         col_acc2.metric("🟠 Alta", alta_count,
-                       delta=f"${df_prioridades[df_prioridades['nivel_num'] == 2]['monto'].sum():,.0f}")
+                       delta=f"${df_prioridades[df_prioridades['nivel_num'] == 2]['monto'].sum():,.2f}")
         col_acc3.metric("🟡 Media", media_count,
-                       delta=f"${df_prioridades[df_prioridades['nivel_num'] == 3]['monto'].sum():,.0f}")
+                       delta=f"${df_prioridades[df_prioridades['nivel_num'] == 3]['monto'].sum():,.2f}")
         col_acc4.metric("🟢 Baja", baja_count,
-                       delta=f"${df_prioridades[df_prioridades['nivel_num'] == 4]['monto'].sum():,.0f}")
+                       delta=f"${df_prioridades[df_prioridades['nivel_num'] == 4]['monto'].sum():,.2f}")
         
         # Recomendaciones
         st.write("### 💡 Recomendaciones de Acción")
@@ -865,7 +865,7 @@ def run(archivo):
                 # Agregar etiquetas de valor
                 for bar in bars:
                     height = bar.get_height()
-                    ax.annotate(f'${height:,.0f}',
+                    ax.annotate(f'${height:,.2f}',
                                 xy=(bar.get_x() + bar.get_width() / 2, height),
                                 xytext=(0, 3),  # 3 points vertical offset
                                 textcoords="offset points",
@@ -1360,7 +1360,7 @@ Departamento de Crédito y Cobranza
         with col_resumen3:
             st.metric("🎯 Casos Urgentes", urgente_count)
             st.metric("📈 Morosidad", f"{indice_morosidad:.1f}%")
-            st.caption(f"${vencida:,.0f}")
+            st.caption(f"${vencida:,.2f}")
         
         st.write("**Observaciones Clave:**")
         st.write(f"- Fradma tiene **${total_adeudado:,.2f}** en cuentas por cobrar")
