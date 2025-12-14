@@ -1137,13 +1137,20 @@ def run(archivo):
                         st.write(f"- **{agente_m['agente']}** (Score: {agente_m['score']:.1f}): {' | '.join(problemas)}")
                 else:
                     st.success("✅ Todos los agentes mantienen niveles aceptables de eficiencia")
-                
+
             else:
-                st.warning("ℹ️ No se pudo calcular eficiencia sin datos de antigüedad")
-                st.dataframe(resumen_agente)
-                
-            else:
-                st.warning("ℹ️ No se pudo calcular la antigüedad para los agentes")
+                st.warning("ℹ️ No se pudo calcular la antigüedad (días vencidos) para los agentes")
+
+                # Fallback: resumen simple por agente sin segmentación de antigüedad
+                resumen_simple = (
+                    df_deudas.groupby('vendedor', dropna=False)['saldo_adeudado']
+                    .sum()
+                    .sort_values(ascending=False)
+                    .reset_index()
+                )
+                resumen_simple.columns = ['Agente', 'Cartera Total']
+                resumen_simple['Cartera Total'] = resumen_simple['Cartera Total'].apply(lambda x: f"${x:,.2f}")
+                st.dataframe(resumen_simple, use_container_width=True, hide_index=True)
         else:
             st.warning("ℹ️ No se encontró información de agentes (vendedores)")
 
