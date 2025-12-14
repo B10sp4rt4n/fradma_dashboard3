@@ -947,6 +947,201 @@ def run(archivo):
                 
                 st.dataframe(resumen_agente)
                 
+                # =====================================================================
+                # EFICIENCIA DE COBRANZA POR AGENTE
+                # =====================================================================
+                st.write("---")
+                st.subheader("⚡ Eficiencia de Cobranza por Agente")
+                
+                # Calcular métricas de eficiencia por agente
+                agentes_eficiencia = []
+                
+                for agente in df_deudas['vendedor'].unique():
+                    agente_data = df_deudas[df_deudas['vendedor'] == agente]
+                    
+                    total_agente = agente_data['saldo_adeudado'].sum()
+                    vigente_agente = agente_data[agente_data['dias_vencido'] <= 0]['saldo_adeudado'].sum()
+                    vencido_agente = total_agente - vigente_agente
+                    
+                    # % Efectividad (cartera vigente)
+                    efectividad = (vigente_agente / total_agente * 100) if total_agente > 0 else 0
+                    
+                    # Tiempo promedio de cobro
+                    dias_promedio = agente_data['dias_vencido'].mean() if len(agente_data) > 0 else 0
+                    
+                    # Cantidad de clientes y documentos
+                    clientes_agente = agente_data['deudor'].nunique()
+                    docs_agente = len(agente_data)
+                    
+                    # Casos críticos (>90 días)
+                    casos_criticos = len(agente_data[agente_data['dias_vencido'] > 90])
+                    pct_criticos = (casos_criticos / docs_agente * 100) if docs_agente > 0 else 0
+                    
+                    # Monto promedio por cliente
+                    monto_promedio = total_agente / clientes_agente if clientes_agente > 0 else 0
+                    
+                    # Score de eficiencia (0-100)
+                    # Factores: efectividad (50%), días promedio (30%), casos críticos (20%)
+                    score_efectividad = efectividad * 0.5
+                    score_dias = max(0, 100 - (dias_promedio / 90 * 100)) * 0.3
+                    score_criticos = max(0, 100 - pct_criticos) * 0.2
+                    
+                    score_eficiencia = score_efectividad + score_dias + score_criticos
+                    
+                    agentes_eficiencia.append({
+                        'agente': agente,
+                        'total': total_agente,
+                        'efectividad': efectividad,
+                        'dias_promedio': dias_promedio,
+                        'clientes': clientes_agente,
+                        'docs': docs_agente,
+                        'casos_criticos': casos_criticos,
+                        'pct_criticos': pct_criticos,
+                        'monto_promedio': monto_promedio,
+                        'score': score_eficiencia
+                    })
+                
+                df_eficiencia = pd.DataFrame(agentes_eficiencia)
+                df_eficiencia = df_eficiencia.sort_values('score', ascending=False)
+                
+                # Gauges de eficiencia por agente (top 6)
+                st.write("### 🎯 Score de Eficiencia por Agente")
+                
+                top_agentes_ef = df_eficiencia.head(6)
+                
+                for i in range(0, len(top_agentes_ef), 3):
+                    cols_agente = st.columns(3)
+                    
+                    for j in range(3):
+                        if i + j < len(top_agentes_ef):
+                            row = top_agentes_ef.iloc[i + j]
+                            agente = row['agente']
+                            score = row['score']
+                            efectividad = row['efectividad']
+                            
+                            # Color según score
+                            if score >= 80:
+                                color_agente = "#4CAF50"
+                                nivel_agente = "Excelente"
+                            elif score >= 60:
+                                color_agente = "#8BC34A"
+                                nivel_agente = "Bueno"
+                            elif score >= 40:
+                                color_agente = "#FFEB3B"
+                                nivel_agente = "Regular"
+                            elif score >= 20:
+                                color_agente = "#FF9800"
+                                nivel_agente = "Bajo"
+                            else:
+                                color_agente = "#F44336"
+                                nivel_agente = "Crítico"
+                            
+                            with cols_agente[j]:
+                                fig_agente_ef = go.Figure(go.Indicator(
+                                    mode="gauge+number",
+                                    value=score,
+                                    domain={'x': [0, 1], 'y': [0, 1]},
+                                    title={'text': f"<b>{agente}</b><br>{nivel_agente}", 'font': {'size': 11}},
+                                    number={'suffix': '', 'font': {'size': 20}},
+                                    gauge={
+                                        'axis': {'range': [None, 100], 'tickwidth': 1},
+                                        'bar': {'color': color_agente, 'thickness': 0.75},
+                                        'bgcolor': "white",
+                                        'borderwidth': 1,
+                                        'bordercolor': "gray",
+                                        'steps': [
+                                            {'range': [0, 20], 'color': '#FFCDD2'},
+                                            {'range': [20, 40], 'color': '#FFE0B2'},
+                                            {'range': [40, 60], 'color': '#FFF9C4'},
+                                            {'range': [60, 80], 'color': '#DCEDC8'},
+                                            {'range': [80, 100], 'color': '#C8E6C9'}
+                                        ],
+                                        'threshold': {
+                                            'line': {'color': "black", 'width': 3},
+                                            'thickness': 0.75,
+                                            'value': 60
+                                        }
+                                    }
+                                ))
+                                fig_agente_ef.update_layout(
+                                    height=220,
+                                    margin=dict(t=60, b=10, l=10, r=10)
+                                )
+                                st.plotly_chart(fig_agente_ef, use_container_width=True)
+                                st.caption(f"Efectividad: {efectividad:.1f}% | Clientes: {row['clientes']}")
+                
+                # Tabla comparativa de eficiencia
+                st.write("### 📊 Tabla Comparativa de Eficiencia")
+                
+                df_ef_display = df_eficiencia.copy()
+                
+                # Agregar semáforos
+                df_ef_display['🚦 Score'] = df_ef_display['score'].apply(
+                    lambda x: "🟢" if x >= 80 else "🟢" if x >= 60 else "🟡" if x >= 40 else "🟠" if x >= 20 else "🔴"
+                )
+                
+                df_ef_display['🚦 Efectividad'] = df_ef_display['efectividad'].apply(
+                    lambda x: "🟢" if x >= 80 else "🟡" if x >= 60 else "🟠" if x >= 40 else "🔴"
+                )
+                
+                # Formatear
+                df_ef_table = df_ef_display[[
+                    'agente', 'score', '🚦 Score', 'efectividad', '🚦 Efectividad',
+                    'dias_promedio', 'casos_criticos', 'pct_criticos', 'clientes', 'total'
+                ]].copy()
+                
+                df_ef_table['score'] = df_ef_table['score'].apply(lambda x: f"{x:.1f}")
+                df_ef_table['efectividad'] = df_ef_table['efectividad'].apply(lambda x: f"{x:.1f}%")
+                df_ef_table['dias_promedio'] = df_ef_table['dias_promedio'].apply(lambda x: f"{x:.0f} días")
+                df_ef_table['pct_criticos'] = df_ef_table['pct_criticos'].apply(lambda x: f"{x:.1f}%")
+                df_ef_table['total'] = df_ef_table['total'].apply(lambda x: f"${x:,.2f}")
+                
+                df_ef_table.columns = [
+                    'Agente', 'Score', '🚦', 'Efectividad', '🚦',
+                    'Días Prom.', 'Casos >90d', '% Críticos', 'Clientes', 'Cartera Total'
+                ]
+                
+                st.dataframe(df_ef_table, use_container_width=True, hide_index=True)
+                
+                # Ranking y reconocimiento
+                st.write("### 🏆 Ranking de Eficiencia")
+                
+                col_rank1, col_rank2, col_rank3 = st.columns(3)
+                
+                if len(df_eficiencia) >= 1:
+                    mejor_agente = df_eficiencia.iloc[0]
+                    col_rank1.success(f"🥇 **Mejor Eficiencia**\n\n{mejor_agente['agente']}\n\nScore: {mejor_agente['score']:.1f}/100")
+                
+                if len(df_eficiencia) >= 2:
+                    segundo_agente = df_eficiencia.iloc[1]
+                    col_rank2.info(f"🥈 **Segunda Posición**\n\n{segundo_agente['agente']}\n\nScore: {segundo_agente['score']:.1f}/100")
+                
+                if len(df_eficiencia) >= 3:
+                    tercer_agente = df_eficiencia.iloc[2]
+                    col_rank3.info(f"🥉 **Tercera Posición**\n\n{tercer_agente['agente']}\n\nScore: {tercer_agente['score']:.1f}/100")
+                
+                # Agentes que necesitan mejora
+                agentes_mejora = df_eficiencia[df_eficiencia['score'] < 40]
+                
+                if len(agentes_mejora) > 0:
+                    st.warning("⚠️ **Agentes que Requieren Capacitación/Apoyo:**")
+                    for _, agente_m in agentes_mejora.iterrows():
+                        problemas = []
+                        if agente_m['efectividad'] < 60:
+                            problemas.append(f"Efectividad baja: {agente_m['efectividad']:.1f}%")
+                        if agente_m['dias_promedio'] > 60:
+                            problemas.append(f"Días promedio alto: {agente_m['dias_promedio']:.0f}")
+                        if agente_m['pct_criticos'] > 20:
+                            problemas.append(f"Casos críticos: {agente_m['pct_criticos']:.1f}%")
+                        
+                        st.write(f"- **{agente_m['agente']}** (Score: {agente_m['score']:.1f}): {' | '.join(problemas)}")
+                else:
+                    st.success("✅ Todos los agentes mantienen niveles aceptables de eficiencia")
+                
+            else:
+                st.warning("ℹ️ No se pudo calcular eficiencia sin datos de antigüedad")
+                st.dataframe(resumen_agente)
+                
             else:
                 st.warning("ℹ️ No se pudo calcular la antigüedad para los agentes")
         else:

@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import altair as alt
+import plotly.express as px
 
 def run():
     st.title("📈 KPIs Generales")
@@ -92,6 +93,172 @@ def run():
             "total_usd": "${:,.0f}",
             "operaciones": "{:,}"
         }))
+        
+        # =====================================================================
+        # KPIs DE EFICIENCIA POR VENDEDOR
+        # =====================================================================
+        st.subheader("⚡ KPIs de Eficiencia por Vendedor")
+        
+        # Calcular métricas de eficiencia
+        vendedores_eficiencia = []
+        
+        for agente in df["agente"].unique():
+            agente_data = df[df["agente"] == agente]
+            
+            total_ventas = agente_data["valor_usd"].sum()
+            operaciones_count = len(agente_data)
+            
+            # Ticket promedio
+            ticket_promedio = total_ventas / operaciones_count if operaciones_count > 0 else 0
+            
+            # Eficiencia (ventas por operación)
+            eficiencia = total_ventas / operaciones_count if operaciones_count > 0 else 0
+            
+            # Clientes únicos (si existe columna cliente)
+            if 'cliente' in agente_data.columns:
+                clientes_unicos = agente_data['cliente'].nunique()
+                ventas_por_cliente = total_ventas / clientes_unicos if clientes_unicos > 0 else 0
+            else:
+                clientes_unicos = 0
+                ventas_por_cliente = 0
+            
+            vendedores_eficiencia.append({
+                'agente': agente,
+                'total_ventas': total_ventas,
+                'operaciones': operaciones_count,
+                'ticket_promedio': ticket_promedio,
+                'eficiencia': eficiencia,
+                'clientes_unicos': clientes_unicos,
+                'ventas_por_cliente': ventas_por_cliente
+            })
+        
+        df_eficiencia_ventas = pd.DataFrame(vendedores_eficiencia)
+        
+        # Clasificar vendedores
+        # Alto volumen = muchas operaciones, Alta eficiencia = alto ticket promedio
+        mediana_ops = df_eficiencia_ventas['operaciones'].median()
+        mediana_ticket = df_eficiencia_ventas['ticket_promedio'].median()
+        
+        def clasificar_vendedor(row):
+            if row['operaciones'] > mediana_ops and row['ticket_promedio'] > mediana_ticket:
+                return "🌟 Elite (Alto Volumen + Alta Eficiencia)"
+            elif row['operaciones'] > mediana_ops:
+                return "📊 Alto Volumen"
+            elif row['ticket_promedio'] > mediana_ticket:
+                return "💎 Alta Eficiencia"
+            else:
+                return "🔄 En Desarrollo"
+        
+        df_eficiencia_ventas['clasificacion'] = df_eficiencia_ventas.apply(clasificar_vendedor, axis=1)
+        
+        # Mostrar métricas principales
+        col_ef1, col_ef2, col_ef3, col_ef4 = st.columns(4)
+        
+        mejor_ticket = df_eficiencia_ventas.loc[df_eficiencia_ventas['ticket_promedio'].idxmax()]
+        mayor_volumen = df_eficiencia_ventas.loc[df_eficiencia_ventas['operaciones'].idxmax()]
+        
+        col_ef1.metric("💰 Mejor Ticket Promedio", 
+                      f"${mejor_ticket['ticket_promedio']:,.0f}",
+                      delta=mejor_ticket['agente'])
+        col_ef2.metric("📊 Mayor Volumen Ops", 
+                      f"{mayor_volumen['operaciones']:,.0f}",
+                      delta=mayor_volumen['agente'])
+        col_ef3.metric("💵 Ticket Prom. General", 
+                      f"${df_eficiencia_ventas['ticket_promedio'].mean():,.0f}")
+        col_ef4.metric("🎯 Ops Promedio", 
+                      f"{df_eficiencia_ventas['operaciones'].mean():,.0f}")
+        
+        # Matriz de Eficiencia vs Volumen
+        st.write("### 📈 Matriz de Eficiencia vs Volumen")
+        
+        fig_matriz = px.scatter(
+            df_eficiencia_ventas,
+            x='operaciones',
+            y='ticket_promedio',
+            size='total_ventas',
+            color='clasificacion',
+            hover_name='agente',
+            labels={
+                'operaciones': 'Número de Operaciones',
+                'ticket_promedio': 'Ticket Promedio (USD)',
+                'total_ventas': 'Ventas Totales',
+                'clasificacion': 'Clasificación'
+            },
+            title='Análisis de Vendedores: Eficiencia vs Volumen'
+        )
+        
+        # Añadir líneas de referencia (medianas)
+        fig_matriz.add_hline(y=mediana_ticket, line_dash="dash", line_color="gray", 
+                            annotation_text="Mediana Ticket")
+        fig_matriz.add_vline(x=mediana_ops, line_dash="dash", line_color="gray",
+                            annotation_text="Mediana Ops")
+        
+        fig_matriz.update_layout(height=500)
+        st.plotly_chart(fig_matriz, use_container_width=True)
+        
+        # Tabla detallada de eficiencia
+        st.write("### 📋 Tabla Detallada de Eficiencia")
+        
+        df_ef_display = df_eficiencia_ventas.sort_values('total_ventas', ascending=False).copy()
+        
+        # Formatear columnas
+        df_ef_table = df_ef_display[['agente', 'total_ventas', 'operaciones', 'ticket_promedio', 
+                                     'clientes_unicos', 'ventas_por_cliente', 'clasificacion']].copy()
+        
+        df_ef_table['total_ventas'] = df_ef_table['total_ventas'].apply(lambda x: f"${x:,.2f}")
+        df_ef_table['ticket_promedio'] = df_ef_table['ticket_promedio'].apply(lambda x: f"${x:,.0f}")
+        df_ef_table['ventas_por_cliente'] = df_ef_table['ventas_por_cliente'].apply(
+            lambda x: f"${x:,.0f}" if x > 0 else "N/A"
+        )
+        df_ef_table['clientes_unicos'] = df_ef_table['clientes_unicos'].apply(
+            lambda x: f"{int(x)}" if x > 0 else "N/A"
+        )
+        
+        df_ef_table.columns = [
+            'Vendedor', 'Ventas Totales', 'Operaciones', 'Ticket Promedio',
+            'Clientes', 'Venta/Cliente', 'Clasificación'
+        ]
+        
+        st.dataframe(df_ef_table, use_container_width=True, hide_index=True)
+        
+        # Insights y recomendaciones
+        st.write("### 💡 Insights y Recomendaciones")
+        
+        elite = df_eficiencia_ventas[df_eficiencia_ventas['clasificacion'].str.contains('Elite')]
+        alto_vol = df_eficiencia_ventas[df_eficiencia_ventas['clasificacion'].str.contains('Alto Volumen') & 
+                                       ~df_eficiencia_ventas['clasificacion'].str.contains('Elite')]
+        alta_ef = df_eficiencia_ventas[df_eficiencia_ventas['clasificacion'].str.contains('Alta Eficiencia')]
+        en_desarrollo = df_eficiencia_ventas[df_eficiencia_ventas['clasificacion'].str.contains('Desarrollo')]
+        
+        col_ins1, col_ins2 = st.columns(2)
+        
+        with col_ins1:
+            if len(elite) > 0:
+                st.success(f"🌟 **Vendedores Elite ({len(elite)})**")
+                st.write("Mantienen alto volumen y alta eficiencia:")
+                for _, v in elite.iterrows():
+                    st.write(f"- {v['agente']}: ${v['total_ventas']:,.0f} ({v['operaciones']} ops)")
+            
+            if len(alto_vol) > 0:
+                st.info(f"📊 **Alto Volumen ({len(alto_vol)})**")
+                st.write("Oportunidad: Mejorar ticket promedio")
+                for _, v in alto_vol.head(3).iterrows():
+                    st.write(f"- {v['agente']}: {v['operaciones']} ops, ticket ${v['ticket_promedio']:,.0f}")
+        
+        with col_ins2:
+            if len(alta_ef) > 0:
+                st.info(f"💎 **Alta Eficiencia ({len(alta_ef)})**")
+                st.write("Oportunidad: Aumentar volumen de operaciones")
+                for _, v in alta_ef.head(3).iterrows():
+                    st.write(f"- {v['agente']}: Ticket ${v['ticket_promedio']:,.0f}, {v['operaciones']} ops")
+            
+            if len(en_desarrollo) > 0:
+                st.warning(f"🔄 **En Desarrollo ({len(en_desarrollo)})**")
+                st.write("Requieren capacitación y seguimiento:")
+                for _, v in en_desarrollo.head(3).iterrows():
+                    st.write(f"- {v['agente']}: ${v['total_ventas']:,.0f} total")
+        
+        st.write("---")
 
     # Gráficos por agente
     if "agente" in df.columns and not df.empty:
