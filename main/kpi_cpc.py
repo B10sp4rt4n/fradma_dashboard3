@@ -327,6 +327,214 @@ def run(archivo):
         
         st.write("---")
         
+        # =====================================================================
+        # FASE 3: ALERTAS INTELIGENTES Y PRIORIDADES DE COBRANZA
+        # =====================================================================
+        st.header("🚨 Alertas Inteligentes")
+        
+        alertas = []
+        
+        # Alerta 1: Clientes que superan umbral crítico ($50K)
+        umbral_critico = 50000
+        clientes_criticos = df_deudas.groupby('deudor')['saldo_adeudado'].sum()
+        clientes_sobre_umbral = clientes_criticos[clientes_criticos > umbral_critico]
+        
+        if len(clientes_sobre_umbral) > 0:
+            alertas.append({
+                'tipo': '⚠️ ALTO MONTO',
+                'mensaje': f"{len(clientes_sobre_umbral)} cliente(s) superan ${umbral_critico:,.0f} individual",
+                'detalle': ', '.join([f"{c} (${m:,.0f})" for c, m in clientes_sobre_umbral.head(3).items()]),
+                'prioridad': 'ALTA'
+            })
+        
+        # Alerta 2: Deuda >90 días significativa
+        if pct_alto_riesgo > 15:
+            alertas.append({
+                'tipo': '🔴 RIESGO CRÍTICO',
+                'mensaje': f"Deuda >90 días representa {pct_alto_riesgo:.1f}% del total",
+                'detalle': f"${deuda_alto_riesgo:,.2f} en alto riesgo de incobrabilidad",
+                'prioridad': 'URGENTE'
+            })
+        
+        # Alerta 3: Alta concentración
+        if pct_concentracion > 50:
+            top3_clientes = df_deudas.groupby('deudor')['saldo_adeudado'].sum().nlargest(3)
+            alertas.append({
+                'tipo': '📊 CONCENTRACIÓN',
+                'mensaje': f"Top 3 clientes concentran {pct_concentracion:.1f}% de la cartera",
+                'detalle': f"Riesgo alto de dependencia: {', '.join(top3_clientes.index.tolist())}",
+                'prioridad': 'MEDIA'
+            })
+        
+        # Alerta 4: Clientes con aumento significativo
+        # (Requeriría histórico - simulamos detección)
+        if 'dias_vencido' in df_deudas.columns:
+            clientes_deterioro = df_deudas[df_deudas['dias_vencido'] > 120].groupby('deudor')['saldo_adeudado'].sum()
+            if len(clientes_deterioro) > 0:
+                alertas.append({
+                    'tipo': '📈 DETERIORO',
+                    'mensaje': f"{len(clientes_deterioro)} cliente(s) con deuda >120 días",
+                    'detalle': f"Total en deterioro severo: ${clientes_deterioro.sum():,.2f}",
+                    'prioridad': 'ALTA'
+                })
+        
+        # Alerta 5: Score de salud bajo
+        if score_salud < 40:
+            alertas.append({
+                'tipo': '🏥 SALUD CRÍTICA',
+                'mensaje': f"Score de salud financiera: {score_salud:.0f}/100 ({score_status})",
+                'detalle': "Se requiere acción inmediata de recuperación",
+                'prioridad': 'URGENTE'
+            })
+        
+        # Mostrar alertas
+        if alertas:
+            # Ordenar por prioridad
+            prioridad_orden = {'URGENTE': 0, 'ALTA': 1, 'MEDIA': 2}
+            alertas_ordenadas = sorted(alertas, key=lambda x: prioridad_orden.get(x['prioridad'], 3))
+            
+            for alerta in alertas_ordenadas:
+                color = {
+                    'URGENTE': '#F44336',
+                    'ALTA': '#FF9800',
+                    'MEDIA': '#FFC107'
+                }.get(alerta['prioridad'], '#9E9E9E')
+                
+                st.markdown(
+                    f"""
+                    <div style="background-color:{color}20; border-left: 5px solid {color}; padding: 15px; margin: 10px 0; border-radius: 5px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <h4 style="margin: 0; color: {color};">{alerta['tipo']}</h4>
+                                <p style="margin: 5px 0 0 0; font-size: 16px; font-weight: bold;">{alerta['mensaje']}</p>
+                                <p style="margin: 5px 0 0 0; font-size: 14px; color: #666;">{alerta['detalle']}</p>
+                            </div>
+                            <span style="background-color: {color}; color: white; padding: 5px 15px; border-radius: 20px; font-weight: bold; font-size: 12px;">
+                                {alerta['prioridad']}
+                            </span>
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+        else:
+            st.success("✅ No hay alertas críticas. La cartera está bajo control.")
+        
+        st.write("---")
+        
+        # =====================================================================
+        # PRIORIDADES DE COBRANZA
+        # =====================================================================
+        st.header("📋 Prioridades de Cobranza")
+        
+        # Calcular score de prioridad para cada deudor
+        deudor_prioridad = []
+        
+        for deudor in df_deudas['deudor'].unique():
+            deudor_data = df_deudas[df_deudas['deudor'] == deudor]
+            monto_total = deudor_data['saldo_adeudado'].sum()
+            
+            # Calcular días promedio vencido
+            if 'dias_vencido' in deudor_data.columns:
+                dias_prom = deudor_data['dias_vencido'].mean()
+                dias_max = deudor_data['dias_vencido'].max()
+            else:
+                dias_prom = 0
+                dias_max = 0
+            
+            # Score de prioridad (0-100)
+            # Factores: monto (40%), días vencido (40%), cantidad documentos (20%)
+            score_monto = min((monto_total / 100000) * 100, 100) * 0.4
+            score_dias = min((dias_max / 180) * 100, 100) * 0.4
+            score_docs = min((len(deudor_data) / 10) * 100, 100) * 0.2
+            
+            score_prioridad = score_monto + score_dias + score_docs
+            
+            # Clasificar nivel
+            if score_prioridad >= 75:
+                nivel = "🔴 URGENTE"
+                nivel_num = 1
+            elif score_prioridad >= 50:
+                nivel = "🟠 ALTA"
+                nivel_num = 2
+            elif score_prioridad >= 25:
+                nivel = "🟡 MEDIA"
+                nivel_num = 3
+            else:
+                nivel = "🟢 BAJA"
+                nivel_num = 4
+            
+            deudor_prioridad.append({
+                'deudor': deudor,
+                'monto': monto_total,
+                'dias_max': dias_max,
+                'documentos': len(deudor_data),
+                'score': score_prioridad,
+                'nivel': nivel,
+                'nivel_num': nivel_num
+            })
+        
+        # Crear DataFrame y ordenar
+        df_prioridades = pd.DataFrame(deudor_prioridad)
+        df_prioridades = df_prioridades.sort_values(['nivel_num', 'score'], ascending=[True, False])
+        
+        # Mostrar top 10 prioridades
+        st.write("### 🎯 Top 10 Acciones Inmediatas")
+        
+        df_top_prioridades = df_prioridades.head(10)[['nivel', 'deudor', 'monto', 'dias_max', 'documentos', 'score']].copy()
+        df_top_prioridades['monto'] = df_top_prioridades['monto'].apply(lambda x: f"${x:,.2f}")
+        df_top_prioridades['dias_max'] = df_top_prioridades['dias_max'].apply(lambda x: f"{int(x)} días")
+        df_top_prioridades['score'] = df_top_prioridades['score'].apply(lambda x: f"{x:.1f}/100")
+        
+        df_top_prioridades.columns = ['Prioridad', 'Cliente', 'Monto Adeudado', 'Días Máx.', 'Docs.', 'Score']
+        
+        st.dataframe(
+            df_top_prioridades,
+            use_container_width=True,
+            hide_index=True
+        )
+        
+        # Resumen de acciones por nivel
+        col_acc1, col_acc2, col_acc3, col_acc4 = st.columns(4)
+        
+        urgente_count = len(df_prioridades[df_prioridades['nivel_num'] == 1])
+        alta_count = len(df_prioridades[df_prioridades['nivel_num'] == 2])
+        media_count = len(df_prioridades[df_prioridades['nivel_num'] == 3])
+        baja_count = len(df_prioridades[df_prioridades['nivel_num'] == 4])
+        
+        col_acc1.metric("🔴 Urgente", urgente_count, 
+                       delta=f"${df_prioridades[df_prioridades['nivel_num'] == 1]['monto'].sum():,.0f}")
+        col_acc2.metric("🟠 Alta", alta_count,
+                       delta=f"${df_prioridades[df_prioridades['nivel_num'] == 2]['monto'].sum():,.0f}")
+        col_acc3.metric("🟡 Media", media_count,
+                       delta=f"${df_prioridades[df_prioridades['nivel_num'] == 3]['monto'].sum():,.0f}")
+        col_acc4.metric("🟢 Baja", baja_count,
+                       delta=f"${df_prioridades[df_prioridades['nivel_num'] == 4]['monto'].sum():,.0f}")
+        
+        # Recomendaciones
+        st.write("### 💡 Recomendaciones de Acción")
+        st.markdown("""
+        **Para casos URGENTES (🔴):**
+        - Contacto inmediato con cliente
+        - Evaluación de plan de pagos o reestructuración
+        - Considerar suspensión de crédito hasta regularización
+        
+        **Para casos de prioridad ALTA (🟠):**
+        - Seguimiento telefónico en próximos 3 días
+        - Enviar estado de cuenta actualizado
+        - Establecer compromiso de pago con fecha específica
+        
+        **Para casos de prioridad MEDIA (🟡):**
+        - Recordatorio por correo electrónico
+        - Monitoreo semanal
+        
+        **Para casos de prioridad BAJA (🟢):**
+        - Seguimiento de rutina
+        - Mantener comunicación regular
+        """)
+        
+        st.write("---")
+        
         # Top 5 deudores con tabla mejorada
         st.dataframe(top_deudores.reset_index().rename(
             columns={'deudor': 'Cliente (Col F)', 'saldo_adeudado': 'Monto Adeudado ($)'}
