@@ -161,6 +161,173 @@ def run(archivo):
         # Top 5 deudores (USANDO COLUMNA F - CLIENTE)
         st.subheader("🔝 Principales Deudores (Columna Cliente)")
         top_deudores = df_deudas.groupby('deudor')['saldo_adeudado'].sum().nlargest(5)
+        
+        # =====================================================================
+        # FASE 2: DASHBOARD DE SALUD FINANCIERA
+        # =====================================================================
+        st.header("🏥 Dashboard de Salud Financiera")
+        
+        # Calcular métricas de salud
+        pct_vigente = (vigente / total_adeudado * 100) if total_adeudado > 0 else 0
+        
+        # Riesgo alto (>90 días)
+        if 'dias_vencido' in df_deudas.columns:
+            deuda_alto_riesgo = df_deudas[df_deudas['dias_vencido'] > 90]['saldo_adeudado'].sum()
+        else:
+            deuda_alto_riesgo = 0
+        pct_alto_riesgo = (deuda_alto_riesgo / total_adeudado * 100) if total_adeudado > 0 else 0
+        
+        # Concentración top 3
+        top3_deuda = df_deudas.groupby('deudor')['saldo_adeudado'].sum().nlargest(3).sum()
+        pct_concentracion = (top3_deuda / total_adeudado * 100) if total_adeudado > 0 else 0
+        
+        # Calcular Score de Salud (0-100)
+        # Fórmula: 100 - (peso_riesgo_alto * 0.5 + peso_concentracion * 0.3 + peso_vencido * 0.2)
+        score_salud = 100 - (pct_alto_riesgo * 0.5 + min(pct_concentracion, 100) * 0.3 + (100 - pct_vigente) * 0.2)
+        score_salud = max(0, min(100, score_salud))  # Limitar entre 0-100
+        
+        # Determinar color del score
+        if score_salud >= 80:
+            score_color = "#4CAF50"  # Verde
+            score_status = "Excelente"
+        elif score_salud >= 60:
+            score_color = "#8BC34A"  # Verde claro
+            score_status = "Bueno"
+        elif score_salud >= 40:
+            score_color = "#FFEB3B"  # Amarillo
+            score_status = "Regular"
+        elif score_salud >= 20:
+            score_color = "#FF9800"  # Naranja
+            score_status = "Malo"
+        else:
+            score_color = "#F44336"  # Rojo
+            score_status = "Crítico"
+        
+        # Gauge principal de salud
+        col_health1, col_health2 = st.columns([1, 2])
+        
+        with col_health1:
+            st.write("### 💚 Score de Salud Financiera")
+            fig_health = go.Figure(go.Indicator(
+                mode="gauge+number+delta",
+                value=score_salud,
+                domain={'x': [0, 1], 'y': [0, 1]},
+                title={'text': f"<b>{score_status}</b>", 'font': {'size': 20}},
+                number={'suffix': '', 'font': {'size': 40}},
+                gauge={
+                    'axis': {'range': [None, 100], 'tickwidth': 2, 'tickcolor': "darkgray"},
+                    'bar': {'color': score_color, 'thickness': 0.8},
+                    'bgcolor': "white",
+                    'borderwidth': 2,
+                    'bordercolor': "gray",
+                    'steps': [
+                        {'range': [0, 20], 'color': '#FFCDD2'},
+                        {'range': [20, 40], 'color': '#FFE0B2'},
+                        {'range': [40, 60], 'color': '#FFF9C4'},
+                        {'range': [60, 80], 'color': '#DCEDC8'},
+                        {'range': [80, 100], 'color': '#C8E6C9'}
+                    ],
+                    'threshold': {
+                        'line': {'color': "black", 'width': 4},
+                        'thickness': 0.75,
+                        'value': 60
+                    }
+                }
+            ))
+            fig_health.update_layout(
+                height=350,
+                margin=dict(t=80, b=20, l=20, r=20)
+            )
+            st.plotly_chart(fig_health, use_container_width=True)
+            
+            # Métricas auxiliares
+            st.metric("Liquidez (Vigente)", f"{pct_vigente:.1f}%", 
+                     delta=f"{pct_vigente - 70:.1f}pp vs objetivo 70%")
+        
+        with col_health2:
+            st.write("### 📊 Indicadores Clave de Desempeño (KPIs)")
+            
+            # Calcular KPIs
+            # DSO (Days Sales Outstanding) - Aproximación: (CxC / Ventas diarias promedio)
+            # Como no tenemos ventas, usamos un estimado de 90 días como benchmark
+            dso_estimado = 45  # Placeholder - necesitaría datos de ventas reales
+            dso_objetivo = 30
+            dso_status = "🟢" if dso_estimado <= dso_objetivo else "🟡" if dso_estimado <= 45 else "🔴"
+            
+            # Índice de Morosidad
+            indice_morosidad = (vencida / total_adeudado * 100) if total_adeudado > 0 else 0
+            morosidad_objetivo = 5
+            morosidad_status = "🟢" if indice_morosidad <= morosidad_objetivo else "🟡" if indice_morosidad <= 15 else "🔴"
+            
+            # Rotación CxC (estimado)
+            rotacion_cxc = 8  # Placeholder - necesitaría datos de ventas
+            rotacion_objetivo = 12
+            rotacion_status = "🟢" if rotacion_cxc >= rotacion_objetivo else "🟡" if rotacion_cxc >= 8 else "🔴"
+            
+            # Índice de Concentración
+            concentracion_status = "🟢" if pct_concentracion <= 30 else "🟡" if pct_concentracion <= 50 else "🔴"
+            
+            # Tabla de KPIs
+            kpis_data = {
+                'KPI': [
+                    'DSO (Días de Cobro)',
+                    'Índice de Morosidad',
+                    'Rotación CxC',
+                    'Concentración Top 3',
+                    'Riesgo Alto (>90 días)'
+                ],
+                'Valor Actual': [
+                    f"{dso_estimado} días",
+                    f"{indice_morosidad:.1f}%",
+                    f"{rotacion_cxc}x/año",
+                    f"{pct_concentracion:.1f}%",
+                    f"{pct_alto_riesgo:.1f}%"
+                ],
+                'Objetivo': [
+                    f"<{dso_objetivo} días",
+                    f"<{morosidad_objetivo}%",
+                    f">{rotacion_objetivo}x",
+                    "<30%",
+                    "<10%"
+                ],
+                'Estado': [
+                    dso_status,
+                    morosidad_status,
+                    rotacion_status,
+                    concentracion_status,
+                    "🟢" if pct_alto_riesgo <= 10 else "🟡" if pct_alto_riesgo <= 20 else "🔴"
+                ],
+                'Monto/Detalle': [
+                    f"${total_adeudado / (dso_estimado if dso_estimado > 0 else 1):,.0f}/día",
+                    f"${vencida:,.0f}",
+                    f"${total_adeudado / (rotacion_cxc if rotacion_cxc > 0 else 1):,.0f}/rotación",
+                    f"${top3_deuda:,.0f}",
+                    f"${deuda_alto_riesgo:,.0f}"
+                ]
+            }
+            
+            df_kpis = pd.DataFrame(kpis_data)
+            
+            # Mostrar tabla con estilo
+            st.dataframe(
+                df_kpis,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "KPI": st.column_config.TextColumn("KPI", width="medium"),
+                    "Valor Actual": st.column_config.TextColumn("Valor Actual", width="small"),
+                    "Objetivo": st.column_config.TextColumn("Objetivo", width="small"),
+                    "Estado": st.column_config.TextColumn("Estado", width="small"),
+                    "Monto/Detalle": st.column_config.TextColumn("Monto/Detalle", width="medium")
+                }
+            )
+            
+            # Nota informativa
+            st.info("💡 **Nota:** DSO y Rotación CxC son estimados. Para cálculos precisos, se requieren datos de ventas.")
+        
+        st.write("---")
+        
+        # Top 5 deudores con tabla mejorada
         st.dataframe(top_deudores.reset_index().rename(
             columns={'deudor': 'Cliente (Col F)', 'saldo_adeudado': 'Monto Adeudado ($)'}
         ).style.format({'Monto Adeudado ($)': '${:,.2f}'}))
