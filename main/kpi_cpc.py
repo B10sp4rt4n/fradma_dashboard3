@@ -969,16 +969,218 @@ def run(archivo):
         cols = [c for c in cols if c in deudor_df.columns]
         st.dataframe(deudor_df[cols].sort_values('fecha_vencimiento', ascending=False))
 
+        # =====================================================================
+        # FASE 5: EXPORTACIÓN Y REPORTES
+        # =====================================================================
+        st.header("📥 Exportación y Reportes")
+        
+        col_export1, col_export2 = st.columns(2)
+        
+        with col_export1:
+            st.subheader("📊 Reporte Excel Completo")
+            st.write("Descarga análisis completo en Excel con múltiples hojas:")
+            
+            # Crear Excel con múltiples hojas
+            from io import BytesIO
+            
+            buffer = BytesIO()
+            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                # Hoja 1: Resumen Ejecutivo
+                resumen_data = {
+                    'Métrica': [
+                        'Total Adeudado',
+                        'Cartera Vigente',
+                        'Deuda Vencida',
+                        'Score de Salud',
+                        'Índice de Morosidad',
+                        'Concentración Top 3',
+                        'Riesgo Alto (>90 días)',
+                        'Principal Deudor',
+                        'Monto Principal Deudor'
+                    ],
+                    'Valor': [
+                        f"${total_adeudado:,.2f}",
+                        f"${vigente:,.2f}",
+                        f"${vencida:,.2f}",
+                        f"{score_salud:.1f}/100 ({score_status})",
+                        f"{indice_morosidad:.1f}%",
+                        f"{pct_concentracion:.1f}%",
+                        f"{pct_alto_riesgo:.1f}% (${deuda_alto_riesgo:,.2f})",
+                        top_deudores.index[0],
+                        f"${top_deudores.iloc[0]:,.2f}"
+                    ]
+                }
+                df_resumen = pd.DataFrame(resumen_data)
+                df_resumen.to_excel(writer, sheet_name='Resumen Ejecutivo', index=False)
+                
+                # Hoja 2: Detalle Completo
+                df_detalle_export = df_deudas[['deudor', 'saldo_adeudado', 'estatus', 'origen']].copy()
+                if 'dias_vencido' in df_deudas.columns:
+                    df_detalle_export['dias_vencido'] = df_deudas['dias_vencido']
+                if 'vendedor' in df_deudas.columns:
+                    df_detalle_export['vendedor'] = df_deudas['vendedor']
+                if col_linea in df_deudas.columns:
+                    df_detalle_export['linea_negocio'] = df_deudas[col_linea]
+                df_detalle_export.to_excel(writer, sheet_name='Detalle Completo', index=False)
+                
+                # Hoja 3: Top Deudores
+                df_top_export = top_deudores.reset_index()
+                df_top_export.columns = ['Cliente', 'Saldo Adeudado']
+                df_top_export.to_excel(writer, sheet_name='Top Deudores', index=False)
+                
+                # Hoja 4: Prioridades de Cobranza
+                df_prioridades[['nivel', 'deudor', 'monto', 'dias_max', 'documentos', 'score']].to_excel(
+                    writer, sheet_name='Prioridades', index=False
+                )
+                
+                # Hoja 5: Por Línea de Negocio (si existe)
+                if 'df_lineas_metricas' in locals():
+                    df_lineas_metricas.to_excel(writer, sheet_name='Por Línea Negocio', index=False)
+                
+                # Hoja 6: Alertas
+                if alertas:
+                    df_alertas = pd.DataFrame(alertas)
+                    df_alertas.to_excel(writer, sheet_name='Alertas', index=False)
+            
+            buffer.seek(0)
+            
+            st.download_button(
+                label="📥 Descargar Reporte Excel",
+                data=buffer.getvalue(),
+                file_name=f"reporte_cxc_fradma_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                help="Descarga reporte completo con todas las hojas de análisis"
+            )
+        
+        with col_export2:
+            st.subheader("📄 Plantillas de Cobranza")
+            st.write("Genera cartas personalizadas de cobranza:")
+            
+            # Selector de cliente para carta
+            cliente_carta = st.selectbox(
+                "Seleccionar cliente para carta:",
+                options=df_prioridades['deudor'].head(20).tolist(),
+                help="Selecciona un cliente de las prioridades de cobranza"
+            )
+            
+            if cliente_carta:
+                cliente_info = df_deudas[df_deudas['deudor'] == cliente_carta].iloc[0]
+                monto_cliente = df_deudas[df_deudas['deudor'] == cliente_carta]['saldo_adeudado'].sum()
+                
+                if 'dias_vencido' in df_deudas.columns:
+                    dias_vencido_max = df_deudas[df_deudas['deudor'] == cliente_carta]['dias_vencido'].max()
+                else:
+                    dias_vencido_max = 0
+                
+                # Determinar tono de la carta según prioridad
+                prioridad_cliente = df_prioridades[df_prioridades['deudor'] == cliente_carta]['nivel'].iloc[0]
+                
+                if "URGENTE" in prioridad_cliente:
+                    tono = "Urgente - Última Notificación"
+                    apertura = "Por medio de la presente, nos dirigimos a usted con carácter de URGENTE"
+                elif "ALTA" in prioridad_cliente:
+                    tono = "Recordatorio Formal"
+                    apertura = "Por medio de la presente, nos permitimos recordarle"
+                else:
+                    tono = "Recordatorio Amistoso"
+                    apertura = "Nos comunicamos con usted para recordarle amablemente"
+                
+                # Generar carta
+                carta = f"""
+**CARTA DE COBRANZA - {tono.upper()}**
+
+Fecha: {datetime.now().strftime('%d de %B de %Y')}
+
+Estimado(a) Cliente: **{cliente_carta}**
+
+{apertura} que a la fecha mantiene un saldo pendiente de pago con nuestra empresa.
+
+**DETALLE DE LA DEUDA:**
+
+- **Monto Total Adeudado:** ${monto_cliente:,.2f} USD
+- **Días de Vencimiento:** {int(dias_vencido_max)} días
+- **Estado:** {prioridad_cliente}
+
+De acuerdo con nuestros registros, el saldo pendiente corresponde a facturas vencidas que requieren su atención inmediata.
+
+**ACCIONES REQUERIDAS:**
+
+{"⚠️ **ACCIÓN INMEDIATA REQUERIDA:** Le solicitamos contactar a nuestro departamento de crédito y cobranza en las próximas 48 horas para regularizar su situación. De lo contrario, nos veremos en la necesidad de suspender el crédito y/o iniciar acciones legales correspondientes." if "URGENTE" in prioridad_cliente else ""}
+
+{"Le solicitamos ponerse en contacto con nosotros en un plazo no mayor a 5 días hábiles para establecer un plan de pagos o regularizar su situación." if "ALTA" in prioridad_cliente else ""}
+
+{"Le agradeceremos realizar el pago correspondiente a la brevedad posible o contactarnos para cualquier aclaración." if "MEDIA" in prioridad_cliente or "BAJA" in prioridad_cliente else ""}
+
+**DATOS DE CONTACTO:**
+
+- Departamento: Crédito y Cobranza
+- Email: cobranza@fradma.com
+- Teléfono: (XXX) XXX-XXXX
+- Horario: Lunes a Viernes, 9:00 AM - 6:00 PM
+
+Agradecemos su pronta atención y quedamos a su disposición para cualquier aclaración.
+
+Atentamente,
+
+**FRADMA**
+Departamento de Crédito y Cobranza
+
+---
+*Este documento es un recordatorio generado automáticamente. Para mayor información, favor de contactar a nuestro departamento.*
+"""
+                
+                st.text_area(
+                    "Vista previa de carta:",
+                    carta,
+                    height=400,
+                    help="Puedes copiar y personalizar esta carta"
+                )
+                
+                # Botón para descargar carta en txt
+                st.download_button(
+                    label="📄 Descargar Carta (.txt)",
+                    data=carta,
+                    file_name=f"carta_cobranza_{cliente_carta.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.txt",
+                    mime="text/plain"
+                )
+        
+        st.write("---")
+
         # Resumen ejecutivo
-        st.subheader("📝 Resumen Ejecutivo")
-        st.write(f"Fradma tiene **${total_adeudado:,.2f}** en deudas pendientes de cobro")
-        st.write(f"El principal deudor es **{top_deudores.index[0]}** con **${top_deudores.iloc[0]:,.2f}**")
+        st.subheader("📝 Resumen Ejecutivo para Dirección")
+        
+        # Crear resumen en formato de reporte ejecutivo
+        col_resumen1, col_resumen2, col_resumen3 = st.columns(3)
+        
+        with col_resumen1:
+            st.metric("💰 Cartera Total", f"${total_adeudado:,.2f}")
+            st.metric("📊 Calificación", f"{score_salud:.0f}/100")
+            st.caption(f"**{score_status}**")
+        
+        with col_resumen2:
+            st.metric("✅ Vigente", f"{pct_vigente:.1f}%")
+            st.metric("⚠️ Vencida", f"{pct_alto_riesgo:.1f}%")
+            st.caption("Alto riesgo >90 días")
+        
+        with col_resumen3:
+            st.metric("🎯 Casos Urgentes", urgente_count)
+            st.metric("📈 Morosidad", f"{indice_morosidad:.1f}%")
+            st.caption(f"${vencida:,.0f}")
+        
+        st.write("**Observaciones Clave:**")
+        st.write(f"- Fradma tiene **${total_adeudado:,.2f}** en cuentas por cobrar")
+        st.write(f"- El principal deudor es **{top_deudores.index[0]}** con **${top_deudores.iloc[0]:,.2f}** ({(top_deudores.iloc[0]/total_adeudado*100):.1f}% del total)")
         
         if 'dias_vencido' in df_deudas.columns:
-            deuda_vencida = df_deudas[df_deudas['dias_vencido'] > 0]['saldo_adeudado'].sum()
-            st.write(f"- **${deuda_vencida:,.2f} en deuda vencida**")
+            deuda_vencida_total = df_deudas[df_deudas['dias_vencido'] > 0]['saldo_adeudado'].sum()
+            st.write(f"- **${deuda_vencida_total:,.2f}** en deuda vencida ({(deuda_vencida_total/total_adeudado*100):.1f}% del total)")
         
-        st.write("Este reporte se basa en la columna 'Cliente' (F) para identificar deudores.")
+        st.write(f"- **{urgente_count} casos** requieren acción urgente inmediata")
+        
+        if alertas:
+            st.write(f"- **{len(alertas)} alertas** activas requieren atención")
+        
+        st.info("📌 Este reporte se basa en la columna 'Cliente' (F) para identificar deudores.")
 
     except Exception as e:
         st.error(f"❌ Error crítico: {str(e)}")
