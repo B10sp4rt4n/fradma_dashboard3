@@ -542,6 +542,205 @@ def run(archivo):
         
         # Gráfico de concentración
         st.bar_chart(top_deudores)
+        
+        # =====================================================================
+        # FASE 4: ANÁLISIS POR LÍNEA DE NEGOCIO
+        # =====================================================================
+        if 'linea_negocio' in df_deudas.columns or 'linea_de_negocio' in df_deudas.columns:
+            st.header("🏭 Análisis por Línea de Negocio")
+            
+            # Normalizar nombre de columna
+            col_linea = 'linea_negocio' if 'linea_negocio' in df_deudas.columns else 'linea_de_negocio'
+            
+            # Limpiar valores nulos
+            df_lineas = df_deudas[df_deudas[col_linea].notna()].copy()
+            
+            if len(df_lineas) > 0:
+                # Calcular métricas por línea
+                lineas_metricas = []
+                
+                for linea in df_lineas[col_linea].unique():
+                    linea_data = df_lineas[df_lineas[col_linea] == linea]
+                    total_linea = linea_data['saldo_adeudado'].sum()
+                    
+                    # Calcular vencido de esta línea
+                    if 'dias_vencido' in linea_data.columns:
+                        vencido_linea = linea_data[linea_data['dias_vencido'] > 0]['saldo_adeudado'].sum()
+                        pct_morosidad = (vencido_linea / total_linea * 100) if total_linea > 0 else 0
+                        alto_riesgo_linea = linea_data[linea_data['dias_vencido'] > 90]['saldo_adeudado'].sum()
+                        pct_alto_riesgo = (alto_riesgo_linea / total_linea * 100) if total_linea > 0 else 0
+                    else:
+                        pct_morosidad = 0
+                        pct_alto_riesgo = 0
+                    
+                    # Concentración (top cliente de la línea)
+                    top_cliente_linea = linea_data.groupby('deudor')['saldo_adeudado'].sum().max()
+                    pct_concentracion_linea = (top_cliente_linea / total_linea * 100) if total_linea > 0 else 0
+                    
+                    lineas_metricas.append({
+                        'linea': linea,
+                        'total': total_linea,
+                        'pct_morosidad': pct_morosidad,
+                        'pct_alto_riesgo': pct_alto_riesgo,
+                        'pct_concentracion': pct_concentracion_linea,
+                        'clientes': linea_data['deudor'].nunique(),
+                        'docs': len(linea_data)
+                    })
+                
+                df_lineas_metricas = pd.DataFrame(lineas_metricas)
+                df_lineas_metricas = df_lineas_metricas.sort_values('total', ascending=False)
+                
+                # Gauges por línea de negocio
+                st.write("### 🎯 Indicadores por Línea de Negocio")
+                
+                # Mostrar gauges de CxC por línea (top 6)
+                top_lineas = df_lineas_metricas.head(6)
+                
+                for i in range(0, len(top_lineas), 3):
+                    cols_linea = st.columns(3)
+                    
+                    for j in range(3):
+                        if i + j < len(top_lineas):
+                            row = top_lineas.iloc[i + j]
+                            linea = row['linea']
+                            total = row['total']
+                            pct_total = (total / total_adeudado * 100) if total_adeudado > 0 else 0
+                            morosidad = row['pct_morosidad']
+                            
+                            # Color según morosidad
+                            if morosidad < 10:
+                                color_linea = "#4CAF50"
+                            elif morosidad < 25:
+                                color_linea = "#FFEB3B"
+                            elif morosidad < 50:
+                                color_linea = "#FF9800"
+                            else:
+                                color_linea = "#F44336"
+                            
+                            with cols_linea[j]:
+                                fig_linea = go.Figure(go.Indicator(
+                                    mode="gauge+number",
+                                    value=pct_total,
+                                    domain={'x': [0, 1], 'y': [0, 1]},
+                                    title={'text': f"<b>{linea}</b><br>${total:,.0f}", 'font': {'size': 12}},
+                                    number={'suffix': '%', 'font': {'size': 18}},
+                                    gauge={
+                                        'axis': {'range': [None, 100], 'tickwidth': 1},
+                                        'bar': {'color': color_linea, 'thickness': 0.75},
+                                        'bgcolor': "white",
+                                        'borderwidth': 1,
+                                        'bordercolor': "gray",
+                                        'steps': [
+                                            {'range': [0, 25], 'color': '#E8F5E9'},
+                                            {'range': [25, 50], 'color': '#FFF9C4'},
+                                            {'range': [50, 100], 'color': '#FFEBEE'}
+                                        ]
+                                    }
+                                ))
+                                fig_linea.update_layout(
+                                    height=200,
+                                    margin=dict(t=60, b=10, l=10, r=10)
+                                )
+                                st.plotly_chart(fig_linea, use_container_width=True)
+                                st.caption(f"Morosidad: {morosidad:.1f}% | Clientes: {row['clientes']}")
+                
+                st.write("---")
+                
+                # Tabla comparativa de líneas
+                st.write("### 📊 Comparativa de Líneas de Negocio")
+                
+                df_comparativa = df_lineas_metricas.copy()
+                df_comparativa['% del Total'] = (df_comparativa['total'] / total_adeudado * 100)
+                
+                # Agregar semáforos de morosidad
+                df_comparativa['Alerta Morosidad'] = df_comparativa['pct_morosidad'].apply(
+                    lambda x: "🟢" if x < 10 else "🟡" if x < 25 else "🟠" if x < 50 else "🔴"
+                )
+                
+                df_comparativa['Alerta Riesgo Alto'] = df_comparativa['pct_alto_riesgo'].apply(
+                    lambda x: "🟢" if x < 5 else "🟡" if x < 15 else "🟠" if x < 30 else "🔴"
+                )
+                
+                # Formatear para display
+                df_display = df_comparativa[[
+                    'linea', 'total', '% del Total', 'pct_morosidad', 
+                    'Alerta Morosidad', 'pct_alto_riesgo', 'Alerta Riesgo Alto',
+                    'pct_concentracion', 'clientes', 'docs'
+                ]].copy()
+                
+                df_display['total'] = df_display['total'].apply(lambda x: f"${x:,.2f}")
+                df_display['% del Total'] = df_display['% del Total'].apply(lambda x: f"{x:.1f}%")
+                df_display['pct_morosidad'] = df_display['pct_morosidad'].apply(lambda x: f"{x:.1f}%")
+                df_display['pct_alto_riesgo'] = df_display['pct_alto_riesgo'].apply(lambda x: f"{x:.1f}%")
+                df_display['pct_concentracion'] = df_display['pct_concentracion'].apply(lambda x: f"{x:.1f}%")
+                
+                df_display.columns = [
+                    'Línea', 'Monto Total', '% Total', 'Morosidad', '🚦',
+                    'Riesgo Alto', '🚦', 'Concentración', 'Clientes', 'Docs'
+                ]
+                
+                st.dataframe(df_display, use_container_width=True, hide_index=True)
+                
+                # Identificar líneas problemáticas
+                st.write("### ⚠️ Líneas que Requieren Atención")
+                
+                lineas_problematicas = df_lineas_metricas[
+                    (df_lineas_metricas['pct_morosidad'] > 25) | 
+                    (df_lineas_metricas['pct_alto_riesgo'] > 15)
+                ].copy()
+                
+                if len(lineas_problematicas) > 0:
+                    for _, linea_prob in lineas_problematicas.iterrows():
+                        problemas = []
+                        if linea_prob['pct_morosidad'] > 25:
+                            problemas.append(f"Morosidad alta: {linea_prob['pct_morosidad']:.1f}%")
+                        if linea_prob['pct_alto_riesgo'] > 15:
+                            problemas.append(f"Riesgo alto: {linea_prob['pct_alto_riesgo']:.1f}%")
+                        if linea_prob['pct_concentracion'] > 50:
+                            problemas.append(f"Alta concentración: {linea_prob['pct_concentracion']:.1f}%")
+                        
+                        st.warning(f"**{linea_prob['linea']}**: {' | '.join(problemas)}")
+                else:
+                    st.success("✅ Todas las líneas de negocio están dentro de parámetros aceptables")
+                
+                # Gráfico de comparación
+                st.write("### 📈 Comparación Visual por Línea")
+                
+                col_chart1, col_chart2 = st.columns(2)
+                
+                with col_chart1:
+                    # Gráfico de monto por línea
+                    fig_monto_lineas = px.bar(
+                        df_lineas_metricas,
+                        x='linea',
+                        y='total',
+                        title='Monto CxC por Línea de Negocio',
+                        labels={'linea': 'Línea', 'total': 'Monto ($)'},
+                        color='pct_morosidad',
+                        color_continuous_scale=['green', 'yellow', 'orange', 'red']
+                    )
+                    fig_monto_lineas.update_layout(height=400)
+                    st.plotly_chart(fig_monto_lineas, use_container_width=True)
+                
+                with col_chart2:
+                    # Gráfico de morosidad por línea
+                    fig_morosidad_lineas = px.bar(
+                        df_lineas_metricas,
+                        x='linea',
+                        y='pct_morosidad',
+                        title='Índice de Morosidad por Línea',
+                        labels={'linea': 'Línea', 'pct_morosidad': 'Morosidad (%)'},
+                        color='pct_morosidad',
+                        color_continuous_scale=['green', 'yellow', 'orange', 'red']
+                    )
+                    fig_morosidad_lineas.update_layout(height=400)
+                    st.plotly_chart(fig_morosidad_lineas, use_container_width=True)
+                
+                st.write("---")
+            else:
+                st.info("ℹ️ No hay datos de línea de negocio disponibles para análisis")
+        else:
+            st.info("ℹ️ No se encontró información de línea de negocio en los datos")
 
         # Análisis de riesgo por antigüedad
         st.subheader("📅 Perfil de Riesgo por Antigüedad")
