@@ -71,7 +71,11 @@ def run(df):
             else:
                 return ""
             
-            year_short = str(int(year_val))[-2:]
+            # Validar que year_val no sea NaN
+            if pd.isna(year_val):
+                return ""
+            
+            year_short = str(int(float(year_val)))[-2:]
             
             # Obtener mes de forma segura
             if 'fecha' in row.index and pd.notna(row['fecha']):
