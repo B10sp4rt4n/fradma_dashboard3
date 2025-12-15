@@ -1,0 +1,25 @@
+{
+  "_comentario": "Archivo de configuración para mapear variantes de nombres a valores estandarizados",
+  "_estructura": {
+    "columna": {
+      "nombre_estandarizado": ["variante1", "variante2", "variante3"]
+    }
+  },
+  "_ejemplo": {
+    "agente": {
+      "jose garcia": ["José García", "JOSE GARCIA", "jose garcia", "Jose Garcia"]
+    }
+  },
+  
+  "agente": {
+    "_instrucciones": "Agregar aquí las variantes de nombres de agentes/vendedores"
+  },
+  
+  "linea_producto": {
+    "_instrucciones": "Agregar aquí las variantes de líneas de producto"
+  },
+  
+  "cliente": {
+    "_instrucciones": "Agregar aquí las variantes de nombres de clientes"
+  }
+}

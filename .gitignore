@@ -20,6 +20,14 @@ ENV/
 env.bak/
 venv.bak/
 
+# Testing
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+
 # Streamlit y logs
 .streamlit/
 *.log
@@ -37,3 +45,7 @@ data/*.csv
 # IDEs
 .vscode/
 .idea/
+
+# Backups (no deberían estar en repo)
+backups/
+*_backup*.py

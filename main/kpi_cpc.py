@@ -5,6 +5,20 @@ from unidecode import unidecode
 from datetime import datetime
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+import plotly.graph_objects as go
+import plotly.express as px
+
+# Importar utilidades centralizadas
+from utils.constantes import (
+    UmbralesCxC, ScoreSalud, PrioridadCobranza, ConfigVisualizacion,
+    BINS_ANTIGUEDAD, LABELS_ANTIGUEDAD, COLORES_ANTIGUEDAD,
+    BINS_ANTIGUEDAD_AGENTES, LABELS_ANTIGUEDAD_AGENTES, COLORES_ANTIGUEDAD_AGENTES
+)
+from utils.cxc_helper import (
+    calcular_dias_overdue, preparar_datos_cxc, calcular_metricas_basicas,
+    calcular_score_salud, clasificar_score_salud, clasificar_antiguedad,
+    obtener_semaforo_morosidad, obtener_semaforo_riesgo, obtener_semaforo_concentracion
+)
 
 def normalizar_columnas(df):
     nuevas_columnas = []
@@ -110,105 +124,720 @@ def run(archivo):
         df_deudas['saldo_adeudado'] = pd.to_numeric(saldo_limpio, errors='coerce').fillna(0)
 
         # ---------------------------------------------------------------------
+        # Normalización de CxC alineada con Reporte Ejecutivo usando funciones helper
+        # ---------------------------------------------------------------------
+        df_deudas, df_np, mask_pagado = preparar_datos_cxc(df_deudas)
+
+        # ---------------------------------------------------------------------
         # REPORTE DE DEUDAS A FRADMA (USANDO COLUMNA CORRECTA)
         # ---------------------------------------------------------------------
         st.header("📊 Reporte de Deudas a Fradma")
         
-        # KPIs principales
-        total_adeudado = df_deudas['saldo_adeudado'].sum()
-        col1, col2 = st.columns(2)
-        col1.metric("Total Adeudado a Fradma", f"${total_adeudado:,.2f}")
+        # KPIs principales usando función helper
+        metricas = calcular_metricas_basicas(df_np)
+        total_adeudado = metricas['total_adeudado']
+        vigente = metricas['vigente']
+        vencida = metricas['vencida']
+        vencida_0_30 = metricas['vencida_0_30']
+        critica = metricas['critica']
+        deuda_alto_riesgo = metricas['alto_riesgo']
         
-        # Calcular vencimientos
-        try:
-            mask_vencida = df_deudas['estatus'].str.contains('VENCID', na=False)
-            vencida = df_deudas[mask_vencida]['saldo_adeudado'].sum()
-            col2.metric("Deuda Vencida", f"${vencida:,.2f}", 
-                       delta=f"{(vencida/total_adeudado*100):.1f}%",
-                       delta_color="inverse")
-        except:
-            vencida = 0
+        # Métricas principales en columnas
+        col1, col2, col3 = st.columns(3)
+        col1.metric("💰 Total Adeudado a Fradma", f"${total_adeudado:,.2f}")
+        col2.metric("✅ Cartera Vigente", f"${vigente:,.2f}", 
+                   delta=f"{(vigente/total_adeudado*100):.1f}%")
+        col3.metric("⚠️ Deuda Vencida", f"${vencida:,.2f}", 
+                   delta=f"{(vencida/total_adeudado*100):.1f}%",
+                   delta_color="inverse")
+        
+        # Pie Chart: Vigente vs Vencido
+        st.subheader("📊 Distribución General de Cartera")
+        col_pie1, col_pie2 = st.columns(2)
+        
+        with col_pie1:
+            st.write("**Vigente vs Vencido**")
+            fig_vigente = go.Figure(data=[go.Pie(
+                labels=['Vigente', 'Vencido'],
+                values=[vigente, vencida],
+                marker=dict(colors=['#4CAF50', '#F44336']),
+                hole=0.4,
+                textinfo='label+percent',
+                textposition='outside'
+            )])
+            fig_vigente.update_layout(
+                showlegend=True,
+                height=350,
+                margin=dict(t=20, b=20, l=20, r=20)
+            )
+            st.plotly_chart(fig_vigente, width='stretch')
 
         # Top 5 deudores (USANDO COLUMNA F - CLIENTE)
         st.subheader("🔝 Principales Deudores (Columna Cliente)")
-        top_deudores = df_deudas.groupby('deudor')['saldo_adeudado'].sum().nlargest(5)
+        top_deudores = df_np.groupby('deudor')['saldo_adeudado'].sum().nlargest(5)
+        
+        # =====================================================================
+        # FASE 2: DASHBOARD DE SALUD FINANCIERA
+        # =====================================================================
+        st.header("🏥 Dashboard de Salud Financiera")
+        
+        # Calcular métricas de salud
+        pct_vigente = metricas['pct_vigente']
+        pct_critica = metricas['pct_critica']
+        pct_vencida_total = metricas['pct_vencida']
+        pct_alto_riesgo = metricas['pct_alto_riesgo']
+        
+        # Concentración top 3
+        top3_deuda = df_np.groupby('deudor')['saldo_adeudado'].sum().nlargest(3).sum()
+        pct_concentracion = (top3_deuda / total_adeudado * 100) if total_adeudado > 0 else 0
+        
+        # Score usando función helper
+        score_salud = calcular_score_salud(pct_vigente, pct_critica)
+        score_status, score_color = clasificar_score_salud(score_salud)
+        
+        # Gauge principal de salud
+        col_health1, col_health2 = st.columns([1, 2])
+        
+        with col_health1:
+            st.write("### 💚 Score de Salud Financiera")
+            fig_health = go.Figure(go.Indicator(
+                mode="gauge+number+delta",
+                value=score_salud,
+                domain={'x': [0, 1], 'y': [0, 1]},
+                title={'text': f"<b>{score_status}</b>", 'font': {'size': 20}},
+                number={'suffix': '', 'font': {'size': 40}},
+                gauge={
+                    'axis': {'range': [None, 100], 'tickwidth': 2, 'tickcolor': "darkgray"},
+                    'bar': {'color': score_color, 'thickness': 0.8},
+                    'bgcolor': "white",
+                    'borderwidth': 2,
+                    'bordercolor': "gray",
+                    'steps': [
+                        {'range': [0, 20], 'color': '#FFCDD2'},
+                        {'range': [20, 40], 'color': '#FFE0B2'},
+                        {'range': [40, 60], 'color': '#FFF9C4'},
+                        {'range': [60, 80], 'color': '#DCEDC8'},
+                        {'range': [80, 100], 'color': '#C8E6C9'}
+                    ],
+                    'threshold': {
+                        'line': {'color': "black", 'width': 4},
+                        'thickness': 0.75,
+                        'value': 60
+                    }
+                }
+            ))
+            fig_health.update_layout(
+                height=350,
+                margin=dict(t=80, b=20, l=20, r=20)
+            )
+            st.plotly_chart(fig_health, width='stretch')
+            
+            # Métricas auxiliares
+            st.metric("Liquidez (Vigente)", f"{pct_vigente:.1f}%", 
+                     delta=f"{pct_vigente - 70:.1f}pp vs objetivo 70%")
+        
+        with col_health2:
+            st.write("### 📊 Indicadores Clave de Desempeño (KPIs)")
+            
+            # Calcular KPIs
+            # DSO (Days Sales Outstanding) - Aproximación: (CxC / Ventas diarias promedio)
+            # Como no tenemos ventas, usamos un estimado de 90 días como benchmark
+            dso_estimado = UmbralesCxC.DSO_ACEPTABLE  # Placeholder - necesitaría datos de ventas reales
+            dso_objetivo = UmbralesCxC.DSO_OBJETIVO
+            dso_status = "🟢" if dso_estimado <= dso_objetivo else "🟡" if dso_estimado <= UmbralesCxC.DSO_ACEPTABLE else "🔴"
+            
+            # Índice de Morosidad (alineado: % vencida total sobre cartera no pagada)
+            indice_morosidad = pct_vencida_total
+            morosidad_objetivo = UmbralesCxC.MOROSIDAD_OBJETIVO
+            morosidad_status = obtener_semaforo_morosidad(indice_morosidad)
+            
+            # Rotación CxC (estimado)
+            rotacion_cxc = UmbralesCxC.ROTACION_CXC_MINIMO  # Placeholder - necesitaría datos de ventas
+            rotacion_objetivo = UmbralesCxC.ROTACION_CXC_OBJETIVO
+            rotacion_status = "🟢" if rotacion_cxc >= rotacion_objetivo else "🟡" if rotacion_cxc >= UmbralesCxC.ROTACION_CXC_MINIMO else "🔴"
+            
+            # Índice de Concentración
+            concentracion_status = obtener_semaforo_concentracion(pct_concentracion)
+            
+            # Tabla de KPIs
+            kpis_data = {
+                'KPI': [
+                    'DSO (Días de Cobro)',
+                    'Índice de Morosidad',
+                    'Rotación CxC',
+                    'Concentración Top 3',
+                    'Riesgo Alto (>90 días)'
+                ],
+                'Valor Actual': [
+                    f"{dso_estimado} días",
+                    f"{indice_morosidad:.1f}%",
+                    f"{rotacion_cxc}x/año",
+                    f"{pct_concentracion:.1f}%",
+                    f"{pct_alto_riesgo:.1f}%"
+                ],
+                'Objetivo': [
+                    f"<{dso_objetivo} días",
+                    f"<{morosidad_objetivo}%",
+                    f">{rotacion_objetivo}x",
+                    "<30%",
+                    "<10%"
+                ],
+                'Estado': [
+                    dso_status,
+                    morosidad_status,
+                    rotacion_status,
+                    concentracion_status,
+                    "🟢" if pct_alto_riesgo <= 10 else "🟡" if pct_alto_riesgo <= 20 else "🔴"
+                ],
+                'Monto/Detalle': [
+                    f"${total_adeudado / (dso_estimado if dso_estimado > 0 else 1):,.2f}/día",
+                    f"${vencida:,.2f}",
+                    f"${total_adeudado / (rotacion_cxc if rotacion_cxc > 0 else 1):,.2f}/rotación",
+                    f"${top3_deuda:,.2f}",
+                    f"${deuda_alto_riesgo:,.2f}"
+                ]
+            }
+            
+            df_kpis = pd.DataFrame(kpis_data)
+            
+            # Mostrar tabla con estilo
+            st.dataframe(
+                df_kpis,
+                width='stretch',
+                hide_index=True,
+                column_config={
+                    "KPI": st.column_config.TextColumn("KPI", width="medium"),
+                    "Valor Actual": st.column_config.TextColumn("Valor Actual", width="small"),
+                    "Objetivo": st.column_config.TextColumn("Objetivo", width="small"),
+                    "Estado": st.column_config.TextColumn("Estado", width="small"),
+                    "Monto/Detalle": st.column_config.TextColumn("Monto/Detalle", width="medium")
+                }
+            )
+            
+            # Nota informativa
+            st.info("💡 **Nota:** DSO y Rotación CxC son estimados. Para cálculos precisos, se requieren datos de ventas.")
+        
+        st.write("---")
+        
+        # =====================================================================
+        # FASE 3: ALERTAS INTELIGENTES Y PRIORIDADES DE COBRANZA
+        # =====================================================================
+        st.header("🚨 Alertas Inteligentes")
+        
+        alertas = []
+        
+        # Alerta 1: Clientes que superan umbral crítico
+        umbral_critico = UmbralesCxC.CRITICO_MONTO
+        clientes_criticos = df_np.groupby('deudor')['saldo_adeudado'].sum()
+        clientes_sobre_umbral = clientes_criticos[clientes_criticos > umbral_critico]
+        
+        if len(clientes_sobre_umbral) > 0:
+            alertas.append({
+                'tipo': '⚠️ ALTO MONTO',
+                'mensaje': f"{len(clientes_sobre_umbral)} cliente(s) superan ${umbral_critico:,.2f} individual",
+                'detalle': ', '.join([f"{c} (${m:,.2f})" for c, m in clientes_sobre_umbral.head(3).items()]),
+                'prioridad': 'ALTA'
+            })
+        
+        # Alerta 2: Deuda >90 días significativa
+        if pct_alto_riesgo > 15:
+            alertas.append({
+                'tipo': '🔴 RIESGO CRÍTICO',
+                'mensaje': f"Deuda >90 días representa {pct_alto_riesgo:.1f}% del total",
+                'detalle': f"${deuda_alto_riesgo:,.2f} en alto riesgo de incobrabilidad",
+                'prioridad': 'URGENTE'
+            })
+        
+        # Alerta 3: Alta concentración
+        if pct_concentracion > 50:
+            top3_clientes = df_np.groupby('deudor')['saldo_adeudado'].sum().nlargest(3)
+            alertas.append({
+                'tipo': '📊 CONCENTRACIÓN',
+                'mensaje': f"Top 3 clientes concentran {pct_concentracion:.1f}% de la cartera",
+                'detalle': f"Riesgo alto de dependencia: {', '.join(top3_clientes.index.tolist())}",
+                'prioridad': 'MEDIA'
+            })
+        
+        # Alerta 4: Clientes con aumento significativo
+        # (Requeriría histórico - simulamos detección)
+        if 'dias_overdue' in df_deudas.columns:
+            clientes_deterioro = df_np[df_np['dias_overdue'] > UmbralesCxC.DIAS_DETERIORO_SEVERO].groupby('deudor')['saldo_adeudado'].sum()
+            if len(clientes_deterioro) > 0:
+                alertas.append({
+                    'tipo': '📈 DETERIORO',
+                    'mensaje': f"{len(clientes_deterioro)} cliente(s) con deuda >120 días",
+                    'detalle': f"Total en deterioro severo: ${clientes_deterioro.sum():,.2f}",
+                    'prioridad': 'ALTA'
+                })
+        
+        # Alerta 5: Score de salud bajo
+        if score_salud < 40:
+            alertas.append({
+                'tipo': '🏥 SALUD CRÍTICA',
+                'mensaje': f"Score de salud financiera: {score_salud:.0f}/100 ({score_status})",
+                'detalle': "Se requiere acción inmediata de recuperación",
+                'prioridad': 'URGENTE'
+            })
+        
+        # Mostrar alertas
+        if alertas:
+            # Ordenar por prioridad
+            prioridad_orden = {'URGENTE': 0, 'ALTA': 1, 'MEDIA': 2}
+            alertas_ordenadas = sorted(alertas, key=lambda x: prioridad_orden.get(x['prioridad'], 3))
+            
+            for alerta in alertas_ordenadas:
+                color = {
+                    'URGENTE': '#F44336',
+                    'ALTA': '#FF9800',
+                    'MEDIA': '#FFC107'
+                }.get(alerta['prioridad'], '#9E9E9E')
+                
+                st.markdown(
+                    f"""
+                    <div style="background-color:{color}20; border-left: 5px solid {color}; padding: 15px; margin: 10px 0; border-radius: 5px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <h4 style="margin: 0; color: {color};">{alerta['tipo']}</h4>
+                                <p style="margin: 5px 0 0 0; font-size: 16px; font-weight: bold;">{alerta['mensaje']}</p>
+                                <p style="margin: 5px 0 0 0; font-size: 14px; color: #666;">{alerta['detalle']}</p>
+                            </div>
+                            <span style="background-color: {color}; color: white; padding: 5px 15px; border-radius: 20px; font-weight: bold; font-size: 12px;">
+                                {alerta['prioridad']}
+                            </span>
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+        else:
+            st.success("✅ No hay alertas críticas. La cartera está bajo control.")
+        
+        st.write("---")
+        
+        # =====================================================================
+        # PRIORIDADES DE COBRANZA
+        # =====================================================================
+        st.header("📋 Prioridades de Cobranza")
+        
+        # Calcular score de prioridad para cada deudor
+        deudor_prioridad = []
+        
+        for deudor in df_np['deudor'].unique():
+            deudor_data = df_np[df_np['deudor'] == deudor]
+            monto_total = deudor_data['saldo_adeudado'].sum()
+            
+            # Calcular días promedio vencido
+            if 'dias_overdue' in deudor_data.columns:
+                dias_prom = deudor_data['dias_overdue'].mean()
+                dias_max = deudor_data['dias_overdue'].max()
+            else:
+                dias_prom = 0
+                dias_max = 0
+            
+            # Score de prioridad (0-100)
+            # Factores: monto (40%), días vencido (40%), cantidad documentos (20%)
+            score_monto = min((monto_total / 100000) * 100, 100) * 0.4
+            score_dias = min((dias_max / 180) * 100, 100) * 0.4
+            score_docs = min((len(deudor_data) / 10) * 100, 100) * 0.2
+            
+            score_prioridad = score_monto + score_dias + score_docs
+            
+            # Clasificar nivel
+            if score_prioridad >= 75:
+                nivel = "🔴 URGENTE"
+                nivel_num = 1
+            elif score_prioridad >= 50:
+                nivel = "🟠 ALTA"
+                nivel_num = 2
+            elif score_prioridad >= 25:
+                nivel = "🟡 MEDIA"
+                nivel_num = 3
+            else:
+                nivel = "🟢 BAJA"
+                nivel_num = 4
+            
+            deudor_prioridad.append({
+                'deudor': deudor,
+                'monto': monto_total,
+                'dias_max': dias_max,
+                'documentos': len(deudor_data),
+                'score': score_prioridad,
+                'nivel': nivel,
+                'nivel_num': nivel_num
+            })
+        
+        # Crear DataFrame y ordenar
+        df_prioridades = pd.DataFrame(deudor_prioridad)
+        df_prioridades = df_prioridades.sort_values(['nivel_num', 'score'], ascending=[True, False])
+        
+        # Mostrar top 10 prioridades
+        st.write("### 🎯 Top 10 Acciones Inmediatas")
+        
+        df_top_prioridades = df_prioridades.head(10)[['nivel', 'deudor', 'monto', 'dias_max', 'documentos', 'score']].copy()
+        df_top_prioridades['monto'] = df_top_prioridades['monto'].apply(lambda x: f"${x:,.2f}")
+        df_top_prioridades['dias_max'] = df_top_prioridades['dias_max'].apply(lambda x: f"{int(x)} días")
+        df_top_prioridades['score'] = df_top_prioridades['score'].apply(lambda x: f"{x:.1f}/100")
+        
+        df_top_prioridades.columns = ['Prioridad', 'Cliente', 'Monto Adeudado', 'Días Máx.', 'Docs.', 'Score']
+        
+        st.dataframe(
+            df_top_prioridades,
+            width='stretch',
+            hide_index=True
+        )
+        
+        # Resumen de acciones por nivel
+        col_acc1, col_acc2, col_acc3, col_acc4 = st.columns(4)
+        
+        urgente_count = len(df_prioridades[df_prioridades['nivel_num'] == 1])
+        alta_count = len(df_prioridades[df_prioridades['nivel_num'] == 2])
+        media_count = len(df_prioridades[df_prioridades['nivel_num'] == 3])
+        baja_count = len(df_prioridades[df_prioridades['nivel_num'] == 4])
+        
+        col_acc1.metric("🔴 Urgente", urgente_count, 
+                       delta=f"${df_prioridades[df_prioridades['nivel_num'] == 1]['monto'].sum():,.2f}")
+        col_acc2.metric("🟠 Alta", alta_count,
+                       delta=f"${df_prioridades[df_prioridades['nivel_num'] == 2]['monto'].sum():,.2f}")
+        col_acc3.metric("🟡 Media", media_count,
+                       delta=f"${df_prioridades[df_prioridades['nivel_num'] == 3]['monto'].sum():,.2f}")
+        col_acc4.metric("🟢 Baja", baja_count,
+                       delta=f"${df_prioridades[df_prioridades['nivel_num'] == 4]['monto'].sum():,.2f}")
+        
+        # Recomendaciones
+        st.write("### 💡 Recomendaciones de Acción")
+        st.markdown("""
+        **Para casos URGENTES (🔴):**
+        - Contacto inmediato con cliente
+        - Evaluación de plan de pagos o reestructuración
+        - Considerar suspensión de crédito hasta regularización
+        
+        **Para casos de prioridad ALTA (🟠):**
+        - Seguimiento telefónico en próximos 3 días
+        - Enviar estado de cuenta actualizado
+        - Establecer compromiso de pago con fecha específica
+        
+        **Para casos de prioridad MEDIA (🟡):**
+        - Recordatorio por correo electrónico
+        - Monitoreo semanal
+        
+        **Para casos de prioridad BAJA (🟢):**
+        - Seguimiento de rutina
+        - Mantener comunicación regular
+        """)
+        
+        st.write("---")
+        
+        # Top 5 deudores con tabla mejorada
         st.dataframe(top_deudores.reset_index().rename(
             columns={'deudor': 'Cliente (Col F)', 'saldo_adeudado': 'Monto Adeudado ($)'}
         ).style.format({'Monto Adeudado ($)': '${:,.2f}'}))
         
         # Gráfico de concentración
         st.bar_chart(top_deudores)
+        
+        # =====================================================================
+        # FASE 4: ANÁLISIS POR LÍNEA DE NEGOCIO
+        # =====================================================================
+        if 'linea_negocio' in df_deudas.columns or 'linea_de_negocio' in df_deudas.columns:
+            st.header("🏭 Análisis por Línea de Negocio")
+            
+            # Normalizar nombre de columna
+            col_linea = 'linea_negocio' if 'linea_negocio' in df_deudas.columns else 'linea_de_negocio'
+            
+            # Limpiar valores nulos
+            df_lineas = df_deudas[df_deudas[col_linea].notna()].copy()
+
+            # -------------------------------------------------
+            # Alinear cálculo con Reporte Ejecutivo usando helper
+            # -------------------------------------------------
+            df_lineas, df_lineas_np, _ = preparar_datos_cxc(df_lineas)
+            df_lineas = df_lineas_np  # Usar solo no pagados
+            
+            if len(df_lineas) > 0:
+                # Calcular métricas por línea
+                lineas_metricas = []
+                
+                for linea in df_lineas[col_linea].unique():
+                    linea_data = df_lineas[df_lineas[col_linea] == linea]
+                    total_linea = linea_data['saldo_adeudado'].sum()
+                    
+                    # Calcular morosidad alineada (días de atraso > 0)
+                    vencido_linea = linea_data[linea_data['dias_overdue'] > 0]['saldo_adeudado'].sum()
+                    pct_morosidad = (vencido_linea / total_linea * 100) if total_linea > 0 else 0
+                    alto_riesgo_linea = linea_data[linea_data['dias_overdue'] > 90]['saldo_adeudado'].sum()
+                    pct_alto_riesgo = (alto_riesgo_linea / total_linea * 100) if total_linea > 0 else 0
+                    
+                    # Concentración (top cliente de la línea)
+                    top_cliente_linea = linea_data.groupby('deudor')['saldo_adeudado'].sum().max()
+                    pct_concentracion_linea = (top_cliente_linea / total_linea * 100) if total_linea > 0 else 0
+                    
+                    lineas_metricas.append({
+                        'linea': linea,
+                        'total': total_linea,
+                        'pct_morosidad': pct_morosidad,
+                        'pct_alto_riesgo': pct_alto_riesgo,
+                        'pct_concentracion': pct_concentracion_linea,
+                        'clientes': linea_data['deudor'].nunique(),
+                        'docs': len(linea_data)
+                    })
+                
+                df_lineas_metricas = pd.DataFrame(lineas_metricas)
+                df_lineas_metricas = df_lineas_metricas.sort_values('total', ascending=False)
+                
+                # Gauges por línea de negocio
+                st.write("### 🎯 Indicadores por Línea de Negocio")
+                
+                # Mostrar gauges de CxC por línea (top 6)
+                top_lineas = df_lineas_metricas.head(6)
+                
+                for i in range(0, len(top_lineas), 3):
+                    cols_linea = st.columns(3)
+                    
+                    for j in range(3):
+                        if i + j < len(top_lineas):
+                            row = top_lineas.iloc[i + j]
+                            linea = row['linea']
+                            total = row['total']
+                            pct_total = (total / total_adeudado * 100) if total_adeudado > 0 else 0
+                            morosidad = row['pct_morosidad']
+                            
+                            # Color según morosidad usando constantes
+                            if morosidad < UmbralesCxC.MOROSIDAD_BAJA:
+                                color_linea = ScoreSalud.COLOR_EXCELENTE
+                            elif morosidad < UmbralesCxC.MOROSIDAD_MEDIA:
+                                color_linea = ScoreSalud.COLOR_REGULAR
+                            elif morosidad < UmbralesCxC.MOROSIDAD_ALTA:
+                                color_linea = ScoreSalud.COLOR_MALO
+                            else:
+                                color_linea = ScoreSalud.COLOR_CRITICO
+                            
+                            with cols_linea[j]:
+                                fig_linea = go.Figure(go.Indicator(
+                                    mode="gauge+number",
+                                    value=pct_total,
+                                    domain={'x': [0, 1], 'y': [0, 1]},
+                                    title={'text': f"<b>{linea}</b><br>${total:,.2f}", 'font': {'size': 12}},
+                                    number={'suffix': '%', 'font': {'size': 18}},
+                                    gauge={
+                                        'axis': {'range': [None, 100], 'tickwidth': 1},
+                                        'bar': {'color': color_linea, 'thickness': 0.75},
+                                        'bgcolor': "white",
+                                        'borderwidth': 1,
+                                        'bordercolor': "gray",
+                                        'steps': [
+                                            {'range': [0, 25], 'color': '#E8F5E9'},
+                                            {'range': [25, 50], 'color': '#FFF9C4'},
+                                            {'range': [50, 100], 'color': '#FFEBEE'}
+                                        ]
+                                    }
+                                ))
+                                fig_linea.update_layout(
+                                    height=200,
+                                    margin=dict(t=60, b=10, l=10, r=10)
+                                )
+                                st.plotly_chart(fig_linea, width='stretch')
+                                st.caption(f"Morosidad: {morosidad:.1f}% | Clientes: {row['clientes']}")
+                
+                st.write("---")
+                
+                # Tabla comparativa de líneas
+                st.write("### 📊 Comparativa de Líneas de Negocio")
+                
+                df_comparativa = df_lineas_metricas.copy()
+                df_comparativa['% del Total'] = (df_comparativa['total'] / total_adeudado * 100)
+                
+                # Agregar semáforos de morosidad usando helper
+                df_comparativa['Alerta Morosidad'] = df_comparativa['pct_morosidad'].apply(obtener_semaforo_morosidad)
+                
+                df_comparativa['Alerta Riesgo Alto'] = df_comparativa['pct_alto_riesgo'].apply(obtener_semaforo_riesgo)
+                
+                # Formatear para display
+                df_display = df_comparativa[[
+                    'linea', 'total', '% del Total', 'pct_morosidad', 
+                    'Alerta Morosidad', 'pct_alto_riesgo', 'Alerta Riesgo Alto',
+                    'pct_concentracion', 'clientes', 'docs'
+                ]].copy()
+                
+                df_display['total'] = df_display['total'].apply(lambda x: f"${x:,.2f}")
+                df_display['% del Total'] = df_display['% del Total'].apply(lambda x: f"{x:.1f}%")
+                df_display['pct_morosidad'] = df_display['pct_morosidad'].apply(lambda x: f"{x:.1f}%")
+                df_display['pct_alto_riesgo'] = df_display['pct_alto_riesgo'].apply(lambda x: f"{x:.1f}%")
+                df_display['pct_concentracion'] = df_display['pct_concentracion'].apply(lambda x: f"{x:.1f}%")
+                
+                df_display.columns = [
+                    'Línea', 'Monto Total', '% Total', 'Morosidad', '🚦 Morosidad',
+                    'Riesgo Alto', '🚦 Riesgo Alto', 'Concentración', 'Clientes', 'Docs'
+                ]
+                
+                st.dataframe(df_display, width='stretch', hide_index=True)
+                
+                # Identificar líneas problemáticas
+                st.write("### ⚠️ Líneas que Requieren Atención")
+                
+                lineas_problematicas = df_lineas_metricas[
+                    (df_lineas_metricas['pct_morosidad'] > 25) | 
+                    (df_lineas_metricas['pct_alto_riesgo'] > 15)
+                ].copy()
+                
+                if len(lineas_problematicas) > 0:
+                    for _, linea_prob in lineas_problematicas.iterrows():
+                        problemas = []
+                        if linea_prob['pct_morosidad'] > 25:
+                            problemas.append(f"Morosidad alta: {linea_prob['pct_morosidad']:.1f}%")
+                        if linea_prob['pct_alto_riesgo'] > 15:
+                            problemas.append(f"Riesgo alto: {linea_prob['pct_alto_riesgo']:.1f}%")
+                        if linea_prob['pct_concentracion'] > 50:
+                            problemas.append(f"Alta concentración: {linea_prob['pct_concentracion']:.1f}%")
+                        
+                        st.warning(f"**{linea_prob['linea']}**: {' | '.join(problemas)}")
+                else:
+                    st.success("✅ Todas las líneas de negocio están dentro de parámetros aceptables")
+                
+                # Gráfico de comparación
+                st.write("### 📈 Comparación Visual por Línea")
+                
+                col_chart1, col_chart2 = st.columns(2)
+                
+                with col_chart1:
+                    # Gráfico de monto por línea
+                    fig_monto_lineas = px.bar(
+                        df_lineas_metricas,
+                        x='linea',
+                        y='total',
+                        title='Monto CxC por Línea de Negocio',
+                        labels={'linea': 'Línea', 'total': 'Monto ($)'},
+                        color='pct_morosidad',
+                        color_continuous_scale=['green', 'yellow', 'orange', 'red']
+                    )
+                    fig_monto_lineas.update_layout(height=400)
+                    st.plotly_chart(fig_monto_lineas, width='stretch')
+                
+                with col_chart2:
+                    # Gráfico de morosidad por línea
+                    fig_morosidad_lineas = px.bar(
+                        df_lineas_metricas,
+                        x='linea',
+                        y='pct_morosidad',
+                        title='Índice de Morosidad por Línea',
+                        labels={'linea': 'Línea', 'pct_morosidad': 'Morosidad (%)'},
+                        color='pct_morosidad',
+                        color_continuous_scale=['green', 'yellow', 'orange', 'red']
+                    )
+                    fig_morosidad_lineas.update_layout(height=400)
+                    st.plotly_chart(fig_morosidad_lineas, width='stretch')
+                
+                st.write("---")
+            else:
+                st.info("ℹ️ No hay datos de línea de negocio disponibles para análisis")
+        else:
+            st.info("ℹ️ No se encontró información de línea de negocio en los datos")
 
         # Análisis de riesgo por antigüedad
         st.subheader("📅 Perfil de Riesgo por Antigüedad")
-        if 'fecha_vencimiento' in df_deudas.columns:
+        if 'dias_overdue' in df_deudas.columns:
             try:
-                df_deudas['fecha_vencimiento'] = pd.to_datetime(
-                    df_deudas['fecha_vencimiento'], errors='coerce', dayfirst=True
-                )
+                df_riesgo = df_np.copy()
                 
-                hoy = pd.Timestamp.today()
-                df_deudas['dias_vencido'] = (hoy - df_deudas['fecha_vencimiento']).dt.days
-                
-                # Clasificación de riesgo con colores
-                bins = [-np.inf, 0, 30, 60, 90, 180, np.inf]
-                labels = ['Por vencer', 
-                         '1-30 días', 
-                         '31-60 días', 
-                         '61-90 días', 
-                         '91-180 días', 
-                         '>180 días']
-                colores = ['#4CAF50', '#8BC34A', '#FFEB3B', '#FF9800', '#F44336', '#B71C1C']  # Verde, verde claro, amarillo, naranja, rojo, rojo oscuro
-                
-                df_deudas['nivel_riesgo'] = pd.cut(
-                    df_deudas['dias_vencido'], 
-                    bins=bins, 
-                    labels=labels
-                )
+                # Clasificación de riesgo usando constantes
+                df_riesgo['nivel_riesgo'] = clasificar_antiguedad(df_riesgo, tipo='completo')
                 
                 # Resumen de riesgo
-                riesgo_df = df_deudas.groupby('nivel_riesgo')['saldo_adeudado'].sum().reset_index()
+                riesgo_df = df_riesgo.groupby('nivel_riesgo', observed=True)['saldo_adeudado'].sum().reset_index()
                 riesgo_df['porcentaje'] = (riesgo_df['saldo_adeudado'] / total_adeudado) * 100
                 
                 # Ordenar por nivel de riesgo
                 riesgo_df = riesgo_df.sort_values('nivel_riesgo')
                 
-                # Mostrar semáforo visual
-                st.write("### 🔴🟠🟡🟢 Semáforo de Riesgo")
-                
-                # Crear tarjetas de colores para cada categoría
-                for idx, row in riesgo_df.iterrows():
-                    nivel = row['nivel_riesgo']
-                    monto = row['saldo_adeudado']
-                    pct = row['porcentaje']
-                    color = colores[idx]
-                    
-                    # Crear tarjeta con color de fondo
-                    st.markdown(
-                        f"""
-                        <div style="background-color:{color}; padding:10px; border-radius:5px; margin-bottom:10px; color:white; font-weight:bold;">
-                            <div style="display:flex; justify-content:space-between;">
-                                <span>{nivel}</span>
-                                <span>${monto:,.2f} ({pct:.1f}%)</span>
-                            </div>
-                        </div>
-                        """,
-                        unsafe_allow_html=True
+                # Pie Chart: Distribución por antigüedad
+                with col_pie2:
+                    st.write("**Distribución por Antigüedad**")
+                    fig_antiguedad = go.Figure(data=[go.Pie(
+                        labels=riesgo_df['nivel_riesgo'].tolist(),
+                        values=riesgo_df['saldo_adeudado'].tolist(),
+                        marker=dict(colors=COLORES_ANTIGUEDAD),
+                        hole=ConfigVisualizacion.PIE_HOLE,
+                        textinfo='label+percent',
+                        textposition='outside'
+                    )])
+                    fig_antiguedad.update_layout(
+                        showlegend=True,
+                        height=ConfigVisualizacion.PIE_HEIGHT,
+                        margin=dict(t=20, b=20, l=20, r=20)
                     )
+                    st.plotly_chart(fig_antiguedad, width='stretch')
+                
+                # Gauges por categoría de riesgo
+                st.write("### 🎯 Indicadores de Riesgo por Antigüedad")
+                
+                # Crear gauges en filas de 3
+                num_categorias = len(riesgo_df)
+                for i in range(0, num_categorias, 3):
+                    cols_gauge = st.columns(3)
+                    
+                    for j in range(3):
+                        if i + j < num_categorias:
+                            row = riesgo_df.iloc[i + j]
+                            nivel = row['nivel_riesgo']
+                            pct = row['porcentaje']
+                            monto = row['saldo_adeudado']
+                            color = COLORES_ANTIGUEDAD[i + j]
+                            
+                            with cols_gauge[j]:
+                                # Crear gauge con plotly
+                                fig_gauge = go.Figure(go.Indicator(
+                                    mode="gauge+number+delta",
+                                    value=pct,
+                                    domain={'x': [0, 1], 'y': [0, 1]},
+                                    title={'text': f"{nivel}<br>${monto:,.2f}", 'font': {'size': 14}},
+                                    delta={'reference': 100/num_categorias, 'suffix': 'pp'},
+                                    number={'suffix': '%', 'font': {'size': 20}},
+                                    gauge={
+                                        'axis': {'range': [None, 100], 'tickwidth': 1, 'tickcolor': "darkgray"},
+                                        'bar': {'color': color},
+                                        'bgcolor': "white",
+                                        'borderwidth': 2,
+                                        'bordercolor': "gray",
+                                        'steps': [
+                                            {'range': [0, 50], 'color': '#E8F5E9'},
+                                            {'range': [50, 100], 'color': '#FFEBEE'}
+                                        ],
+                                        'threshold': {
+                                            'line': {'color': "red", 'width': 4},
+                                            'thickness': 0.75,
+                                            'value': 100/num_categorias
+                                        }
+                                    }
+                                ))
+                                fig_gauge.update_layout(
+                                    height=ConfigVisualizacion.GAUGE_HEIGHT,
+                                    margin=dict(t=50, b=0, l=20, r=20)
+                                )
+                                st.plotly_chart(fig_gauge, width='stretch')
+                
+                st.write("---")
+                
+                # Mostrar tabla resumen (reemplaza tarjetas HTML)
+                st.write("### 📋 Resumen Detallado por Categoría")
+                resumen_tabla = riesgo_df.copy()
+                resumen_tabla['Monto'] = resumen_tabla['saldo_adeudado'].apply(lambda x: f"${x:,.2f}")
+                resumen_tabla['% del Total'] = resumen_tabla['porcentaje'].apply(lambda x: f"{x:.1f}%")
+                resumen_tabla = resumen_tabla[['nivel_riesgo', 'Monto', '% del Total']]
+                resumen_tabla.columns = ['Categoría', 'Monto Adeudado', '% del Total']
+                st.dataframe(resumen_tabla, width='stretch', hide_index=True)
                 
                 # Gráfico de barras con colores por categoría
                 st.write("### 📊 Distribución de Deuda por Antigüedad")
                 fig, ax = plt.subplots()
-                bars = ax.bar(riesgo_df['nivel_riesgo'], riesgo_df['saldo_adeudado'], color=colores)
+                bars = ax.bar(riesgo_df['nivel_riesgo'], riesgo_df['saldo_adeudado'], color=COLORES_ANTIGUEDAD)
                 ax.set_title('Distribución por Antigüedad de Deuda')
                 ax.set_ylabel('Monto Adeudado ($)')
-                ax.yaxis.set_major_formatter('${x:,.0f}')
+                ax.yaxis.set_major_formatter('${x:,.2f}')
                 plt.xticks(rotation=45)
                 
                 # Agregar etiquetas de valor
                 for bar in bars:
                     height = bar.get_height()
-                    ax.annotate(f'${height:,.0f}',
+                    ax.annotate(f'${height:,.2f}',
                                 xy=(bar.get_x() + bar.get_width() / 2, height),
                                 xytext=(0, 3),  # 3 points vertical offset
                                 textcoords="offset points",
@@ -227,44 +856,68 @@ def run(archivo):
         st.subheader("👤 Distribución de Deuda por Agente")
         
         if 'vendedor' in df_deudas.columns:
-            # Asegurar que tenemos los días vencidos calculados
-            if 'dias_vencido' not in df_deudas.columns and 'fecha_vencimiento' in df_deudas.columns:
-                try:
-                    hoy = pd.Timestamp.today()
-                    df_deudas['dias_vencido'] = (hoy - pd.to_datetime(df_deudas['fecha_vencimiento'], errors='coerce')).dt.days
-                except:
-                    pass
-            
-            if 'dias_vencido' in df_deudas.columns:
-                # Definir categorías y colores para agentes
-                bins_agentes = [-np.inf, 0, 30, 60, 90, np.inf]
-                labels_agentes = ['Por vencer', '1-30 días', '31-60 días', '61-90 días', '>90 días']
-                colores_agentes = ['#4CAF50', '#8BC34A', '#FFEB3B', '#FF9800', '#F44336']  # Verde, verde claro, amarillo, naranja, rojo
-                
-                # Clasificar la deuda de los agentes
-                df_deudas['categoria_agente'] = pd.cut(
-                    df_deudas['dias_vencido'], 
-                    bins=bins_agentes, 
-                    labels=labels_agentes
-                )
+            # Usar cartera NO pagada y días de atraso estándar
+            df_agentes = df_np.copy()
+
+            if 'dias_overdue' in df_agentes.columns:
+                # Definir categorías usando constantes
+                df_agentes['categoria_agente'] = clasificar_antiguedad(df_agentes, tipo='agentes')
                 
                 # Agrupar por agente y categoría
-                agente_categoria = df_deudas.groupby(['vendedor', 'categoria_agente'])['saldo_adeudado'].sum().unstack().fillna(0)
+                agente_categoria = df_agentes.groupby(['vendedor', 'categoria_agente'], observed=True)['saldo_adeudado'].sum().unstack().fillna(0)
                 
                 # Ordenar por el total de deuda
                 agente_categoria['Total'] = agente_categoria.sum(axis=1)
                 agente_categoria = agente_categoria.sort_values('Total', ascending=False)
+
+                # Pies solicitados: % deuda por agente y antigüedad (por agente)
+                st.write("### 🥧 % de Deuda por Agente y por Antigüedad")
+                col_pie_ag1, col_pie_ag2 = st.columns(2)
+
+                with col_pie_ag1:
+                    fig_pie_agente = go.Figure(data=[go.Pie(
+                        labels=agente_categoria.index.astype(str).tolist(),
+                        values=agente_categoria['Total'].tolist(),
+                        hole=0.4,
+                        textinfo='label+percent'
+                    )])
+                    fig_pie_agente.update_layout(
+                        title="Deuda por Agente (% del total)",
+                        height=360,
+                        margin=dict(t=50, b=20, l=20, r=20)
+                    )
+                    st.plotly_chart(fig_pie_agente, width='stretch')
+
+                with col_pie_ag2:
+                    agentes_list = agente_categoria.index.astype(str).tolist()
+                    agente_sel = st.selectbox("Agente", agentes_list, index=0, key="pie_agente_antiguedad") if agentes_list else None
+                    if agente_sel:
+                        fila = agente_categoria.loc[agente_sel].drop(labels=['Total'], errors='ignore')
+                        fila = fila.reindex(LABELS_ANTIGUEDAD_AGENTES).fillna(0)
+                        fig_pie_ant = go.Figure(data=[go.Pie(
+                            labels=fila.index.tolist(),
+                            values=fila.values.tolist(),
+                            hole=ConfigVisualizacion.PIE_HOLE,
+                            marker=dict(colors=COLORES_ANTIGUEDAD_AGENTES),
+                            textinfo='label+percent'
+                        )])
+                        fig_pie_ant.update_layout(
+                            title=f"Antigüedad de la Deuda ({agente_sel})",
+                            height=360,
+                            margin=dict(t=50, b=20, l=20, r=20)
+                        )
+                        st.plotly_chart(fig_pie_ant, width='stretch')
                 
                 # Crear gráfico de barras apiladas
                 st.write("### 📊 Distribución por Agente y Antigüedad")
                 fig, ax = plt.subplots(figsize=(12, 6))
                 
-                # Preparar datos para el gráfico
+                # Preparar datos para el gráfico usando constantes
                 bottom = np.zeros(len(agente_categoria))
-                for i, categoria in enumerate(labels_agentes):
+                for i, categoria in enumerate(LABELS_ANTIGUEDAD_AGENTES):
                     if categoria in agente_categoria.columns:
                         valores = agente_categoria[categoria]
-                        ax.bar(agente_categoria.index, valores, bottom=bottom, label=categoria, color=colores_agentes[i])
+                        ax.bar(agente_categoria.index, valores, bottom=bottom, label=categoria, color=COLORES_ANTIGUEDAD_AGENTES[i])
                         bottom += valores
                 
                 # Personalizar gráfico
@@ -273,7 +926,7 @@ def run(archivo):
                 ax.set_xlabel('Agente', fontsize=12)
                 ax.tick_params(axis='x', rotation=45)
                 ax.legend(title='Días Vencidos', loc='upper right')
-                ax.yaxis.set_major_formatter('${x:,.0f}')
+                ax.yaxis.set_major_formatter('${x:,.2f}')
                 
                 st.pyplot(fig)
                 
@@ -290,8 +943,210 @@ def run(archivo):
                 
                 st.dataframe(resumen_agente)
                 
+                # =====================================================================
+                # EFICIENCIA DE COBRANZA POR AGENTE
+                # =====================================================================
+                st.write("---")
+                st.subheader("⚡ Eficiencia de Cobranza por Agente")
+                
+                # Calcular métricas de eficiencia por agente
+                agentes_eficiencia = []
+                
+                for agente in df_agentes['vendedor'].unique():
+                    agente_data = df_agentes[df_agentes['vendedor'] == agente]
+                    
+                    total_agente = agente_data['saldo_adeudado'].sum()
+                    vigente_agente = agente_data[agente_data['dias_overdue'] <= 0]['saldo_adeudado'].sum()
+                    vencido_agente = total_agente - vigente_agente
+                    
+                    # % Efectividad (cartera vigente)
+                    efectividad = (vigente_agente / total_agente * 100) if total_agente > 0 else 0
+                    
+                    # Tiempo promedio de cobro
+                    dias_promedio = agente_data['dias_overdue'].mean() if len(agente_data) > 0 else 0
+                    
+                    # Cantidad de clientes y documentos
+                    clientes_agente = agente_data['deudor'].nunique()
+                    docs_agente = len(agente_data)
+                    
+                    # Casos críticos (>90 días)
+                    casos_criticos = len(agente_data[agente_data['dias_overdue'] > 90])
+                    pct_criticos = (casos_criticos / docs_agente * 100) if docs_agente > 0 else 0
+                    
+                    # Monto promedio por cliente
+                    monto_promedio = total_agente / clientes_agente if clientes_agente > 0 else 0
+                    
+                    # Score de eficiencia (0-100)
+                    # Factores: efectividad (50%), días promedio (30%), casos críticos (20%)
+                    score_efectividad = efectividad * 0.5
+                    score_dias = max(0, 100 - (dias_promedio / 90 * 100)) * 0.3
+                    score_criticos = max(0, 100 - pct_criticos) * 0.2
+                    
+                    score_eficiencia = score_efectividad + score_dias + score_criticos
+                    
+                    agentes_eficiencia.append({
+                        'agente': agente,
+                        'total': total_agente,
+                        'efectividad': efectividad,
+                        'dias_promedio': dias_promedio,
+                        'clientes': clientes_agente,
+                        'docs': docs_agente,
+                        'casos_criticos': casos_criticos,
+                        'pct_criticos': pct_criticos,
+                        'monto_promedio': monto_promedio,
+                        'score': score_eficiencia
+                    })
+                
+                df_eficiencia = pd.DataFrame(agentes_eficiencia)
+                df_eficiencia = df_eficiencia.sort_values('score', ascending=False)
+                
+                # Gauges de eficiencia por agente (top 6)
+                st.write("### 🎯 Score de Eficiencia por Agente")
+                
+                top_agentes_ef = df_eficiencia.head(6)
+                
+                for i in range(0, len(top_agentes_ef), 3):
+                    cols_agente = st.columns(3)
+                    
+                    for j in range(3):
+                        if i + j < len(top_agentes_ef):
+                            row = top_agentes_ef.iloc[i + j]
+                            agente = row['agente']
+                            score = row['score']
+                            efectividad = row['efectividad']
+                            
+                            # Color según score
+                            if score >= 80:
+                                color_agente = "#4CAF50"
+                                nivel_agente = "Excelente"
+                            elif score >= 60:
+                                color_agente = "#8BC34A"
+                                nivel_agente = "Bueno"
+                            elif score >= 40:
+                                color_agente = "#FFEB3B"
+                                nivel_agente = "Regular"
+                            elif score >= 20:
+                                color_agente = "#FF9800"
+                                nivel_agente = "Bajo"
+                            else:
+                                color_agente = "#F44336"
+                                nivel_agente = "Crítico"
+                            
+                            with cols_agente[j]:
+                                fig_agente_ef = go.Figure(go.Indicator(
+                                    mode="gauge+number",
+                                    value=score,
+                                    domain={'x': [0, 1], 'y': [0, 1]},
+                                    title={'text': f"<b>{agente}</b><br>{nivel_agente}", 'font': {'size': 11}},
+                                    number={'suffix': '', 'font': {'size': 20}},
+                                    gauge={
+                                        'axis': {'range': [None, 100], 'tickwidth': 1},
+                                        'bar': {'color': color_agente, 'thickness': 0.75},
+                                        'bgcolor': "white",
+                                        'borderwidth': 1,
+                                        'bordercolor': "gray",
+                                        'steps': [
+                                            {'range': [0, 20], 'color': '#FFCDD2'},
+                                            {'range': [20, 40], 'color': '#FFE0B2'},
+                                            {'range': [40, 60], 'color': '#FFF9C4'},
+                                            {'range': [60, 80], 'color': '#DCEDC8'},
+                                            {'range': [80, 100], 'color': '#C8E6C9'}
+                                        ],
+                                        'threshold': {
+                                            'line': {'color': "black", 'width': 3},
+                                            'thickness': 0.75,
+                                            'value': 60
+                                        }
+                                    }
+                                ))
+                                fig_agente_ef.update_layout(
+                                    height=220,
+                                    margin=dict(t=60, b=10, l=10, r=10)
+                                )
+                                st.plotly_chart(fig_agente_ef, width='stretch')
+                                st.caption(f"Efectividad: {efectividad:.1f}% | Clientes: {row['clientes']}")
+                
+                # Tabla comparativa de eficiencia
+                st.write("### 📊 Tabla Comparativa de Eficiencia")
+                
+                df_ef_display = df_eficiencia.copy()
+                
+                # Agregar semáforos
+                df_ef_display['🚦 Score'] = df_ef_display['score'].apply(
+                    lambda x: "🟢" if x >= 80 else "🟢" if x >= 60 else "🟡" if x >= 40 else "🟠" if x >= 20 else "🔴"
+                )
+                
+                df_ef_display['🚦 Efectividad'] = df_ef_display['efectividad'].apply(
+                    lambda x: "🟢" if x >= 80 else "🟡" if x >= 60 else "🟠" if x >= 40 else "🔴"
+                )
+                
+                # Formatear
+                df_ef_table = df_ef_display[[
+                    'agente', 'score', '🚦 Score', 'efectividad', '🚦 Efectividad',
+                    'dias_promedio', 'casos_criticos', 'pct_criticos', 'clientes', 'total'
+                ]].copy()
+                
+                df_ef_table['score'] = df_ef_table['score'].apply(lambda x: f"{x:.1f}")
+                df_ef_table['efectividad'] = df_ef_table['efectividad'].apply(lambda x: f"{x:.1f}%")
+                df_ef_table['dias_promedio'] = df_ef_table['dias_promedio'].apply(lambda x: f"{x:.0f} días")
+                df_ef_table['pct_criticos'] = df_ef_table['pct_criticos'].apply(lambda x: f"{x:.1f}%")
+                df_ef_table['total'] = df_ef_table['total'].apply(lambda x: f"${x:,.2f}")
+                
+                df_ef_table.columns = [
+                    'Agente', 'Score', '🚦 Score', 'Efectividad', '🚦 Efectividad',
+                    'Días Prom.', 'Casos >90d', '% Críticos', 'Clientes', 'Cartera Total'
+                ]
+                
+                st.dataframe(df_ef_table, width='stretch', hide_index=True)
+                
+                # Ranking y reconocimiento
+                st.write("### 🏆 Ranking de Eficiencia")
+                
+                col_rank1, col_rank2, col_rank3 = st.columns(3)
+                
+                if len(df_eficiencia) >= 1:
+                    mejor_agente = df_eficiencia.iloc[0]
+                    col_rank1.success(f"🥇 **Mejor Eficiencia**\n\n{mejor_agente['agente']}\n\nScore: {mejor_agente['score']:.1f}/100")
+                
+                if len(df_eficiencia) >= 2:
+                    segundo_agente = df_eficiencia.iloc[1]
+                    col_rank2.info(f"🥈 **Segunda Posición**\n\n{segundo_agente['agente']}\n\nScore: {segundo_agente['score']:.1f}/100")
+                
+                if len(df_eficiencia) >= 3:
+                    tercer_agente = df_eficiencia.iloc[2]
+                    col_rank3.info(f"🥉 **Tercera Posición**\n\n{tercer_agente['agente']}\n\nScore: {tercer_agente['score']:.1f}/100")
+                
+                # Agentes que necesitan mejora
+                agentes_mejora = df_eficiencia[df_eficiencia['score'] < 40]
+                
+                if len(agentes_mejora) > 0:
+                    st.warning("⚠️ **Agentes que Requieren Capacitación/Apoyo:**")
+                    for _, agente_m in agentes_mejora.iterrows():
+                        problemas = []
+                        if agente_m['efectividad'] < 60:
+                            problemas.append(f"Efectividad baja: {agente_m['efectividad']:.1f}%")
+                        if agente_m['dias_promedio'] > 60:
+                            problemas.append(f"Días promedio alto: {agente_m['dias_promedio']:.0f}")
+                        if agente_m['pct_criticos'] > 20:
+                            problemas.append(f"Casos críticos: {agente_m['pct_criticos']:.1f}%")
+                        
+                        st.write(f"- **{agente_m['agente']}** (Score: {agente_m['score']:.1f}): {' | '.join(problemas)}")
+                else:
+                    st.success("✅ Todos los agentes mantienen niveles aceptables de eficiencia")
+
             else:
-                st.warning("ℹ️ No se pudo calcular la antigüedad para los agentes")
+                st.warning("ℹ️ No se pudo calcular la antigüedad (días vencidos) para los agentes")
+
+                # Fallback: resumen simple por agente sin segmentación de antigüedad
+                resumen_simple = (
+                    df_deudas.groupby('vendedor', dropna=False)['saldo_adeudado']
+                    .sum()
+                    .sort_values(ascending=False)
+                    .reset_index()
+                )
+                resumen_simple.columns = ['Agente', 'Cartera Total']
+                resumen_simple['Cartera Total'] = resumen_simple['Cartera Total'].apply(lambda x: f"${x:,.2f}")
+                st.dataframe(resumen_simple, width='stretch', hide_index=True)
         else:
             st.warning("ℹ️ No se encontró información de agentes (vendedores)")
 
@@ -312,16 +1167,218 @@ def run(archivo):
         cols = [c for c in cols if c in deudor_df.columns]
         st.dataframe(deudor_df[cols].sort_values('fecha_vencimiento', ascending=False))
 
+        # =====================================================================
+        # FASE 5: EXPORTACIÓN Y REPORTES
+        # =====================================================================
+        st.header("📥 Exportación y Reportes")
+        
+        col_export1, col_export2 = st.columns(2)
+        
+        with col_export1:
+            st.subheader("📊 Reporte Excel Completo")
+            st.write("Descarga análisis completo en Excel con múltiples hojas:")
+            
+            # Crear Excel con múltiples hojas
+            from io import BytesIO
+            
+            buffer = BytesIO()
+            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                # Hoja 1: Resumen Ejecutivo
+                resumen_data = {
+                    'Métrica': [
+                        'Total Adeudado',
+                        'Cartera Vigente',
+                        'Deuda Vencida',
+                        'Score de Salud',
+                        'Índice de Morosidad',
+                        'Concentración Top 3',
+                        'Riesgo Alto (>90 días)',
+                        'Principal Deudor',
+                        'Monto Principal Deudor'
+                    ],
+                    'Valor': [
+                        f"${total_adeudado:,.2f}",
+                        f"${vigente:,.2f}",
+                        f"${vencida:,.2f}",
+                        f"{score_salud:.1f}/100 ({score_status})",
+                        f"{indice_morosidad:.1f}%",
+                        f"{pct_concentracion:.1f}%",
+                        f"{pct_alto_riesgo:.1f}% (${deuda_alto_riesgo:,.2f})",
+                        top_deudores.index[0],
+                        f"${top_deudores.iloc[0]:,.2f}"
+                    ]
+                }
+                df_resumen = pd.DataFrame(resumen_data)
+                df_resumen.to_excel(writer, sheet_name='Resumen Ejecutivo', index=False)
+                
+                # Hoja 2: Detalle Completo
+                df_detalle_export = df_deudas[['deudor', 'saldo_adeudado', 'estatus', 'origen']].copy()
+                if 'dias_vencido' in df_deudas.columns:
+                    df_detalle_export['dias_vencido'] = df_deudas['dias_vencido']
+                if 'vendedor' in df_deudas.columns:
+                    df_detalle_export['vendedor'] = df_deudas['vendedor']
+                if col_linea in df_deudas.columns:
+                    df_detalle_export['linea_negocio'] = df_deudas[col_linea]
+                df_detalle_export.to_excel(writer, sheet_name='Detalle Completo', index=False)
+                
+                # Hoja 3: Top Deudores
+                df_top_export = top_deudores.reset_index()
+                df_top_export.columns = ['Cliente', 'Saldo Adeudado']
+                df_top_export.to_excel(writer, sheet_name='Top Deudores', index=False)
+                
+                # Hoja 4: Prioridades de Cobranza
+                df_prioridades[['nivel', 'deudor', 'monto', 'dias_max', 'documentos', 'score']].to_excel(
+                    writer, sheet_name='Prioridades', index=False
+                )
+                
+                # Hoja 5: Por Línea de Negocio (si existe)
+                if 'df_lineas_metricas' in locals():
+                    df_lineas_metricas.to_excel(writer, sheet_name='Por Línea Negocio', index=False)
+                
+                # Hoja 6: Alertas
+                if alertas:
+                    df_alertas = pd.DataFrame(alertas)
+                    df_alertas.to_excel(writer, sheet_name='Alertas', index=False)
+            
+            buffer.seek(0)
+            
+            st.download_button(
+                label="📥 Descargar Reporte Excel",
+                data=buffer.getvalue(),
+                file_name=f"reporte_cxc_fradma_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                help="Descarga reporte completo con todas las hojas de análisis"
+            )
+        
+        with col_export2:
+            st.subheader("📄 Plantillas de Cobranza")
+            st.write("Genera cartas personalizadas de cobranza:")
+            
+            # Selector de cliente para carta
+            cliente_carta = st.selectbox(
+                "Seleccionar cliente para carta:",
+                options=df_prioridades['deudor'].head(20).tolist(),
+                help="Selecciona un cliente de las prioridades de cobranza"
+            )
+            
+            if cliente_carta:
+                cliente_info = df_deudas[df_deudas['deudor'] == cliente_carta].iloc[0]
+                monto_cliente = df_deudas[df_deudas['deudor'] == cliente_carta]['saldo_adeudado'].sum()
+                
+                if 'dias_vencido' in df_deudas.columns:
+                    dias_vencido_max = df_deudas[df_deudas['deudor'] == cliente_carta]['dias_vencido'].max()
+                else:
+                    dias_vencido_max = 0
+                
+                # Determinar tono de la carta según prioridad
+                prioridad_cliente = df_prioridades[df_prioridades['deudor'] == cliente_carta]['nivel'].iloc[0]
+                
+                if "URGENTE" in prioridad_cliente:
+                    tono = "Urgente - Última Notificación"
+                    apertura = "Por medio de la presente, nos dirigimos a usted con carácter de URGENTE"
+                elif "ALTA" in prioridad_cliente:
+                    tono = "Recordatorio Formal"
+                    apertura = "Por medio de la presente, nos permitimos recordarle"
+                else:
+                    tono = "Recordatorio Amistoso"
+                    apertura = "Nos comunicamos con usted para recordarle amablemente"
+                
+                # Generar carta
+                carta = f"""
+**CARTA DE COBRANZA - {tono.upper()}**
+
+Fecha: {datetime.now().strftime('%d de %B de %Y')}
+
+Estimado(a) Cliente: **{cliente_carta}**
+
+{apertura} que a la fecha mantiene un saldo pendiente de pago con nuestra empresa.
+
+**DETALLE DE LA DEUDA:**
+
+- **Monto Total Adeudado:** ${monto_cliente:,.2f} USD
+- **Días de Vencimiento:** {int(dias_vencido_max)} días
+- **Estado:** {prioridad_cliente}
+
+De acuerdo con nuestros registros, el saldo pendiente corresponde a facturas vencidas que requieren su atención inmediata.
+
+**ACCIONES REQUERIDAS:**
+
+{"⚠️ **ACCIÓN INMEDIATA REQUERIDA:** Le solicitamos contactar a nuestro departamento de crédito y cobranza en las próximas 48 horas para regularizar su situación. De lo contrario, nos veremos en la necesidad de suspender el crédito y/o iniciar acciones legales correspondientes." if "URGENTE" in prioridad_cliente else ""}
+
+{"Le solicitamos ponerse en contacto con nosotros en un plazo no mayor a 5 días hábiles para establecer un plan de pagos o regularizar su situación." if "ALTA" in prioridad_cliente else ""}
+
+{"Le agradeceremos realizar el pago correspondiente a la brevedad posible o contactarnos para cualquier aclaración." if "MEDIA" in prioridad_cliente or "BAJA" in prioridad_cliente else ""}
+
+**DATOS DE CONTACTO:**
+
+- Departamento: Crédito y Cobranza
+- Email: cobranza@fradma.com
+- Teléfono: (XXX) XXX-XXXX
+- Horario: Lunes a Viernes, 9:00 AM - 6:00 PM
+
+Agradecemos su pronta atención y quedamos a su disposición para cualquier aclaración.
+
+Atentamente,
+
+**FRADMA**
+Departamento de Crédito y Cobranza
+
+---
+*Este documento es un recordatorio generado automáticamente. Para mayor información, favor de contactar a nuestro departamento.*
+"""
+                
+                st.text_area(
+                    "Vista previa de carta:",
+                    carta,
+                    height=400,
+                    help="Puedes copiar y personalizar esta carta"
+                )
+                
+                # Botón para descargar carta en txt
+                st.download_button(
+                    label="📄 Descargar Carta (.txt)",
+                    data=carta,
+                    file_name=f"carta_cobranza_{cliente_carta.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.txt",
+                    mime="text/plain"
+                )
+        
+        st.write("---")
+
         # Resumen ejecutivo
-        st.subheader("📝 Resumen Ejecutivo")
-        st.write(f"Fradma tiene **${total_adeudado:,.2f}** en deudas pendientes de cobro")
-        st.write(f"El principal deudor es **{top_deudores.index[0]}** con **${top_deudores.iloc[0]:,.2f}**")
+        st.subheader("📝 Resumen Ejecutivo para Dirección")
+        
+        # Crear resumen en formato de reporte ejecutivo
+        col_resumen1, col_resumen2, col_resumen3 = st.columns(3)
+        
+        with col_resumen1:
+            st.metric("💰 Cartera Total", f"${total_adeudado:,.2f}")
+            st.metric("📊 Calificación", f"{score_salud:.0f}/100")
+            st.caption(f"**{score_status}**")
+        
+        with col_resumen2:
+            st.metric("✅ Vigente", f"{pct_vigente:.1f}%")
+            st.metric("⚠️ Vencida", f"{pct_alto_riesgo:.1f}%")
+            st.caption("Alto riesgo >90 días")
+        
+        with col_resumen3:
+            st.metric("🎯 Casos Urgentes", urgente_count)
+            st.metric("📈 Morosidad", f"{indice_morosidad:.1f}%")
+            st.caption(f"${vencida:,.2f}")
+        
+        st.write("**Observaciones Clave:**")
+        st.write(f"- Fradma tiene **${total_adeudado:,.2f}** en cuentas por cobrar")
+        st.write(f"- El principal deudor es **{top_deudores.index[0]}** con **${top_deudores.iloc[0]:,.2f}** ({(top_deudores.iloc[0]/total_adeudado*100):.1f}% del total)")
         
         if 'dias_vencido' in df_deudas.columns:
-            deuda_vencida = df_deudas[df_deudas['dias_vencido'] > 0]['saldo_adeudado'].sum()
-            st.write(f"- **${deuda_vencida:,.2f} en deuda vencida**")
+            deuda_vencida_total = df_deudas[df_deudas['dias_vencido'] > 0]['saldo_adeudado'].sum()
+            st.write(f"- **${deuda_vencida_total:,.2f}** en deuda vencida ({(deuda_vencida_total/total_adeudado*100):.1f}% del total)")
         
-        st.write("Este reporte se basa en la columna 'Cliente' (F) para identificar deudores.")
+        st.write(f"- **{urgente_count} casos** requieren acción urgente inmediata")
+        
+        if alertas:
+            st.write(f"- **{len(alertas)} alertas** activas requieren atención")
+        
+        st.info("📌 Este reporte se basa en la columna 'Cliente' (F) para identificar deudores.")
 
     except Exception as e:
         st.error(f"❌ Error crítico: {str(e)}")

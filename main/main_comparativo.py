@@ -9,6 +9,11 @@ def run(df, año_base=None):
 
     df.columns = df.columns.str.lower().str.strip()
 
+    # Normalizar posibles variantes de columna de año
+    for col_anio in ["aã±o", "aÃ±o", "ano", "anio"]:
+        if col_anio in df.columns and "año" not in df.columns:
+            df = df.rename(columns={col_anio: "año"})
+
     # Asegurar compatibilidad: valor_usd = importe o ventas_usd
     if "valor_usd" not in df.columns:
         if "valor usd" in df.columns:
@@ -21,9 +26,6 @@ def run(df, año_base=None):
     if "valor_usd" not in df.columns:
         st.error("No se encontró la columna 'valor_usd', 'valor usd', 'ventas_usd' ni 'importe'.")
         return
-
-    
-        df = df.rename(columns={"aã±o": "año"})
 
     if "fecha" in df.columns and ("año" not in df.columns or "mes" not in df.columns):
         df["fecha"] = pd.to_datetime(df["fecha"], errors="coerce")
@@ -42,7 +44,7 @@ def run(df, año_base=None):
     tabla_fija = tabla_fija[sorted(tabla_fija.columns)]
 
     st.subheader("Ventas por Mes y Año (Tabla)")
-    st.dataframe(tabla_fija, use_container_width=True)
+    st.dataframe(tabla_fija.style.format("${:,.2f}"), width='stretch')
 
     # Gráfico anual
     df_chart = tabla_fija.reset_index().melt(id_vars="año", var_name="mes", value_name="valor_usd")
@@ -56,7 +58,7 @@ def run(df, año_base=None):
         tooltip=["año", "mes", "valor_usd"]
     ).properties(width=800, height=400)
 
-    st.altair_chart(chart, use_container_width=True)
+    st.altair_chart(chart, width='stretch')
 
     # Comparativo Año vs Año
     st.subheader("📊 Comparativo Año vs Año")
@@ -81,11 +83,20 @@ def run(df, año_base=None):
         comparativo[f"{anio_2}"] = pd.to_numeric(comparativo[f"{anio_2}"], errors="coerce").fillna(0)
 
         comparativo["Diferencia"] = comparativo[f"{anio_2}"] - comparativo[f"{anio_1}"]
-        comparativo["% Variación"] = (
-            (comparativo["Diferencia"] / comparativo[f"{anio_1}"].replace(0, pd.NA)) * 100
-        ).round(2)
+        denom = comparativo[f"{anio_1}"].where(comparativo[f"{anio_1}"] != 0)
+        pct_raw = (comparativo["Diferencia"] / denom) * 100
+        pct_num = pd.to_numeric(pct_raw, errors="coerce")
+        comparativo["% Variación"] = pct_num.round(2)
 
-        st.dataframe(comparativo)
+        st.dataframe(
+            comparativo.style.format({
+                f"{anio_1}": "${:,.2f}",
+                f"{anio_2}": "${:,.2f}",
+                "Diferencia": "${:,.2f}",
+                "% Variación": "{:.2f}%",
+            }),
+            width='stretch',
+        )
 
         st.subheader("📈 Gráfico Comparativo")
         comparativo_reset = comparativo.reset_index().melt(id_vars="mes", var_name="variable", value_name="valor")
@@ -97,6 +108,6 @@ def run(df, año_base=None):
             tooltip=["mes", "variable", "valor"]
         ).properties(width=800, height=400)
 
-        st.altair_chart(chart_comp, use_container_width=True)
+        st.altair_chart(chart_comp, width='stretch')
     else:
         st.info("Se necesitan al menos dos años para comparar.")

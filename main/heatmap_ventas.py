@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 import io
 import unicodedata
 
@@ -26,7 +27,8 @@ def run(df):
 
     mapa_columnas = {
         "linea": ["linea_prodcucto", "linea_producto", "linea_de_negocio", "linea producto", "linea_de_producto"],
-        "importe": ["valor_mn", "importe", "valor_usd", "valor mn"]
+        "importe": ["valor_usd", "ventas_usd", "importe"],
+        "producto": ["producto", "articulo", "item", "descripcion", "producto_nombre"]
     }
 
     df.columns = clean_columns(df.columns)
@@ -36,6 +38,7 @@ def run(df):
 
     columna_linea = detectar_columna(df, mapa_columnas["linea"])
     columna_importe = detectar_columna(df, mapa_columnas["importe"])
+    columna_producto = detectar_columna(df, mapa_columnas["producto"])
 
     if columna_linea is None or columna_importe is None:
         st.error("❌ No se encontraron las columnas clave necesarias para 'línea' e 'importe'.")
@@ -48,7 +51,14 @@ def run(df):
             "🗓️ Tipo de periodo:",
             ["Mensual", "Trimestral", "Anual", "Rango Personalizado"]
         )
-        mostrar_crecimiento = st.checkbox("📈 Mostrar % de crecimiento vs periodo anterior")
+        mostrar_crecimiento = st.checkbox("📈 Mostrar % de crecimiento")
+        
+        if mostrar_crecimiento:
+            tipo_comparacion = st.radio(
+                "Comparar contra:",
+                ["Período anterior", "Mismo período año anterior"],
+                help="Período anterior: mes vs mes previo, trimestre vs trimestre previo, etc.\nMismo período año anterior: ene-24 vs ene-23, Q1-24 vs Q1-23, etc."
+            )
 
     def generar_periodo_id(row, periodo_tipo):
         year_short = str(row['anio'])[-2:]
@@ -68,20 +78,24 @@ def run(df):
 
     if periodo_tipo == "Mensual":
         df['periodo'] = df['mes_anio']
-        growth_lag = 12
+        growth_lag_secuencial = 1  # Comparar con mes anterior
+        growth_lag_yoy = 12  # Comparar con mismo mes año anterior
     elif periodo_tipo == "Trimestral":
         df['periodo'] = df['trimestre']
-        growth_lag = 4
+        growth_lag_secuencial = 1  # Comparar con trimestre anterior
+        growth_lag_yoy = 4  # Comparar con mismo trimestre año anterior
     elif periodo_tipo == "Anual":
         df['periodo'] = df['anio'].astype(str)
-        growth_lag = 1
+        growth_lag_secuencial = 1  # Comparar con año anterior
+        growth_lag_yoy = 1  # Comparar con año anterior (mismo)
     elif periodo_tipo == "Rango Personalizado":
         with st.sidebar:
             start_date = st.date_input("📅 Fecha inicio:", value=df['fecha'].min())
             end_date = st.date_input("📅 Fecha fin:", value=df['fecha'].max())
         df = df[(df['fecha'] >= pd.to_datetime(start_date)) & (df['fecha'] <= pd.to_datetime(end_date))]
         df['periodo'] = "Rango Personalizado"
-        growth_lag = None
+        growth_lag_secuencial = None
+        growth_lag_yoy = None
 
     df['periodo_etiqueta'] = df['periodo_id'] + " - " + df['periodo']
     df = df.sort_values('periodo_id')
@@ -124,7 +138,7 @@ def run(df):
                 step=1
             )
 
-        df_filtered = df_filtered.applymap(lambda x: x if min_importe <= x <= max_importe else np.nan)
+        df_filtered = df_filtered.map(lambda x: x if min_importe <= x <= max_importe else np.nan)
         total_por_linea = df_filtered.sum(axis=0)
         top_lineas = total_por_linea.sort_values(ascending=False).head(top_n).index.tolist()
         df_filtered = df_filtered[top_lineas]
@@ -138,27 +152,31 @@ def run(df):
         annot_data = df_filtered.copy().astype(str)
         nuevas_lineas = set()
 
-        if mostrar_crecimiento and growth_lag:
+        if mostrar_crecimiento and growth_lag_secuencial:
             try:
+                # Calcular crecimiento según tipo de comparación seleccionado
                 df_growth = df_filtered.copy()
-                df_growth['periodo_id_num'] = df_period_ids.loc[df_filtered.index].astype(float)
-                df_growth = df_growth.sort_values('periodo_id_num').drop(columns='periodo_id_num')
-
-                if periodo_tipo == "Mensual":
-                    df_growth['periodo_base'] = [x.split(' - ')[1][:3] for x in df_growth.index]
-                elif periodo_tipo == "Trimestral":
-                    df_growth['periodo_base'] = [x.split(' - ')[1] for x in df_growth.index]
-                    df_growth['periodo_base'] = df_growth['periodo_base'].str.extract(r'(Q[1-4])')
-                elif periodo_tipo == "Anual":
-                    df_growth['periodo_base'] = [x.split(' - ')[1] for x in df_growth.index]
-                else:
-                    df_growth['periodo_base'] = np.nan
-
+                
+                # Ordenar por periodo_id para asegurar orden cronológico
+                df_growth['periodo_id_num'] = df_period_ids.loc[df_filtered.index]
+                df_growth = df_growth.sort_values('periodo_id_num')
+                df_growth = df_growth.drop(columns='periodo_id_num')
+                
                 if periodo_tipo != "Rango Personalizado":
-                    growth_table = df_growth.groupby('periodo_base').pct_change(periods=1) * 100
+                    # Determinar el lag según tipo de comparación
+                    if tipo_comparacion == "Período anterior":
+                        lag = growth_lag_secuencial
+                        comparacion_label = "vs período anterior"
+                    else:  # "Mismo período año anterior"
+                        lag = growth_lag_yoy
+                        comparacion_label = "vs mismo período año anterior"
+                    
+                    # pct_change con el lag correspondiente
+                    growth_table = df_growth.pct_change(periods=lag) * 100
                     growth_table = growth_table.loc[:, df_filtered.columns]
                 else:
                     growth_table = None
+                    comparacion_label = ""
 
                 for row in annot_data.index:
                     for col in annot_data.columns:
@@ -168,21 +186,21 @@ def run(df):
                             if pd.notna(growth) and not np.isinf(growth):
                                 annot_data.loc[row, col] = f"{format_currency(val)}\n({growth:.1f}%)"
                             elif np.isinf(growth):
-                                annot_data.loc[row, col] = "NEW"
+                                annot_data.loc[row, col] = f"{format_currency(val)}\nNEW"
                                 nuevas_lineas.add(col)
                             else:
                                 annot_data.loc[row, col] = f"{format_currency(val)}"
 
                 if nuevas_lineas:
-                    st.markdown("### 🟢 Líneas de negocio con nuevas ventas:")
-                    for linea in nuevas_lineas:
+                    st.info(f"🟢 **Líneas con ventas nuevas o reiniciadas** ({comparacion_label}):")
+                    for linea in sorted(nuevas_lineas):
                         st.markdown(f"- {linea}")
 
             except Exception as e:
-                st.warning(f"⚠️ Error calculando crecimiento YoY: {e}")
-                annot_data = df_filtered.applymap(lambda x: format_currency(x))
+                st.warning(f"⚠️ Error calculando crecimiento: {e}")
+                annot_data = df_filtered.map(lambda x: format_currency(x))
         else:
-            annot_data = df_filtered.applymap(lambda x: format_currency(x))
+            annot_data = df_filtered.map(lambda x: format_currency(x))
 
         fig, ax = plt.subplots(figsize=(max(10, len(top_lineas)*1.5), max(5, len(df_filtered.index)*0.6)))
         sns.heatmap(
@@ -226,6 +244,59 @@ def run(df):
         plt.title(f"Heatmap de Ventas ({periodo_tipo})", fontsize=14, pad=20)
         plt.tight_layout()
         st.pyplot(fig)
+
+        # Pie chart de líneas de negocio más vendidas
+        st.write("---")
+        st.subheader("🥧 Ventas por Línea de Negocio")
+        
+        # Calcular ventas por línea de negocio
+        ventas_linea = df.groupby(columna_linea)[columna_importe].sum().sort_values(ascending=False)
+        
+        # Top N + Otros
+        top_n_lineas = st.slider("🔢 Número de líneas a mostrar:", min_value=5, max_value=20, value=10, step=1)
+        
+        if len(ventas_linea) > top_n_lineas:
+            top_lineas_pie = ventas_linea.head(top_n_lineas)
+            otros = ventas_linea.iloc[top_n_lineas:].sum()
+            top_lineas_pie['Otros'] = otros
+        else:
+            top_lineas_pie = ventas_linea
+        
+        # Crear pie chart con Plotly
+        fig_pie = go.Figure(data=[go.Pie(
+            labels=top_lineas_pie.index.astype(str).tolist(),
+            values=top_lineas_pie.values.tolist(),
+            hole=0.4,
+            textinfo='label+percent',
+            textposition='auto',
+            hovertemplate='<b>%{label}</b><br>Ventas: $%{value:,.2f}<br>%{percent}<extra></extra>'
+        )])
+        
+        fig_pie.update_layout(
+            title=f"Top {top_n_lineas} Líneas de Negocio por Ventas",
+            height=500,
+            showlegend=True,
+            legend=dict(
+                orientation="v",
+                yanchor="middle",
+                y=0.5,
+                xanchor="left",
+                x=1.05
+            )
+        )
+        
+        st.plotly_chart(fig_pie, width='stretch')
+        
+        # Mostrar tabla de resumen
+        with st.expander("📋 Ver tabla de líneas de negocio"):
+            df_lineas_tabla = pd.DataFrame({
+                'Línea de Negocio': top_lineas_pie.index,
+                'Ventas': top_lineas_pie.values
+            })
+            df_lineas_tabla['% del Total'] = (df_lineas_tabla['Ventas'] / ventas_linea.sum() * 100).round(2)
+            df_lineas_tabla['Ventas'] = df_lineas_tabla['Ventas'].apply(lambda x: f"${x:,.2f}")
+            df_lineas_tabla['% del Total'] = df_lineas_tabla['% del Total'].apply(lambda x: f"{x:.2f}%")
+            st.dataframe(df_lineas_tabla, width='stretch', hide_index=True)
 
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
