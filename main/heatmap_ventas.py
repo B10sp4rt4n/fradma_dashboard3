@@ -128,7 +128,8 @@ def run(df):
         growth_lag_secuencial = None
         growth_lag_yoy = None
 
-    df['periodo_etiqueta'] = df['periodo_id'] + " - " + df['periodo']
+    # Convertir a string antes de concatenar para evitar errores de tipo
+    df['periodo_etiqueta'] = df['periodo_id'].astype(str) + " - " + df['periodo'].astype(str)
     df = df.sort_values('periodo_id')
 
     pivot_table = df.pivot_table(
