@@ -100,18 +100,49 @@ Ver [TESTING_SUMMARY.md](TESTING_SUMMARY.md) para detalles completos.
 
 Ver [.github-analysis.md](./.github-analysis.md) para análisis completo.
 
+## 🤝 Contribuir
+
+¿Quieres contribuir al proyecto? ¡Genial! Lee nuestra [Guía de Contribución](CONTRIBUTING.md).
+
+### Proceso Rápido
+
+1. **Fork** el repositorio
+2. **Crea** una rama (`git checkout -b feature/amazing-feature`)
+3. **Commit** tus cambios (`git commit -m 'feat: Add amazing feature'`)
+4. **Push** a la rama (`git push origin feature/amazing-feature`)
+5. **Abre** un Pull Request
+
+Ver [CONTRIBUTING.md](CONTRIBUTING.md) para detalles completos sobre:
+- Configuración del entorno
+- Estándares de código
+- Guía de testing
+- Proceso de PR
+
 ## 🔧 Tecnologías
 
 - **Framework**: Streamlit 1.40+
 - **Data**: Pandas, NumPy
 - **Visualización**: Plotly, Matplotlib
 - **Testing**: pytest, pytest-cov
+- **Type Checking**: mypy
 - **Python**: 3.11, 3.12
 
 ## 📝 Documentación Adicional
 
+- [CONTRIBUTING.md](CONTRIBUTING.md) - Guía de contribución
 - [REFACTOR_SUMMARY.md](REFACTOR_SUMMARY.md) - Resumen de refactorización
 - [TESTING_SUMMARY.md](TESTING_SUMMARY.md) - Documentación de testing
+- [EXECUTIVE_SUMMARY.md](EXECUTIVE_SUMMARY.md) - Resumen ejecutivo
 - [.github-analysis.md](.github-analysis.md) - Análisis de calidad
+
+## 📜 Licencia
+
+Este proyecto es privado y confidencial.
+
+## 👥 Autores
+
+- [@B10sp4rt4n](https://github.com/B10sp4rt4n)
+
+---
 
 *Este proyecto está en fase de estructuración. Los datos reales o funciones sensibles no están incluidos en esta versión pública.*
