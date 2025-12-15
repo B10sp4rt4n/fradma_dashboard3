@@ -234,17 +234,18 @@ if archivo:
             df[col] = df[col].astype(str)
 
         # Detectar columna de ventas (solo USD)
-        columnas_ventas_usd = ["valor_usd", "ventas_usd"]
+        columnas_ventas_usd = ["valor_usd", "ventas_usd", "ventas_usd_con_iva", "importe", "valor", "venta"]
         columna_encontrada = next((col for col in columnas_ventas_usd if col in df.columns), None)
 
-        if not columna_encontrada:
-            st.sidebar.warning("⚠️ No se encontró columna 'valor_usd'")
-            with st.sidebar.expander("🔍 Ver columnas detectadas"):
-                st.write(df.columns.tolist())
-        else:
-            st.sidebar.success(f"✅ Archivo cargado: **{archivo.name}**")
-            st.sidebar.info(f"📊 {len(df):,} registros | {len(df.columns)} columnas")
+        st.sidebar.success(f"✅ Archivo cargado: **{archivo.name}**")
+        st.sidebar.info(f"📊 {len(df):,} registros | {len(df.columns)} columnas")
+        
+        if columna_encontrada:
             st.session_state["columna_ventas"] = columna_encontrada
+        else:
+            st.sidebar.warning("⚠️ No se detectó columna de ventas estándar")
+            with st.sidebar.expander("🔍 Ver columnas disponibles"):
+                st.write(df.columns.tolist())
 
         if "fecha" in df.columns:
             df["fecha"] = pd.to_datetime(df["fecha"], errors="coerce")
