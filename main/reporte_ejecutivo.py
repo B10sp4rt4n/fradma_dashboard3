@@ -19,6 +19,93 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc):
         df_ventas: DataFrame con datos de ventas
         df_cxc: DataFrame con datos de cuentas por cobrar
     """
+
+    # Trabajar sobre copias locales para evitar efectos colaterales
+    df_ventas = df_ventas.copy() if df_ventas is not None else pd.DataFrame()
+    df_cxc = df_cxc.copy() if df_cxc is not None else pd.DataFrame()
+
+    # -----------------------------------------------------------------
+    # Normalización defensiva de columnas requeridas
+    # -----------------------------------------------------------------
+
+    # Asegurar compatibilidad de columna monetaria (USD)
+    if "valor_usd" not in df_ventas.columns:
+        for candidato in [
+            "ventas_usd_con_iva",
+            "ventas_usd",
+            "importe",
+            "monto_usd",
+            "total_usd",
+            "valor",
+        ]:
+            if candidato in df_ventas.columns:
+                df_ventas = df_ventas.rename(columns={candidato: "valor_usd"})
+                break
+
+    if "valor_usd" in df_ventas.columns:
+        df_ventas["valor_usd"] = pd.to_numeric(df_ventas["valor_usd"], errors="coerce").fillna(0)
+    else:
+        # Degradar de forma segura: el reporte sigue cargando, pero sin ventas
+        df_ventas["valor_usd"] = 0
+        st.warning(
+            "⚠️ No se encontró columna de ventas en USD. "
+            "Se esperaba 'valor_usd' (o alternativas como 'ventas_usd' / 'ventas_usd_con_iva' / 'importe')."
+        )
+
+    # Fecha (si existe) a datetime para cálculos mensuales
+    if "fecha" in df_ventas.columns:
+        df_ventas["fecha"] = pd.to_datetime(df_ventas["fecha"], errors="coerce")
+
+    # Si no hay hoja de CxC separada, pero X AGENTE contiene columnas de cartera,
+    # reutilizar df_ventas para construir la vista de CxC.
+    if df_cxc.empty:
+        cols_cartera = {
+            "saldo",
+            "saldo_usd",
+            "saldo_adeudado",
+            "dias_restante",
+            "dias_de_credito",
+            "dias_de_credit",
+            "vencimient",
+            "vencimiento",
+            "fecha_de_pago",
+            "fecha_pago",
+            "fecha_tentativa_de_pag",
+            "fecha_tentativa_de_pago",
+            "estatus",
+            "status",
+            "pagado",
+        }
+        if len(cols_cartera.intersection(set(df_ventas.columns))) > 0:
+            df_cxc = df_ventas.copy()
+
+    # -------------------------
+    # CxC: coerción numérica
+    # -------------------------
+
+    # Asegurar columna de saldo
+    if "saldo_adeudado" not in df_cxc.columns:
+        for candidato in [
+            "saldo",
+            "saldo_adeudo",
+            "adeudo",
+            "importe",
+            "monto",
+            "total",
+            "saldo_usd",
+        ]:
+            if candidato in df_cxc.columns:
+                df_cxc = df_cxc.rename(columns={candidato: "saldo_adeudado"})
+                break
+
+    if "saldo_adeudado" in df_cxc.columns:
+        # Limpieza típica: quitar separadores de miles y símbolos
+        saldo_txt = df_cxc["saldo_adeudado"].astype(str)
+        saldo_txt = saldo_txt.str.replace(",", "", regex=False)
+        saldo_txt = saldo_txt.str.replace("$", "", regex=False)
+        df_cxc["saldo_adeudado"] = pd.to_numeric(saldo_txt, errors="coerce").fillna(0)
+    else:
+        df_cxc["saldo_adeudado"] = 0
     
     st.title("📊 Reporte Ejecutivo")
     st.markdown("### Vista Consolidada del Negocio - Dashboard para Dirección")
@@ -35,13 +122,12 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc):
     with col_ventas:
         st.markdown("#### 📈 Ventas")
         # Calcular métricas de ventas
-        total_ventas = df_ventas["valor_usd"].sum() if "valor_usd" in df_ventas.columns else 0
+        total_ventas = df_ventas["valor_usd"].sum() if not df_ventas.empty else 0
         total_ops = len(df_ventas) if not df_ventas.empty else 0
         ticket_promedio = total_ventas / total_ops if total_ops > 0 else 0
         
         # Ventas del mes actual vs mes anterior (si hay columna fecha)
         if "fecha" in df_ventas.columns:
-            df_ventas["fecha"] = pd.to_datetime(df_ventas["fecha"], errors="coerce")
             mes_actual = df_ventas["fecha"].max().replace(day=1) if not df_ventas.empty else datetime.now().replace(day=1)
             mes_anterior = (mes_actual - timedelta(days=1)).replace(day=1)
             
@@ -64,39 +150,138 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc):
     
     with col_cxc:
         st.markdown("#### 🏦 Cuentas por Cobrar")
-        # Calcular métricas de CxC
-        total_adeudado = df_cxc["saldo_adeudado"].sum() if "saldo_adeudado" in df_cxc.columns else 0
-        
-        # Determinar columnas de días
+        # --- Reglas solicitadas ---
+        # 1) Excluir Pagado antes del cálculo (columna 'estatus' / 'pagado')
+        # 2) Calcular vencimiento = Fecha de Pago (cierre) + días de crédito (si no viene vencimiento)
+        # 3) Vencida si rebasa días de crédito (días vencidos > 0)
+
+        df_cxc_local = df_cxc.copy()
+        # Columna de días utilizada en secciones posteriores (Top Deudores)
         col_dias = None
-        for col in ["dias_vencido", "dias_transcurridos", "dias"]:
-            if col in df_cxc.columns:
-                col_dias = col
+
+        # Columna de estatus/pagado
+        col_estatus = None
+        for col in ["estatus", "status", "pagado"]:
+            if col in df_cxc_local.columns:
+                col_estatus = col
                 break
-        
-        if col_dias:
-            vigente = df_cxc[df_cxc[col_dias] <= 0]["saldo_adeudado"].sum()
-            vencida = df_cxc[df_cxc[col_dias] > 0]["saldo_adeudado"].sum()
-            alto_riesgo = df_cxc[df_cxc[col_dias] > 90]["saldo_adeudado"].sum()
+
+        if col_estatus:
+            estatus_norm = df_cxc_local[col_estatus].astype(str).str.strip().str.lower()
+            mask_pagado = estatus_norm.str.contains("pagado")
         else:
-            vigente = total_adeudado * 0.7  # Estimación conservadora
-            vencida = total_adeudado * 0.3
-            alto_riesgo = total_adeudado * 0.1
+            mask_pagado = pd.Series(False, index=df_cxc_local.index)
+
+        # Solo saldo no pagado
+        mask_no_pagado = ~mask_pagado
+
+        # Determinar/convertir saldo
+        if "saldo_adeudado" not in df_cxc_local.columns:
+            for candidato in ["saldo_usd", "saldo", "adeudo", "importe", "monto", "total"]:
+                if candidato in df_cxc_local.columns:
+                    df_cxc_local = df_cxc_local.rename(columns={candidato: "saldo_adeudado"})
+                    break
+        saldo_txt = df_cxc_local.get("saldo_adeudado", pd.Series(0, index=df_cxc_local.index)).astype(str)
+        saldo_txt = saldo_txt.str.replace(",", "", regex=False).str.replace("$", "", regex=False)
+        df_cxc_local["saldo_adeudado"] = pd.to_numeric(saldo_txt, errors="coerce").fillna(0)
+
+        total_adeudado = df_cxc_local.loc[mask_no_pagado, "saldo_adeudado"].sum()
+
+        # Estimar/obtener días vencidos (positivo = días de atraso)
+        dias_overdue = None
+
+        if "dias_vencido" in df_cxc_local.columns:
+            dias_txt = df_cxc_local["dias_vencido"].astype(str).str.replace(",", "", regex=False)
+            dias_overdue = pd.to_numeric(dias_txt, errors="coerce").fillna(0)
+        elif "dias_restante" in df_cxc_local.columns:
+            # En tu hoja, 'dias restante' es 0 o negativo cuando está vencida.
+            dias_txt = df_cxc_local["dias_restante"].astype(str).str.replace(",", "", regex=False)
+            dias_restante = pd.to_numeric(dias_txt, errors="coerce").fillna(0)
+            dias_overdue = -dias_restante
+        else:
+            # Calcular por fechas: vencimiento explícito o Fecha de Pago + días de crédito
+            col_venc = None
+            for col in ["vencimient", "vencimiento", "fecha_vencimiento"]:
+                if col in df_cxc_local.columns:
+                    col_venc = col
+                    break
+
+            if col_venc:
+                venc = pd.to_datetime(df_cxc_local[col_venc], errors="coerce")
+            else:
+                col_fecha_pago = None
+                for col in [
+                    "fecha_de_pago",
+                    "fecha_pago",
+                    "fecha_tentativa_de_pag",
+                    "fecha_tentativa_de_pago",
+                ]:
+                    if col in df_cxc_local.columns:
+                        col_fecha_pago = col
+                        break
+
+                col_credito = None
+                for col in ["dias_de_credito", "dias_de_credit", "dias_credito", "dias_credit"]:
+                    if col in df_cxc_local.columns:
+                        col_credito = col
+                        break
+
+                fecha_base = pd.to_datetime(df_cxc_local[col_fecha_pago], errors="coerce") if col_fecha_pago else pd.NaT
+
+                if col_credito:
+                    credito_txt = df_cxc_local[col_credito].astype(str).str.replace(",", "", regex=False)
+                    dias_credito = pd.to_numeric(credito_txt, errors="coerce").fillna(0).astype(int)
+                else:
+                    dias_credito = pd.Series(0, index=df_cxc_local.index)
+
+                venc = fecha_base + pd.to_timedelta(dias_credito, unit="D")
+
+            fecha_corte = pd.Timestamp.today().normalize()
+            dias_overdue = (fecha_corte - venc).dt.days
+            dias_overdue = pd.to_numeric(dias_overdue, errors="coerce").fillna(0)
+
+        # Exponer una columna estándar de días para reutilización en el reporte
+        df_cxc_local["dias_overdue"] = pd.to_numeric(dias_overdue, errors="coerce").fillna(0)
+        col_dias = "dias_overdue"
+
+        # Clasificación sobre NO pagados
+        vigente = df_cxc_local.loc[mask_no_pagado & (df_cxc_local["dias_overdue"] <= 0), "saldo_adeudado"].sum()
+        vencida_0_30 = df_cxc_local.loc[
+            mask_no_pagado & (df_cxc_local["dias_overdue"] > 0) & (df_cxc_local["dias_overdue"] <= 30),
+            "saldo_adeudado",
+        ].sum()
+        critica = df_cxc_local.loc[mask_no_pagado & (df_cxc_local["dias_overdue"] > 30), "saldo_adeudado"].sum()
+        alto_riesgo = df_cxc_local.loc[mask_no_pagado & (df_cxc_local["dias_overdue"] > 90), "saldo_adeudado"].sum()
         
         pct_vigente = (vigente / total_adeudado * 100) if total_adeudado > 0 else 100
-        pct_vencida = (vencida / total_adeudado * 100) if total_adeudado > 0 else 0
+        pct_vencida_0_30 = (vencida_0_30 / total_adeudado * 100) if total_adeudado > 0 else 0
+        pct_critica = (critica / total_adeudado * 100) if total_adeudado > 0 else 0
+        pct_vencida_total = pct_vencida_0_30 + pct_critica
+        # Compatibilidad: algunas secciones/ediciones pueden referirse a `pct_vencida`
+        pct_vencida = pct_vencida_total
         pct_alto_riesgo = (alto_riesgo / total_adeudado * 100) if total_adeudado > 0 else 0
         
         st.metric("💰 Cartera Total", formato_moneda(total_adeudado),
-                 delta=f"{pct_vigente:.1f}% Vigente")
+                 delta=f"{pct_vigente:.1f}% Vigente" if pct_vigente > 0 else "0% Vigente")
         
         col_c1, col_c2 = st.columns(2)
-        col_c1.metric("⚠️ Vencida", formato_moneda(vencida),
-                     delta=f"{pct_vencida:.1f}%",
+        
+        # Vencida 0-30 días con fondo amarillo claro
+        col_c1.markdown(f"""
+        <div style="background-color: #fffacd; padding: 10px; border-radius: 5px; border-left: 4px solid #ffd700;">
+            <p style="margin: 0; font-size: 0.9em; color: #666;">⚠️ Vencida 0-30 días</p>
+            <p style="margin: 5px 0 0 0; font-size: 1.5em; font-weight: bold; color: #333;">{formato_moneda(vencida_0_30)}</p>
+            <p style="margin: 5px 0 0 0; font-size: 0.85em; color: #666;">{pct_vencida_0_30:.1f}% de la cartera</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Crítica >30 días con indicador rojo
+        col_c2.metric("🔴 Crítica (>30 días)", formato_moneda(critica),
+                     delta=f"{pct_critica:.1f}%",
                      delta_color="inverse")
-        col_c2.metric("🔴 Alto Riesgo (>90d)", formato_moneda(alto_riesgo),
-                     delta=f"{pct_alto_riesgo:.1f}%",
-                     delta_color="inverse")
+
+        # Usar el DF normalizado (con saldo numérico + dias_overdue) en el resto del reporte
+        df_cxc = df_cxc_local
     
     # =====================================================================
     # SECCIÓN 2: INDICADORES CLAVE (4 columnas)
@@ -109,14 +294,14 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc):
     
     # KPI 1: Salud Financiera General (Score 0-100)
     score_ventas = min(100, (ventas_mes_actual / 1_000_000) * 50) if "fecha" in df_ventas.columns else 50
-    score_cartera = pct_vigente * 0.7 + max(0, 100 - pct_vencida * 2) * 0.3
+    score_cartera = pct_vigente * 0.7 + max(0, 100 - pct_critica * 2) * 0.3
     score_general = (score_ventas + score_cartera) / 2
     
     color_score = "🟢" if score_general >= 80 else "🟡" if score_general >= 60 else "🟠" if score_general >= 40 else "🔴"
     col1.metric(f"{color_score} Salud Financiera", f"{score_general:.0f}/100")
     
     # KPI 2: Índice de Liquidez
-    indice_liquidez = (vigente + ventas_mes_actual) / (vencida + 1) if vencida > 0 else 10
+    indice_liquidez = (vigente + ventas_mes_actual) / (critica + 1) if critica > 0 else 10
     color_liquidez = "🟢" if indice_liquidez >= 3 else "🟡" if indice_liquidez >= 1.5 else "🔴"
     col2.metric(f"{color_liquidez} Índice Liquidez", f"{indice_liquidez:.1f}x")
     
@@ -139,16 +324,16 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc):
     alertas = []
     
     # Alerta 1: Morosidad alta
-    if pct_vencida > 30:
+    if pct_vencida_total > 30:
         alertas.append({
             "nivel": "🔴 CRÍTICO",
-            "mensaje": f"Morosidad elevada: {pct_vencida:.1f}% de la cartera está vencida",
+            "mensaje": f"Morosidad elevada: {pct_vencida_total:.1f}% de la cartera está vencida",
             "accion": "Revisar políticas de crédito y acelerar cobranza"
         })
-    elif pct_vencida > 20:
+    elif pct_vencida_total > 20:
         alertas.append({
             "nivel": "🟠 ALERTA",
-            "mensaje": f"Morosidad en aumento: {pct_vencida:.1f}% vencida",
+            "mensaje": f"Morosidad en aumento: {pct_vencida_total:.1f}% vencida",
             "accion": "Monitorear clientes morosos y ejecutar plan de cobranza"
         })
     
@@ -244,78 +429,54 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc):
     
     with col_graf2:
         st.markdown("#### Composición de Cartera CxC")
-        
-        if col_dias:
-            # Crear categorías de antigüedad
-            df_cxc_temp = df_cxc.copy()
-            
-            def categorizar_antiguedad(dias):
-                if dias <= 0:
-                    return "Vigente"
-                elif dias <= 30:
-                    return "1-30 días"
-                elif dias <= 60:
-                    return "31-60 días"
-                elif dias <= 90:
-                    return "61-90 días"
-                else:
-                    return ">90 días (Crítico)"
-            
-            df_cxc_temp["categoria"] = df_cxc_temp[col_dias].apply(categorizar_antiguedad)
-            
-            cartera_por_categoria = df_cxc_temp.groupby("categoria")["saldo_adeudado"].sum().reset_index()
-            cartera_por_categoria.columns = ["Categoría", "Monto"]
-            
-            # Ordenar categorías
-            orden = ["Vigente", "1-30 días", "31-60 días", "61-90 días", ">90 días (Crítico)"]
-            cartera_por_categoria["orden"] = cartera_por_categoria["Categoría"].apply(
-                lambda x: orden.index(x) if x in orden else 99
-            )
-            cartera_por_categoria = cartera_por_categoria.sort_values("orden")
-            
-            # Colores por categoría
+
+        # Pie robusto basado en los montos ya calculados (NO pagados):
+        # Vigente (<=0), 1-30, 31-90 y >90.
+        vencida_31_90 = max(0, float(critica) - float(alto_riesgo))
+        cartera_por_categoria = pd.DataFrame(
+            {
+                "Categoría": ["Vigente", "1-30 días", "31-90 días", ">90 días (Crítico)"],
+                "Monto": [float(vigente), float(vencida_0_30), float(vencida_31_90), float(alto_riesgo)],
+            }
+        )
+
+        # Si no hay cartera (o todo está pagado), no mostrar pie vacío
+        if cartera_por_categoria["Monto"].sum() <= 0:
+            st.info("📊 No hay cartera pendiente para mostrar composición (todo pagado o sin saldo).")
+        else:
+            # Filtrar ceros para una leyenda más limpia
+            cartera_por_categoria = cartera_por_categoria[cartera_por_categoria["Monto"] > 0]
+
             colores = {
                 "Vigente": "#2ecc71",
                 "1-30 días": "#3498db",
-                "31-60 días": "#f39c12",
-                "61-90 días": "#e67e22",
-                ">90 días (Crítico)": "#e74c3c"
+                "31-90 días": "#f39c12",
+                ">90 días (Crítico)": "#e74c3c",
             }
-            
-            fig_cartera = go.Figure(data=[
-                go.Pie(
-                    labels=cartera_por_categoria["Categoría"],
-                    values=cartera_por_categoria["Monto"],
-                    marker=dict(colors=[colores.get(cat, "#95a5a6") for cat in cartera_por_categoria["Categoría"]]),
-                    textinfo="label+percent",
-                    hovertemplate="<b>%{label}</b><br>Monto: $%{value:,.2f}<br>%{percent}<extra></extra>"
-                )
-            ])
-            
+
+            fig_cartera = go.Figure(
+                data=[
+                    go.Pie(
+                        labels=cartera_por_categoria["Categoría"],
+                        values=cartera_por_categoria["Monto"],
+                        marker=dict(
+                            colors=[
+                                colores.get(cat, "#95a5a6")
+                                for cat in cartera_por_categoria["Categoría"]
+                            ]
+                        ),
+                        textinfo="label+percent",
+                        hovertemplate="<b>%{label}</b><br>Monto: $%{value:,.2f}<br>%{percent}<extra></extra>",
+                    )
+                ]
+            )
+
             fig_cartera.update_layout(
                 title="Distribución de Cartera por Antigüedad",
-                height=350
+                height=350,
             )
-            
+
             st.plotly_chart(fig_cartera, use_container_width=True)
-        else:
-            # Gráfico simple vigente vs vencido
-            fig_simple = go.Figure(data=[
-                go.Pie(
-                    labels=["Vigente", "Vencida"],
-                    values=[vigente, vencida],
-                    marker=dict(colors=["#2ecc71", "#e74c3c"]),
-                    textinfo="label+percent",
-                    hovertemplate="<b>%{label}</b><br>Monto: $%{value:,.2f}<br>%{percent}<extra></extra>"
-                )
-            ])
-            
-            fig_simple.update_layout(
-                title="Cartera Vigente vs Vencida",
-                height=350
-            )
-            
-            st.plotly_chart(fig_simple, use_container_width=True)
     
     # =====================================================================
     # SECCIÓN 5: TOP PERFORMERS Y BOTTOM PERFORMERS

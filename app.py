@@ -82,6 +82,38 @@ st.markdown("""
     [data-testid="stTooltipIcon"] {
         color: #1f77b4;
     }
+
+    /* Sidebar (menú) en azul oscuro */
+    [data-testid="stSidebar"] > div:first-child {
+        background-color: #0b1f3a;
+    }
+
+    /* Texto y labels del sidebar en claro para contraste */
+    [data-testid="stSidebar"],
+    [data-testid="stSidebar"] p,
+    [data-testid="stSidebar"] span,
+    [data-testid="stSidebar"] label,
+    [data-testid="stSidebar"] h1,
+    [data-testid="stSidebar"] h2,
+    [data-testid="stSidebar"] h3,
+    [data-testid="stSidebar"] h4 {
+        color: #ffffff;
+    }
+
+    /* Inputs del sidebar con fondo claro (para que se vean) */
+    [data-testid="stSidebar"] input,
+    [data-testid="stSidebar"] textarea,
+    [data-testid="stSidebar"] select {
+        color: #111827;
+        background-color: #ffffff;
+    }
+
+    /* Contenedores de widgets (radio/checkbox/select) */
+    [data-testid="stSidebar"] [data-baseweb="radio"],
+    [data-testid="stSidebar"] [data-baseweb="checkbox"],
+    [data-testid="stSidebar"] [data-baseweb="select"] {
+        color: #ffffff;
+    }
 </style>
 """, unsafe_allow_html=True)
 

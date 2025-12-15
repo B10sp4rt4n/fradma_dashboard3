@@ -83,9 +83,10 @@ def run(df, año_base=None):
         comparativo[f"{anio_2}"] = pd.to_numeric(comparativo[f"{anio_2}"], errors="coerce").fillna(0)
 
         comparativo["Diferencia"] = comparativo[f"{anio_2}"] - comparativo[f"{anio_1}"]
-        comparativo["% Variación"] = (
-            (comparativo["Diferencia"] / comparativo[f"{anio_1}"].replace(0, pd.NA)) * 100
-        ).round(2)
+        denom = comparativo[f"{anio_1}"].where(comparativo[f"{anio_1}"] != 0)
+        pct_raw = (comparativo["Diferencia"] / denom) * 100
+        pct_num = pd.to_numeric(pct_raw, errors="coerce")
+        comparativo["% Variación"] = pct_num.round(2)
 
         st.dataframe(
             comparativo.style.format({
