@@ -44,7 +44,7 @@ def run(df):
     tabla_fija = tabla_fija[sorted(tabla_fija.columns)]
 
     st.subheader("Ventas por Mes y Año (Tabla)")
-    st.dataframe(tabla_fija, use_container_width=True)
+    st.dataframe(tabla_fija, width='stretch')
 
     # Preparar datos para gráfico
     df_chart = tabla_fija.reset_index().melt(id_vars="año", var_name="mes", value_name="valor_usd")
@@ -58,4 +58,4 @@ def run(df):
         tooltip=["año", "mes", "valor_usd"]
     ).properties(width=800, height=400)
 
-    st.altair_chart(chart, use_container_width=True)
+    st.altair_chart(chart, width='stretch')

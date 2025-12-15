@@ -194,7 +194,7 @@ def run():
                             annotation_text="Mediana Ops")
         
         fig_matriz.update_layout(height=500)
-        st.plotly_chart(fig_matriz, use_container_width=True)
+        st.plotly_chart(fig_matriz, width='stretch')
         
         # Tabla detallada de eficiencia
         st.write("### 📋 Tabla Detallada de Eficiencia")
@@ -219,7 +219,7 @@ def run():
             'Clientes', 'Venta/Cliente', 'Clasificación'
         ]
         
-        st.dataframe(df_ef_table, use_container_width=True, hide_index=True)
+        st.dataframe(df_ef_table, width='stretch', hide_index=True)
         
         # Insights y recomendaciones
         st.write("### 💡 Insights y Recomendaciones")
@@ -326,4 +326,4 @@ def run():
                 tooltip=["anio:N", "agente:N", "ventas_moneda:N", "operaciones:Q"]
             ).properties(title="Ventas por Vendedor en el Tiempo")
 
-        st.altair_chart(chart, use_container_width=True)
+        st.altair_chart(chart, width='stretch')
