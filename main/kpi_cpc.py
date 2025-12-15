@@ -8,6 +8,18 @@ import matplotlib.colors as mcolors
 import plotly.graph_objects as go
 import plotly.express as px
 
+# Importar utilidades centralizadas
+from utils.constantes import (
+    UmbralesCxC, ScoreSalud, PrioridadCobranza, ConfigVisualizacion,
+    BINS_ANTIGUEDAD, LABELS_ANTIGUEDAD, COLORES_ANTIGUEDAD,
+    BINS_ANTIGUEDAD_AGENTES, LABELS_ANTIGUEDAD_AGENTES, COLORES_ANTIGUEDAD_AGENTES
+)
+from utils.cxc_helper import (
+    calcular_dias_overdue, preparar_datos_cxc, calcular_metricas_basicas,
+    calcular_score_salud, clasificar_score_salud, clasificar_antiguedad,
+    obtener_semaforo_morosidad, obtener_semaforo_riesgo, obtener_semaforo_concentracion
+)
+
 def normalizar_columnas(df):
     nuevas_columnas = []
     contador = {}
@@ -112,69 +124,23 @@ def run(archivo):
         df_deudas['saldo_adeudado'] = pd.to_numeric(saldo_limpio, errors='coerce').fillna(0)
 
         # ---------------------------------------------------------------------
-        # Normalización de CxC alineada con Reporte Ejecutivo
-        # - Excluir Pagado antes de clasificar
-        # - Calcular días de atraso (dias_overdue) desde:
-        #   dias_vencido / dias_restante / fecha_vencimiento / fecha_pago + días de crédito
+        # Normalización de CxC alineada con Reporte Ejecutivo usando funciones helper
         # ---------------------------------------------------------------------
-
-        # Excluir pagados si existe estatus
-        col_estatus = 'estatus' if 'estatus' in df_deudas.columns else ('status' if 'status' in df_deudas.columns else None)
-        if col_estatus:
-            estatus_norm = df_deudas[col_estatus].astype(str).str.strip().str.lower()
-            mask_pagado = estatus_norm.str.contains('pagado')
-        else:
-            mask_pagado = pd.Series(False, index=df_deudas.index)
-
-        # Construir dias_overdue (positivo = días de atraso)
-        if 'dias_vencido' in df_deudas.columns:
-            dias_overdue = pd.to_numeric(df_deudas['dias_vencido'], errors='coerce').fillna(0)
-        elif 'dias_restante' in df_deudas.columns:
-            dias_restante = pd.to_numeric(df_deudas['dias_restante'], errors='coerce').fillna(0)
-            dias_overdue = -dias_restante
-        elif 'fecha_vencimiento' in df_deudas.columns:
-            fecha_venc = pd.to_datetime(df_deudas['fecha_vencimiento'], errors='coerce', dayfirst=True)
-            dias_overdue = (pd.Timestamp.today().normalize() - fecha_venc).dt.days
-            dias_overdue = pd.to_numeric(dias_overdue, errors='coerce').fillna(0)
-        else:
-            col_fecha_pago = None
-            for c in ['fecha_de_pago', 'fecha_pago', 'fecha_tentativa_de_pag', 'fecha_tentativa_de_pago']:
-                if c in df_deudas.columns:
-                    col_fecha_pago = c
-                    break
-            col_credito = None
-            for c in ['dias_de_credito', 'dias_de_credit', 'dias_credito', 'dias_credit']:
-                if c in df_deudas.columns:
-                    col_credito = c
-                    break
-
-            fecha_base = pd.to_datetime(df_deudas[col_fecha_pago], errors='coerce', dayfirst=True) if col_fecha_pago else pd.NaT
-            if col_credito:
-                dias_credito = pd.to_numeric(df_deudas[col_credito], errors='coerce').fillna(0).astype(int)
-            else:
-                dias_credito = pd.Series(0, index=df_deudas.index)
-            venc = fecha_base + pd.to_timedelta(dias_credito, unit='D')
-            dias_overdue = (pd.Timestamp.today().normalize() - venc).dt.days
-            dias_overdue = pd.to_numeric(dias_overdue, errors='coerce').fillna(0)
-
-        df_deudas['dias_overdue'] = pd.to_numeric(dias_overdue, errors='coerce').fillna(0)
-        # Compatibilidad: si no existe dias_vencido, exponerlo con la misma semántica
-        if 'dias_vencido' not in df_deudas.columns:
-            df_deudas['dias_vencido'] = df_deudas['dias_overdue']
+        df_deudas, df_np, mask_pagado = preparar_datos_cxc(df_deudas)
 
         # ---------------------------------------------------------------------
         # REPORTE DE DEUDAS A FRADMA (USANDO COLUMNA CORRECTA)
         # ---------------------------------------------------------------------
         st.header("📊 Reporte de Deudas a Fradma")
         
-        # KPIs principales
-        df_np = df_deudas[~mask_pagado].copy()
-        total_adeudado = df_np['saldo_adeudado'].sum()
-        vigente = df_np[df_np['dias_overdue'] <= 0]['saldo_adeudado'].sum()
-        vencida = df_np[df_np['dias_overdue'] > 0]['saldo_adeudado'].sum()
-        vencida_0_30 = df_np[(df_np['dias_overdue'] > 0) & (df_np['dias_overdue'] <= 30)]['saldo_adeudado'].sum()
-        critica = df_np[df_np['dias_overdue'] > 30]['saldo_adeudado'].sum()
-        deuda_alto_riesgo = df_np[df_np['dias_overdue'] > 90]['saldo_adeudado'].sum()
+        # KPIs principales usando función helper
+        metricas = calcular_metricas_basicas(df_np)
+        total_adeudado = metricas['total_adeudado']
+        vigente = metricas['vigente']
+        vencida = metricas['vencida']
+        vencida_0_30 = metricas['vencida_0_30']
+        critica = metricas['critica']
+        deuda_alto_riesgo = metricas['alto_riesgo']
         
         # Métricas principales en columnas
         col1, col2, col3 = st.columns(3)
@@ -216,35 +182,18 @@ def run(archivo):
         st.header("🏥 Dashboard de Salud Financiera")
         
         # Calcular métricas de salud
-        pct_vigente = (vigente / total_adeudado * 100) if total_adeudado > 0 else 0
-        pct_critica = (critica / total_adeudado * 100) if total_adeudado > 0 else 0
-        pct_vencida_total = (vencida / total_adeudado * 100) if total_adeudado > 0 else 0
-        pct_alto_riesgo = (deuda_alto_riesgo / total_adeudado * 100) if total_adeudado > 0 else 0
+        pct_vigente = metricas['pct_vigente']
+        pct_critica = metricas['pct_critica']
+        pct_vencida_total = metricas['pct_vencida']
+        pct_alto_riesgo = metricas['pct_alto_riesgo']
         
         # Concentración top 3
         top3_deuda = df_np.groupby('deudor')['saldo_adeudado'].sum().nlargest(3).sum()
         pct_concentracion = (top3_deuda / total_adeudado * 100) if total_adeudado > 0 else 0
         
-        # Score alineado con Reporte Ejecutivo (componente de cartera)
-        score_salud = pct_vigente * 0.7 + max(0, 100 - pct_critica * 2) * 0.3
-        score_salud = max(0, min(100, score_salud))
-        
-        # Determinar color del score
-        if score_salud >= 80:
-            score_color = "#4CAF50"  # Verde
-            score_status = "Excelente"
-        elif score_salud >= 60:
-            score_color = "#8BC34A"  # Verde claro
-            score_status = "Bueno"
-        elif score_salud >= 40:
-            score_color = "#FFEB3B"  # Amarillo
-            score_status = "Regular"
-        elif score_salud >= 20:
-            score_color = "#FF9800"  # Naranja
-            score_status = "Malo"
-        else:
-            score_color = "#F44336"  # Rojo
-            score_status = "Crítico"
+        # Score usando función helper
+        score_salud = calcular_score_salud(pct_vigente, pct_critica)
+        score_status, score_color = clasificar_score_salud(score_salud)
         
         # Gauge principal de salud
         col_health1, col_health2 = st.columns([1, 2])
@@ -293,22 +242,22 @@ def run(archivo):
             # Calcular KPIs
             # DSO (Days Sales Outstanding) - Aproximación: (CxC / Ventas diarias promedio)
             # Como no tenemos ventas, usamos un estimado de 90 días como benchmark
-            dso_estimado = 45  # Placeholder - necesitaría datos de ventas reales
-            dso_objetivo = 30
-            dso_status = "🟢" if dso_estimado <= dso_objetivo else "🟡" if dso_estimado <= 45 else "🔴"
+            dso_estimado = UmbralesCxC.DSO_ACEPTABLE  # Placeholder - necesitaría datos de ventas reales
+            dso_objetivo = UmbralesCxC.DSO_OBJETIVO
+            dso_status = "🟢" if dso_estimado <= dso_objetivo else "🟡" if dso_estimado <= UmbralesCxC.DSO_ACEPTABLE else "🔴"
             
             # Índice de Morosidad (alineado: % vencida total sobre cartera no pagada)
             indice_morosidad = pct_vencida_total
-            morosidad_objetivo = 5
-            morosidad_status = "🟢" if indice_morosidad <= morosidad_objetivo else "🟡" if indice_morosidad <= 15 else "🔴"
+            morosidad_objetivo = UmbralesCxC.MOROSIDAD_OBJETIVO
+            morosidad_status = obtener_semaforo_morosidad(indice_morosidad)
             
             # Rotación CxC (estimado)
-            rotacion_cxc = 8  # Placeholder - necesitaría datos de ventas
-            rotacion_objetivo = 12
-            rotacion_status = "🟢" if rotacion_cxc >= rotacion_objetivo else "🟡" if rotacion_cxc >= 8 else "🔴"
+            rotacion_cxc = UmbralesCxC.ROTACION_CXC_MINIMO  # Placeholder - necesitaría datos de ventas
+            rotacion_objetivo = UmbralesCxC.ROTACION_CXC_OBJETIVO
+            rotacion_status = "🟢" if rotacion_cxc >= rotacion_objetivo else "🟡" if rotacion_cxc >= UmbralesCxC.ROTACION_CXC_MINIMO else "🔴"
             
             # Índice de Concentración
-            concentracion_status = "🟢" if pct_concentracion <= 30 else "🟡" if pct_concentracion <= 50 else "🔴"
+            concentracion_status = obtener_semaforo_concentracion(pct_concentracion)
             
             # Tabla de KPIs
             kpis_data = {
@@ -377,8 +326,8 @@ def run(archivo):
         
         alertas = []
         
-        # Alerta 1: Clientes que superan umbral crítico ($50K)
-        umbral_critico = 50000
+        # Alerta 1: Clientes que superan umbral crítico
+        umbral_critico = UmbralesCxC.CRITICO_MONTO
         clientes_criticos = df_np.groupby('deudor')['saldo_adeudado'].sum()
         clientes_sobre_umbral = clientes_criticos[clientes_criticos > umbral_critico]
         
@@ -412,7 +361,7 @@ def run(archivo):
         # Alerta 4: Clientes con aumento significativo
         # (Requeriría histórico - simulamos detección)
         if 'dias_overdue' in df_deudas.columns:
-            clientes_deterioro = df_np[df_np['dias_overdue'] > 120].groupby('deudor')['saldo_adeudado'].sum()
+            clientes_deterioro = df_np[df_np['dias_overdue'] > UmbralesCxC.DIAS_DETERIORO_SEVERO].groupby('deudor')['saldo_adeudado'].sum()
             if len(clientes_deterioro) > 0:
                 alertas.append({
                     'tipo': '📈 DETERIORO',
@@ -599,59 +548,10 @@ def run(archivo):
             df_lineas = df_deudas[df_deudas[col_linea].notna()].copy()
 
             # -------------------------------------------------
-            # Alinear cálculo con Reporte Ejecutivo
-            # - Excluir Pagado antes del cálculo
-            # - Días de atraso (dias_overdue) por:
-            #   dias_vencido (si existe) / dias_restante (negativo si vencida)
-            #   / fecha_vencimiento / fecha_pago + dias_de_credit
+            # Alinear cálculo con Reporte Ejecutivo usando helper
             # -------------------------------------------------
-
-            # Excluir pagados
-            col_estatus = None
-            for c in ['estatus', 'status', 'pagado']:
-                if c in df_lineas.columns:
-                    col_estatus = c
-                    break
-            if col_estatus:
-                estatus_norm = df_lineas[col_estatus].astype(str).str.strip().str.lower()
-                mask_pagado = estatus_norm.str.contains('pagado')
-                df_lineas = df_lineas[~mask_pagado].copy()
-
-            # Construir dias_overdue
-            dias_overdue = None
-            if 'dias_vencido' in df_lineas.columns:
-                dias_overdue = pd.to_numeric(df_lineas['dias_vencido'], errors='coerce').fillna(0)
-            elif 'dias_restante' in df_lineas.columns:
-                dias_restante = pd.to_numeric(df_lineas['dias_restante'], errors='coerce').fillna(0)
-                dias_overdue = -dias_restante
-            elif 'fecha_vencimiento' in df_lineas.columns:
-                fecha_venc = pd.to_datetime(df_lineas['fecha_vencimiento'], errors='coerce', dayfirst=True)
-                dias_overdue = (pd.Timestamp.today().normalize() - fecha_venc).dt.days
-                dias_overdue = pd.to_numeric(dias_overdue, errors='coerce').fillna(0)
-            else:
-                # Fallback: fecha_pago + días de crédito
-                col_fecha_pago = None
-                for c in ['fecha_de_pago', 'fecha_pago', 'fecha_tentativa_de_pag', 'fecha_tentativa_de_pago']:
-                    if c in df_lineas.columns:
-                        col_fecha_pago = c
-                        break
-                col_credito = None
-                for c in ['dias_de_credito', 'dias_de_credit', 'dias_credito', 'dias_credit']:
-                    if c in df_lineas.columns:
-                        col_credito = c
-                        break
-
-                fecha_base = pd.to_datetime(df_lineas[col_fecha_pago], errors='coerce', dayfirst=True) if col_fecha_pago else pd.NaT
-                if col_credito:
-                    dias_credito = pd.to_numeric(df_lineas[col_credito], errors='coerce').fillna(0).astype(int)
-                else:
-                    dias_credito = pd.Series(0, index=df_lineas.index)
-
-                venc = fecha_base + pd.to_timedelta(dias_credito, unit='D')
-                dias_overdue = (pd.Timestamp.today().normalize() - venc).dt.days
-                dias_overdue = pd.to_numeric(dias_overdue, errors='coerce').fillna(0)
-
-            df_lineas['dias_overdue'] = pd.to_numeric(dias_overdue, errors='coerce').fillna(0)
+            df_lineas, df_lineas_np, _ = preparar_datos_cxc(df_lineas)
+            df_lineas = df_lineas_np  # Usar solo no pagados
             
             if len(df_lineas) > 0:
                 # Calcular métricas por línea
@@ -701,15 +601,15 @@ def run(archivo):
                             pct_total = (total / total_adeudado * 100) if total_adeudado > 0 else 0
                             morosidad = row['pct_morosidad']
                             
-                            # Color según morosidad
-                            if morosidad < 10:
-                                color_linea = "#4CAF50"
-                            elif morosidad < 25:
-                                color_linea = "#FFEB3B"
-                            elif morosidad < 50:
-                                color_linea = "#FF9800"
+                            # Color según morosidad usando constantes
+                            if morosidad < UmbralesCxC.MOROSIDAD_BAJA:
+                                color_linea = ScoreSalud.COLOR_EXCELENTE
+                            elif morosidad < UmbralesCxC.MOROSIDAD_MEDIA:
+                                color_linea = ScoreSalud.COLOR_REGULAR
+                            elif morosidad < UmbralesCxC.MOROSIDAD_ALTA:
+                                color_linea = ScoreSalud.COLOR_MALO
                             else:
-                                color_linea = "#F44336"
+                                color_linea = ScoreSalud.COLOR_CRITICO
                             
                             with cols_linea[j]:
                                 fig_linea = go.Figure(go.Indicator(
@@ -746,14 +646,10 @@ def run(archivo):
                 df_comparativa = df_lineas_metricas.copy()
                 df_comparativa['% del Total'] = (df_comparativa['total'] / total_adeudado * 100)
                 
-                # Agregar semáforos de morosidad
-                df_comparativa['Alerta Morosidad'] = df_comparativa['pct_morosidad'].apply(
-                    lambda x: "🟢" if x < 10 else "🟡" if x < 25 else "🟠" if x < 50 else "🔴"
-                )
+                # Agregar semáforos de morosidad usando helper
+                df_comparativa['Alerta Morosidad'] = df_comparativa['pct_morosidad'].apply(obtener_semaforo_morosidad)
                 
-                df_comparativa['Alerta Riesgo Alto'] = df_comparativa['pct_alto_riesgo'].apply(
-                    lambda x: "🟢" if x < 5 else "🟡" if x < 15 else "🟠" if x < 30 else "🔴"
-                )
+                df_comparativa['Alerta Riesgo Alto'] = df_comparativa['pct_alto_riesgo'].apply(obtener_semaforo_riesgo)
                 
                 # Formatear para display
                 df_display = df_comparativa[[
@@ -842,21 +738,8 @@ def run(archivo):
             try:
                 df_riesgo = df_np.copy()
                 
-                # Clasificación de riesgo con colores
-                bins = [-np.inf, 0, 30, 60, 90, 180, np.inf]
-                labels = ['Por vencer', 
-                         '1-30 días', 
-                         '31-60 días', 
-                         '61-90 días', 
-                         '91-180 días', 
-                         '>180 días']
-                colores = ['#4CAF50', '#8BC34A', '#FFEB3B', '#FF9800', '#F44336', '#B71C1C']  # Verde, verde claro, amarillo, naranja, rojo, rojo oscuro
-                
-                df_riesgo['nivel_riesgo'] = pd.cut(
-                    df_riesgo['dias_overdue'], 
-                    bins=bins, 
-                    labels=labels
-                )
+                # Clasificación de riesgo usando constantes
+                df_riesgo['nivel_riesgo'] = clasificar_antiguedad(df_riesgo, tipo='completo')
                 
                 # Resumen de riesgo
                 riesgo_df = df_riesgo.groupby('nivel_riesgo', observed=True)['saldo_adeudado'].sum().reset_index()
@@ -871,14 +754,14 @@ def run(archivo):
                     fig_antiguedad = go.Figure(data=[go.Pie(
                         labels=riesgo_df['nivel_riesgo'].tolist(),
                         values=riesgo_df['saldo_adeudado'].tolist(),
-                        marker=dict(colors=colores),
-                        hole=0.4,
+                        marker=dict(colors=COLORES_ANTIGUEDAD),
+                        hole=ConfigVisualizacion.PIE_HOLE,
                         textinfo='label+percent',
                         textposition='outside'
                     )])
                     fig_antiguedad.update_layout(
                         showlegend=True,
-                        height=350,
+                        height=ConfigVisualizacion.PIE_HEIGHT,
                         margin=dict(t=20, b=20, l=20, r=20)
                     )
                     st.plotly_chart(fig_antiguedad, width='stretch')
@@ -897,7 +780,7 @@ def run(archivo):
                             nivel = row['nivel_riesgo']
                             pct = row['porcentaje']
                             monto = row['saldo_adeudado']
-                            color = colores[i + j]
+                            color = COLORES_ANTIGUEDAD[i + j]
                             
                             with cols_gauge[j]:
                                 # Crear gauge con plotly
@@ -926,7 +809,7 @@ def run(archivo):
                                     }
                                 ))
                                 fig_gauge.update_layout(
-                                    height=250,
+                                    height=ConfigVisualizacion.GAUGE_HEIGHT,
                                     margin=dict(t=50, b=0, l=20, r=20)
                                 )
                                 st.plotly_chart(fig_gauge, width='stretch')
@@ -945,7 +828,7 @@ def run(archivo):
                 # Gráfico de barras con colores por categoría
                 st.write("### 📊 Distribución de Deuda por Antigüedad")
                 fig, ax = plt.subplots()
-                bars = ax.bar(riesgo_df['nivel_riesgo'], riesgo_df['saldo_adeudado'], color=colores)
+                bars = ax.bar(riesgo_df['nivel_riesgo'], riesgo_df['saldo_adeudado'], color=COLORES_ANTIGUEDAD)
                 ax.set_title('Distribución por Antigüedad de Deuda')
                 ax.set_ylabel('Monto Adeudado ($)')
                 ax.yaxis.set_major_formatter('${x:,.2f}')
@@ -974,30 +857,11 @@ def run(archivo):
         
         if 'vendedor' in df_deudas.columns:
             # Usar cartera NO pagada y días de atraso estándar
-            df_agentes = df_np.copy() if 'df_np' in locals() else df_deudas.copy()
-
-            # Asegurar días estándar
-            if 'dias_overdue' not in df_agentes.columns:
-                if 'dias_vencido' in df_agentes.columns:
-                    df_agentes['dias_overdue'] = pd.to_numeric(df_agentes['dias_vencido'], errors='coerce').fillna(0)
-                elif 'fecha_vencimiento' in df_agentes.columns:
-                    hoy = pd.Timestamp.today().normalize()
-                    fecha_venc = pd.to_datetime(df_agentes['fecha_vencimiento'], errors='coerce', dayfirst=True)
-                    df_agentes['dias_overdue'] = (hoy - fecha_venc).dt.days
-                    df_agentes['dias_overdue'] = pd.to_numeric(df_agentes['dias_overdue'], errors='coerce').fillna(0)
+            df_agentes = df_np.copy()
 
             if 'dias_overdue' in df_agentes.columns:
-                # Definir categorías y colores para agentes
-                bins_agentes = [-np.inf, 0, 30, 60, 90, np.inf]
-                labels_agentes = ['Por vencer', '1-30 días', '31-60 días', '61-90 días', '>90 días']
-                colores_agentes = ['#4CAF50', '#8BC34A', '#FFEB3B', '#FF9800', '#F44336']  # Verde, verde claro, amarillo, naranja, rojo
-                
-                # Clasificar la deuda de los agentes
-                df_agentes['categoria_agente'] = pd.cut(
-                    df_agentes['dias_overdue'], 
-                    bins=bins_agentes, 
-                    labels=labels_agentes
-                )
+                # Definir categorías usando constantes
+                df_agentes['categoria_agente'] = clasificar_antiguedad(df_agentes, tipo='agentes')
                 
                 # Agrupar por agente y categoría
                 agente_categoria = df_agentes.groupby(['vendedor', 'categoria_agente'], observed=True)['saldo_adeudado'].sum().unstack().fillna(0)
@@ -1029,12 +893,12 @@ def run(archivo):
                     agente_sel = st.selectbox("Agente", agentes_list, index=0, key="pie_agente_antiguedad") if agentes_list else None
                     if agente_sel:
                         fila = agente_categoria.loc[agente_sel].drop(labels=['Total'], errors='ignore')
-                        fila = fila.reindex(labels_agentes).fillna(0)
+                        fila = fila.reindex(LABELS_ANTIGUEDAD_AGENTES).fillna(0)
                         fig_pie_ant = go.Figure(data=[go.Pie(
                             labels=fila.index.tolist(),
                             values=fila.values.tolist(),
-                            hole=0.4,
-                            marker=dict(colors=colores_agentes),
+                            hole=ConfigVisualizacion.PIE_HOLE,
+                            marker=dict(colors=COLORES_ANTIGUEDAD_AGENTES),
                             textinfo='label+percent'
                         )])
                         fig_pie_ant.update_layout(
@@ -1048,12 +912,12 @@ def run(archivo):
                 st.write("### 📊 Distribución por Agente y Antigüedad")
                 fig, ax = plt.subplots(figsize=(12, 6))
                 
-                # Preparar datos para el gráfico
+                # Preparar datos para el gráfico usando constantes
                 bottom = np.zeros(len(agente_categoria))
-                for i, categoria in enumerate(labels_agentes):
+                for i, categoria in enumerate(LABELS_ANTIGUEDAD_AGENTES):
                     if categoria in agente_categoria.columns:
                         valores = agente_categoria[categoria]
-                        ax.bar(agente_categoria.index, valores, bottom=bottom, label=categoria, color=colores_agentes[i])
+                        ax.bar(agente_categoria.index, valores, bottom=bottom, label=categoria, color=COLORES_ANTIGUEDAD_AGENTES[i])
                         bottom += valores
                 
                 # Personalizar gráfico
