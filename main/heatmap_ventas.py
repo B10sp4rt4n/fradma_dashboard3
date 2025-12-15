@@ -61,19 +61,50 @@ def run(df):
             )
 
     def generar_periodo_id(row, periodo_tipo):
-        year_short = str(row['anio'])[-2:]
-        month_num = row['fecha'].month
-        trimestre = (month_num - 1) // 3 + 1
+        """Genera el identificador del periodo de forma segura"""
+        try:
+            # Obtener año de forma segura
+            if 'anio' in row.index:
+                year_val = row['anio']
+            elif 'año' in row.index:
+                year_val = row['año']
+            else:
+                return ""
+            
+            year_short = str(int(year_val))[-2:]
+            
+            # Obtener mes de forma segura
+            if 'fecha' in row.index and pd.notna(row['fecha']):
+                if hasattr(row['fecha'], 'month'):
+                    month_num = row['fecha'].month
+                else:
+                    # Si no es datetime, intentar convertir
+                    fecha_dt = pd.to_datetime(row['fecha'], errors='coerce')
+                    if pd.notna(fecha_dt):
+                        month_num = fecha_dt.month
+                    else:
+                        month_num = 1
+            else:
+                month_num = 1
+            
+            trimestre = (month_num - 1) // 3 + 1
 
-        if periodo_tipo == "Mensual":
-            return f"{year_short}.{month_num:02d}"
-        elif periodo_tipo == "Trimestral":
-            return f"{year_short}.Q{trimestre}"
-        elif periodo_tipo == "Anual":
-            return f"{year_short}"
-        else:
-            return f"{year_short}.{month_num:02d}"
+            if periodo_tipo == "Mensual":
+                return f"{year_short}.{month_num:02d}"
+            elif periodo_tipo == "Trimestral":
+                return f"{year_short}.Q{trimestre}"
+            elif periodo_tipo == "Anual":
+                return f"{year_short}"
+            else:
+                return f"{year_short}.{month_num:02d}"
+        except Exception as e:
+            st.warning(f"Error generando periodo_id: {e}")
+            return ""
 
+    # Asegurar que la columna fecha esté en formato datetime
+    if 'fecha' in df.columns:
+        df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
+    
     df['periodo_id'] = df.apply(lambda row: generar_periodo_id(row, periodo_tipo), axis=1)
 
     if periodo_tipo == "Mensual":
