@@ -351,11 +351,14 @@ if "df" in st.session_state:
     if "filtros_aplicados" not in st.session_state:
         st.session_state["filtros_aplicados"] = {}
     
+    # Inicializar botón de reset
+    if "reset_filtros" not in st.session_state:
+        st.session_state["reset_filtros"] = False
+    
     # Opción para activar/desactivar filtros
     usar_filtros = st.sidebar.checkbox(
         "Activar filtros avanzados",
-        value=False,
-        key="usar_filtros_avanzados",
+        value=st.session_state.get("reset_filtros", False) == False,
         help="Activa esta opción para aplicar filtros por fecha y/o cliente"
     )
     
@@ -390,13 +393,18 @@ if "df" in st.session_state:
         
         # Botón para limpiar filtros
         st.sidebar.markdown("---")
-        if st.sidebar.button("🗑️ Desactivar y limpiar filtros", use_container_width=True):
+        if st.sidebar.button("🗑️ Limpiar todos los filtros", use_container_width=True):
             st.session_state["filtros_aplicados"] = {}
-            st.session_state["usar_filtros_avanzados"] = False
+            st.session_state["reset_filtros"] = True
+            # Limpiar las keys de los widgets de filtro
+            for key in list(st.session_state.keys()):
+                if key.startswith("filtro_"):
+                    del st.session_state[key]
             st.rerun()
         
         # Actualizar DataFrame filtrado en session_state
         st.session_state["df"] = df_filtrado
+        st.session_state["reset_filtros"] = False
         
         # Mostrar resumen de filtros aplicados
         if len(df_filtrado) < len(df_original):
