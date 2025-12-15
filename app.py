@@ -4,6 +4,10 @@ from unidecode import unidecode
 from main import main_kpi, main_comparativo, heatmap_ventas
 from main import kpi_cpc, reporte_ejecutivo
 from utils.data_cleaner import limpiar_columnas_texto, detectar_duplicados_similares
+from utils.logger import configurar_logger, log_dataframe_info, log_execution_time
+
+# Configurar logger de la aplicación
+logger = configurar_logger("dashboard_app", nivel="INFO")
 
 # Configuración de página con tema mejorado
 st.set_page_config(
@@ -143,11 +147,29 @@ def normalizar_columnas(df):
     return df
 
 # 🛠️ FUNCIÓN: Carga de Excel con detección de múltiples hojas y CONTPAQi
-def detectar_y_cargar_archivo(archivo):
-    """Detecta y carga archivos Excel con soporte para múltiples hojas y formato CONTPAQi."""
-    with st.spinner("📂 Cargando archivo..."):
-        xls = pd.ExcelFile(archivo)
+@st.cache_data(ttl=300, show_spinner="📂 Cargando archivo desde caché...")
+def detectar_y_cargar_archivo(archivo_bytes, archivo_nombre):
+    """
+    Detecta y carga archivos Excel con soporte para múltiples hojas y formato CONTPAQi.
+    
+    Args:
+        archivo_bytes: Contenido del archivo en bytes
+        archivo_nombre: Nombre del archivo para logging
+        
+    Returns:
+        DataFrame con datos cargados y normalizados
+    """
+    logger.info(f"Iniciando carga de archivo: {archivo_nombre}")
+    
+    try:
+        xls = pd.ExcelFile(archivo_bytes)
+    except Exception as e:
+        logger.error(f"Error al leer Excel: {e}", exc_info=True)
+        st.error(f"❌ Error al leer el archivo Excel: {e}")
+        return None
+        
     hojas = xls.sheet_names
+    logger.debug(f"Hojas encontradas: {hojas}")
 
     # Caso 1: Si hay múltiples hojas → Forzar lectura de "X AGENTE"
     if len(hojas) > 1:
@@ -176,19 +198,23 @@ def detectar_y_cargar_archivo(archivo):
                     st.error(f"❌ Error al procesar la columna 'fecha' en X AGENTE: {e}")
             else:
                 st.error("❌ No existe columna 'fecha' en X AGENTE para poder generar 'año' y 'mes'.")
+                logger.warning("Columna 'fecha' no encontrada en X AGENTE")
 
     else:
         # Caso 2: Solo una hoja → Detectar si es CONTPAQi
         hoja = hojas[0]
+        logger.info(f"Una sola hoja encontrada: {hoja}")
         st.info(f"✅ Solo una hoja encontrada: **{hoja}**. Procediendo con detección CONTPAQi.")
         preview = pd.read_excel(xls, sheet_name=hoja, nrows=5, header=None)
         contiene_contpaqi = preview.iloc[0, 0]
         skiprows = 3 if isinstance(contiene_contpaqi, str) and "contpaqi" in contiene_contpaqi.lower() else 0
         if skiprows:
+            logger.info("Formato CONTPAQi detectado, saltando 3 filas")
             st.info("📌 Archivo CONTPAQi detectado. Saltando primeras 3 filas.")
         df = pd.read_excel(xls, sheet_name=hoja, skiprows=skiprows)
         df = normalizar_columnas(df)
 
+    log_dataframe_info(logger, df, f"Archivo cargado: {archivo_nombre}")
     return df
 
 # =====================================================================
@@ -211,12 +237,17 @@ archivo = st.sidebar.file_uploader(
 )
 
 if archivo:
+    logger.info(f"Archivo subido: {archivo.name}, tamaño: {archivo.size / 1024:.2f} KB")
+    
     with st.spinner("⏳ Procesando archivo..."):
         if archivo.name.endswith(".csv"):
             df = pd.read_csv(archivo)
             df = normalizar_columnas(df)
+            log_dataframe_info(logger, df, "CSV cargado")
         else:
-            df = detectar_y_cargar_archivo(archivo)
+            # Pasar bytes y nombre para que sea cacheable
+            archivo_bytes = archivo.getvalue()
+            df = detectar_y_cargar_archivo(archivo_bytes, archivo.name)
 
         # Guardar archivo original para KPI CxC
         st.session_state["archivo_excel"] = archivo
