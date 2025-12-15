@@ -5,9 +5,21 @@ from main import main_kpi, main_comparativo, heatmap_ventas
 from main import kpi_cpc, reporte_ejecutivo
 from utils.data_cleaner import limpiar_columnas_texto, detectar_duplicados_similares
 from utils.logger import configurar_logger, log_dataframe_info, log_execution_time
+from utils.filters import (
+    aplicar_filtro_fechas, 
+    aplicar_filtro_cliente, 
+    aplicar_filtro_monto,
+    aplicar_filtro_categoria_riesgo,
+    mostrar_resumen_filtros
+)
+from utils.export_helper import crear_excel_metricas_cxc, crear_reporte_html
+from utils.cache_helper import GestorCache, decorador_medicion_tiempo
 
 # Configurar logger de la aplicación
 logger = configurar_logger("dashboard_app", nivel="INFO")
+
+# Inicializar gestor de caché
+gestor_cache = GestorCache(ttl=300)  # 5 minutos de TTL
 
 # Configuración de página con tema mejorado
 st.set_page_config(
@@ -148,6 +160,7 @@ def normalizar_columnas(df):
 
 # 🛠️ FUNCIÓN: Carga de Excel con detección de múltiples hojas y CONTPAQi
 @st.cache_data(ttl=300, show_spinner="📂 Cargando archivo desde caché...")
+@decorador_medicion_tiempo
 def detectar_y_cargar_archivo(archivo_bytes, archivo_nombre):
     """
     Detecta y carga archivos Excel con soporte para múltiples hojas y formato CONTPAQi.
@@ -240,14 +253,18 @@ if archivo:
     logger.info(f"Archivo subido: {archivo.name}, tamaño: {archivo.size / 1024:.2f} KB")
     
     with st.spinner("⏳ Procesando archivo..."):
+        inicio_carga = pd.Timestamp.now()
+        
         if archivo.name.endswith(".csv"):
             df = pd.read_csv(archivo)
             df = normalizar_columnas(df)
             log_dataframe_info(logger, df, "CSV cargado")
+            logger.info(f"CSV cargado en {(pd.Timestamp.now() - inicio_carga).total_seconds():.2f}s")
         else:
             # Pasar bytes y nombre para que sea cacheable
             archivo_bytes = archivo.getvalue()
             df = detectar_y_cargar_archivo(archivo_bytes, archivo.name)
+            logger.info(f"Excel cargado en {(pd.Timestamp.now() - inicio_carga).total_seconds():.2f}s")
 
         # Guardar archivo original para KPI CxC
         st.session_state["archivo_excel"] = archivo
@@ -288,6 +305,7 @@ if archivo:
         
         if columnas_existentes:
             df = limpiar_columnas_texto(df, columnas=columnas_existentes, usar_aliases=True)
+            logger.info(f"Columnas normalizadas: {', '.join(columnas_existentes)}")
             
             # Mostrar aviso de duplicados solo en modo debug
             if modo_debug:
@@ -318,6 +336,118 @@ if archivo:
             st.session_state["año_base"] = año_base
         else:
             st.sidebar.warning("⚠️ No se encontró columna 'año'")
+
+# =====================================================================
+# FILTROS AVANZADOS (SPRINT 4)
+# =====================================================================
+
+if "df" in st.session_state:
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 🔍 Filtros Avanzados")
+    
+    df_original = st.session_state["df"].copy()
+    df_filtrado = df_original.copy()
+    
+    # Inicializar estado de filtros si no existe
+    if "filtros_aplicados" not in st.session_state:
+        st.session_state["filtros_aplicados"] = {}
+    
+    with st.sidebar.expander("📅 Filtro por Fecha", expanded=False):
+        if "fecha" in df_filtrado.columns:
+            df_filtrado, info_fecha = aplicar_filtro_fechas(df_filtrado, "fecha")
+            if info_fecha:
+                st.session_state["filtros_aplicados"]["fecha"] = info_fecha
+                st.info(f"✅ {info_fecha['registros_filtrados']:,} registros en el rango")
+        else:
+            st.warning("⚠️ No hay columna 'fecha' disponible")
+    
+    with st.sidebar.expander("👤 Filtro por Cliente", expanded=False):
+        if "cliente" in df_filtrado.columns:
+            df_filtrado, info_cliente = aplicar_filtro_cliente(df_filtrado, "cliente")
+            if info_cliente:
+                st.session_state["filtros_aplicados"]["cliente"] = info_cliente
+                st.info(f"✅ {info_cliente['registros_filtrados']:,} registros encontrados")
+        else:
+            st.warning("⚠️ No hay columna 'cliente' disponible")
+    
+    with st.sidebar.expander("💰 Filtro por Monto", expanded=False):
+        columna_ventas = st.session_state.get("columna_ventas", None)
+        if columna_ventas and columna_ventas in df_filtrado.columns:
+            df_filtrado, info_monto = aplicar_filtro_monto(df_filtrado, columna_ventas)
+            if info_monto:
+                st.session_state["filtros_aplicados"]["monto"] = info_monto
+                st.info(f"✅ {info_monto['registros_filtrados']:,} registros en el rango")
+        else:
+            st.warning("⚠️ No hay columna de ventas disponible")
+    
+    # Botón para limpiar filtros
+    if st.session_state["filtros_aplicados"]:
+        if st.sidebar.button("🗑️ Limpiar todos los filtros", use_container_width=True):
+            st.session_state["filtros_aplicados"] = {}
+            df_filtrado = df_original.copy()
+            st.rerun()
+    
+    # Actualizar DataFrame filtrado en session_state
+    if len(df_filtrado) < len(df_original):
+        st.session_state["df"] = df_filtrado
+        resumen = mostrar_resumen_filtros(st.session_state["filtros_aplicados"])
+        with st.sidebar:
+            st.success(f"✅ Filtros aplicados: {len(df_filtrado):,} de {len(df_original):,} registros")
+
+# =====================================================================
+# EXPORTACIÓN DE REPORTES (SPRINT 4)
+# =====================================================================
+
+if "df" in st.session_state and "archivo_excel" in st.session_state:
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 📥 Exportar Reportes")
+    
+    col_excel, col_html = st.sidebar.columns(2)
+    
+    with col_excel:
+        try:
+            # Obtener datos de CxC si están disponibles
+            archivo_excel = st.session_state["archivo_excel"]
+            xls = pd.ExcelFile(archivo_excel)
+            hoja_cxc = None
+            
+            for nombre_hoja in xls.sheet_names:
+                if "cxc" in nombre_hoja.lower() or "cuenta" in nombre_hoja.lower():
+                    hoja_cxc = nombre_hoja
+                    break
+            
+            if hoja_cxc:
+                df_cxc_raw = pd.read_excel(xls, sheet_name=hoja_cxc)
+                df_cxc = normalizar_columnas(df_cxc_raw)
+                
+                # Generar Excel
+                excel_buffer = crear_excel_metricas_cxc(df_cxc)
+                st.download_button(
+                    label="📊 Excel",
+                    data=excel_buffer,
+                    file_name="reporte_cxc.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+        except Exception as e:
+            st.warning("⚠️ Excel no disponible")
+            logger.error(f"Error generando Excel: {e}")
+    
+    with col_html:
+        try:
+            if hoja_cxc:
+                # Generar HTML
+                html_content = crear_reporte_html(df_cxc)
+                st.download_button(
+                    label="🌐 HTML",
+                    data=html_content,
+                    file_name="reporte_cxc.html",
+                    mime="text/html",
+                    use_container_width=True
+                )
+        except Exception as e:
+            st.warning("⚠️ HTML no disponible")
+            logger.error(f"Error generando HTML: {e}")
 
 # =====================================================================
 # NAVEGACIÓN MEJORADA CON TABS Y TOOLTIPS
