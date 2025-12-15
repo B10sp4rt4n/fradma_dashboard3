@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 import io
 import unicodedata
 
@@ -26,7 +27,8 @@ def run(df):
 
     mapa_columnas = {
         "linea": ["linea_prodcucto", "linea_producto", "linea_de_negocio", "linea producto", "linea_de_producto"],
-        "importe": ["valor_usd", "ventas_usd", "importe"]
+        "importe": ["valor_usd", "ventas_usd", "importe"],
+        "producto": ["producto", "articulo", "item", "descripcion", "producto_nombre"]
     }
 
     df.columns = clean_columns(df.columns)
@@ -36,6 +38,7 @@ def run(df):
 
     columna_linea = detectar_columna(df, mapa_columnas["linea"])
     columna_importe = detectar_columna(df, mapa_columnas["importe"])
+    columna_producto = detectar_columna(df, mapa_columnas["producto"])
 
     if columna_linea is None or columna_importe is None:
         st.error("❌ No se encontraron las columnas clave necesarias para 'línea' e 'importe'.")
@@ -241,6 +244,59 @@ def run(df):
         plt.title(f"Heatmap de Ventas ({periodo_tipo})", fontsize=14, pad=20)
         plt.tight_layout()
         st.pyplot(fig)
+
+        # Pie chart de líneas de negocio más vendidas
+        st.write("---")
+        st.subheader("🥧 Ventas por Línea de Negocio")
+        
+        # Calcular ventas por línea de negocio
+        ventas_linea = df.groupby(columna_linea)[columna_importe].sum().sort_values(ascending=False)
+        
+        # Top N + Otros
+        top_n_lineas = st.slider("🔢 Número de líneas a mostrar:", min_value=5, max_value=20, value=10, step=1)
+        
+        if len(ventas_linea) > top_n_lineas:
+            top_lineas_pie = ventas_linea.head(top_n_lineas)
+            otros = ventas_linea.iloc[top_n_lineas:].sum()
+            top_lineas_pie['Otros'] = otros
+        else:
+            top_lineas_pie = ventas_linea
+        
+        # Crear pie chart con Plotly
+        fig_pie = go.Figure(data=[go.Pie(
+            labels=top_lineas_pie.index.astype(str).tolist(),
+            values=top_lineas_pie.values.tolist(),
+            hole=0.4,
+            textinfo='label+percent',
+            textposition='auto',
+            hovertemplate='<b>%{label}</b><br>Ventas: $%{value:,.2f}<br>%{percent}<extra></extra>'
+        )])
+        
+        fig_pie.update_layout(
+            title=f"Top {top_n_lineas} Líneas de Negocio por Ventas",
+            height=500,
+            showlegend=True,
+            legend=dict(
+                orientation="v",
+                yanchor="middle",
+                y=0.5,
+                xanchor="left",
+                x=1.05
+            )
+        )
+        
+        st.plotly_chart(fig_pie, width='stretch')
+        
+        # Mostrar tabla de resumen
+        with st.expander("📋 Ver tabla de líneas de negocio"):
+            df_lineas_tabla = pd.DataFrame({
+                'Línea de Negocio': top_lineas_pie.index,
+                'Ventas': top_lineas_pie.values
+            })
+            df_lineas_tabla['% del Total'] = (df_lineas_tabla['Ventas'] / ventas_linea.sum() * 100).round(2)
+            df_lineas_tabla['Ventas'] = df_lineas_tabla['Ventas'].apply(lambda x: f"${x:,.2f}")
+            df_lineas_tabla['% del Total'] = df_lineas_tabla['% del Total'].apply(lambda x: f"{x:.2f}%")
+            st.dataframe(df_lineas_tabla, width='stretch', hide_index=True)
 
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:

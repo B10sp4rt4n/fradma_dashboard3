@@ -204,7 +204,7 @@ def run(archivo):
                 height=350,
                 margin=dict(t=20, b=20, l=20, r=20)
             )
-            st.plotly_chart(fig_vigente, use_container_width=True)
+            st.plotly_chart(fig_vigente, width='stretch')
 
         # Top 5 deudores (USANDO COLUMNA F - CLIENTE)
         st.subheader("🔝 Principales Deudores (Columna Cliente)")
@@ -281,7 +281,7 @@ def run(archivo):
                 height=350,
                 margin=dict(t=80, b=20, l=20, r=20)
             )
-            st.plotly_chart(fig_health, use_container_width=True)
+            st.plotly_chart(fig_health, width='stretch')
             
             # Métricas auxiliares
             st.metric("Liquidez (Vigente)", f"{pct_vigente:.1f}%", 
@@ -354,7 +354,7 @@ def run(archivo):
             # Mostrar tabla con estilo
             st.dataframe(
                 df_kpis,
-                use_container_width=True,
+                width='stretch',
                 hide_index=True,
                 column_config={
                     "KPI": st.column_config.TextColumn("KPI", width="medium"),
@@ -533,7 +533,7 @@ def run(archivo):
         
         st.dataframe(
             df_top_prioridades,
-            use_container_width=True,
+            width='stretch',
             hide_index=True
         )
         
@@ -735,7 +735,7 @@ def run(archivo):
                                     height=200,
                                     margin=dict(t=60, b=10, l=10, r=10)
                                 )
-                                st.plotly_chart(fig_linea, use_container_width=True)
+                                st.plotly_chart(fig_linea, width='stretch')
                                 st.caption(f"Morosidad: {morosidad:.1f}% | Clientes: {row['clientes']}")
                 
                 st.write("---")
@@ -773,7 +773,7 @@ def run(archivo):
                     'Riesgo Alto', '🚦 Riesgo Alto', 'Concentración', 'Clientes', 'Docs'
                 ]
                 
-                st.dataframe(df_display, use_container_width=True, hide_index=True)
+                st.dataframe(df_display, width='stretch', hide_index=True)
                 
                 # Identificar líneas problemáticas
                 st.write("### ⚠️ Líneas que Requieren Atención")
@@ -814,7 +814,7 @@ def run(archivo):
                         color_continuous_scale=['green', 'yellow', 'orange', 'red']
                     )
                     fig_monto_lineas.update_layout(height=400)
-                    st.plotly_chart(fig_monto_lineas, use_container_width=True)
+                    st.plotly_chart(fig_monto_lineas, width='stretch')
                 
                 with col_chart2:
                     # Gráfico de morosidad por línea
@@ -828,7 +828,7 @@ def run(archivo):
                         color_continuous_scale=['green', 'yellow', 'orange', 'red']
                     )
                     fig_morosidad_lineas.update_layout(height=400)
-                    st.plotly_chart(fig_morosidad_lineas, use_container_width=True)
+                    st.plotly_chart(fig_morosidad_lineas, width='stretch')
                 
                 st.write("---")
             else:
@@ -881,7 +881,7 @@ def run(archivo):
                         height=350,
                         margin=dict(t=20, b=20, l=20, r=20)
                     )
-                    st.plotly_chart(fig_antiguedad, use_container_width=True)
+                    st.plotly_chart(fig_antiguedad, width='stretch')
                 
                 # Gauges por categoría de riesgo
                 st.write("### 🎯 Indicadores de Riesgo por Antigüedad")
@@ -929,7 +929,7 @@ def run(archivo):
                                     height=250,
                                     margin=dict(t=50, b=0, l=20, r=20)
                                 )
-                                st.plotly_chart(fig_gauge, use_container_width=True)
+                                st.plotly_chart(fig_gauge, width='stretch')
                 
                 st.write("---")
                 
@@ -940,7 +940,7 @@ def run(archivo):
                 resumen_tabla['% del Total'] = resumen_tabla['porcentaje'].apply(lambda x: f"{x:.1f}%")
                 resumen_tabla = resumen_tabla[['nivel_riesgo', 'Monto', '% del Total']]
                 resumen_tabla.columns = ['Categoría', 'Monto Adeudado', '% del Total']
-                st.dataframe(resumen_tabla, use_container_width=True, hide_index=True)
+                st.dataframe(resumen_tabla, width='stretch', hide_index=True)
                 
                 # Gráfico de barras con colores por categoría
                 st.write("### 📊 Distribución de Deuda por Antigüedad")
@@ -1022,7 +1022,7 @@ def run(archivo):
                         height=360,
                         margin=dict(t=50, b=20, l=20, r=20)
                     )
-                    st.plotly_chart(fig_pie_agente, use_container_width=True)
+                    st.plotly_chart(fig_pie_agente, width='stretch')
 
                 with col_pie_ag2:
                     agentes_list = agente_categoria.index.astype(str).tolist()
@@ -1042,7 +1042,7 @@ def run(archivo):
                             height=360,
                             margin=dict(t=50, b=20, l=20, r=20)
                         )
-                        st.plotly_chart(fig_pie_ant, use_container_width=True)
+                        st.plotly_chart(fig_pie_ant, width='stretch')
                 
                 # Crear gráfico de barras apiladas
                 st.write("### 📊 Distribución por Agente y Antigüedad")
@@ -1199,7 +1199,7 @@ def run(archivo):
                                     height=220,
                                     margin=dict(t=60, b=10, l=10, r=10)
                                 )
-                                st.plotly_chart(fig_agente_ef, use_container_width=True)
+                                st.plotly_chart(fig_agente_ef, width='stretch')
                                 st.caption(f"Efectividad: {efectividad:.1f}% | Clientes: {row['clientes']}")
                 
                 # Tabla comparativa de eficiencia
@@ -1233,7 +1233,7 @@ def run(archivo):
                     'Días Prom.', 'Casos >90d', '% Críticos', 'Clientes', 'Cartera Total'
                 ]
                 
-                st.dataframe(df_ef_table, use_container_width=True, hide_index=True)
+                st.dataframe(df_ef_table, width='stretch', hide_index=True)
                 
                 # Ranking y reconocimiento
                 st.write("### 🏆 Ranking de Eficiencia")
@@ -1282,7 +1282,7 @@ def run(archivo):
                 )
                 resumen_simple.columns = ['Agente', 'Cartera Total']
                 resumen_simple['Cartera Total'] = resumen_simple['Cartera Total'].apply(lambda x: f"${x:,.2f}")
-                st.dataframe(resumen_simple, use_container_width=True, hide_index=True)
+                st.dataframe(resumen_simple, width='stretch', hide_index=True)
         else:
             st.warning("ℹ️ No se encontró información de agentes (vendedores)")
 

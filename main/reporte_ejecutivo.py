@@ -423,7 +423,7 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc):
                 showlegend=False
             )
             
-            st.plotly_chart(fig_ventas, use_container_width=True)
+            st.plotly_chart(fig_ventas, width='stretch')
         else:
             st.info("📊 Se requiere columna 'fecha' para mostrar tendencias de ventas")
     
@@ -476,7 +476,7 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc):
                 height=350,
             )
 
-            st.plotly_chart(fig_cartera, use_container_width=True)
+            st.plotly_chart(fig_cartera, width='stretch')
     
     # =====================================================================
     # SECCIÓN 5: TOP PERFORMERS Y BOTTOM PERFORMERS
@@ -506,7 +506,7 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc):
             top_vendedores_display["Ticket"] = top_vendedores_display["Ticket"].apply(lambda x: formato_moneda(x))
             top_vendedores_display.insert(0, "🏅", ["🥇", "🥈", "🥉", "④", "⑤"])
             
-            st.dataframe(top_vendedores_display, use_container_width=True, hide_index=True)
+            st.dataframe(top_vendedores_display, width='stretch', hide_index=True)
         else:
             st.info("No hay información de vendedores disponible")
     
@@ -538,7 +538,7 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc):
                     lambda x: "🔴" if pd.notna(x) and x > 90 else "🟡" if pd.notna(x) and x > 60 else "🟢"
                 )
             
-            st.dataframe(top_deudores_display, use_container_width=True, hide_index=True)
+            st.dataframe(top_deudores_display, width='stretch', hide_index=True)
         else:
             st.info("No hay información de deudores disponible")
     

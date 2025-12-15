@@ -44,7 +44,7 @@ def run(df, año_base=None):
     tabla_fija = tabla_fija[sorted(tabla_fija.columns)]
 
     st.subheader("Ventas por Mes y Año (Tabla)")
-    st.dataframe(tabla_fija.style.format("${:,.2f}"), use_container_width=True)
+    st.dataframe(tabla_fija.style.format("${:,.2f}"), width='stretch')
 
     # Gráfico anual
     df_chart = tabla_fija.reset_index().melt(id_vars="año", var_name="mes", value_name="valor_usd")
@@ -58,7 +58,7 @@ def run(df, año_base=None):
         tooltip=["año", "mes", "valor_usd"]
     ).properties(width=800, height=400)
 
-    st.altair_chart(chart, use_container_width=True)
+    st.altair_chart(chart, width='stretch')
 
     # Comparativo Año vs Año
     st.subheader("📊 Comparativo Año vs Año")
@@ -95,7 +95,7 @@ def run(df, año_base=None):
                 "Diferencia": "${:,.2f}",
                 "% Variación": "{:.2f}%",
             }),
-            use_container_width=True,
+            width='stretch',
         )
 
         st.subheader("📈 Gráfico Comparativo")
@@ -108,6 +108,6 @@ def run(df, año_base=None):
             tooltip=["mes", "variable", "valor"]
         ).properties(width=800, height=400)
 
-        st.altair_chart(chart_comp, use_container_width=True)
+        st.altair_chart(chart_comp, width='stretch')
     else:
         st.info("Se necesitan al menos dos años para comparar.")
