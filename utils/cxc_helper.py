@@ -80,20 +80,20 @@ def calcular_dias_overdue(df: pd.DataFrame) -> pd.Series:
     Example:
         df['dias_overdue'] = calcular_dias_overdue(df)
     """
-    # Método 1: dias_vencido directo
+    # Método 1: dias_vencido directo (si existe y tiene valores confiables)
     if 'dias_vencido' in df.columns:
-        return pd.to_numeric(df['dias_vencido'], errors='coerce').fillna(0)
+        dias = pd.to_numeric(df['dias_vencido'], errors='coerce').fillna(0)
+        # Solo usar si tiene valores significativos (>30 días)
+        if dias.max() > 30:
+            return dias
     
-    # Método 2: dias_restante (invertir signo)
-    if 'dias_restante' in df.columns:
-        dias_restante = pd.to_numeric(df['dias_restante'], errors='coerce').fillna(0)
-        return -dias_restante
-    
-    # Método 3: fecha_vencimiento
-    if 'fecha_vencimiento' in df.columns:
-        fecha_venc = pd.to_datetime(df['fecha_vencimiento'], errors='coerce', dayfirst=True)
-        dias = (pd.Timestamp.today().normalize() - fecha_venc).dt.days
-        return pd.to_numeric(dias, errors='coerce').fillna(0)
+    # Método 2: Calcular desde fecha de vencimiento (MÁS CONFIABLE)
+    # Priorizar vencimiento sobre dias_restantes porque dias_restantes puede estar desactualizado
+    for col_venc in ['vencimiento', 'fecha_vencimiento', 'vencimient']:
+        if col_venc in df.columns:
+            fecha_venc = pd.to_datetime(df[col_venc], errors='coerce', dayfirst=True)
+            dias = (pd.Timestamp.today().normalize() - fecha_venc).dt.days
+            return pd.to_numeric(dias, errors='coerce').fillna(0)
     
     # Método 4: fecha_pago + dias_de_credito
     col_fecha_pago = detectar_columna(df, COLUMNAS_FECHA_PAGO)

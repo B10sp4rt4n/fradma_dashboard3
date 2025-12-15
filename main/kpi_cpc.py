@@ -707,7 +707,8 @@ def run(archivo):
                         title='Monto CxC por Línea de Negocio',
                         labels={'linea': 'Línea', 'total': 'Monto ($)'},
                         color='pct_morosidad',
-                        color_continuous_scale=['green', 'yellow', 'orange', 'red']
+                        color_continuous_scale=['green', 'yellow', 'orange', 'red'],
+                        range_color=[0, 100]  # Fijar escala de 0 a 100%
                     )
                     fig_monto_lineas.update_layout(height=400)
                     st.plotly_chart(fig_monto_lineas, width='stretch')
@@ -721,7 +722,8 @@ def run(archivo):
                         title='Índice de Morosidad por Línea',
                         labels={'linea': 'Línea', 'pct_morosidad': 'Morosidad (%)'},
                         color='pct_morosidad',
-                        color_continuous_scale=['green', 'yellow', 'orange', 'red']
+                        color_continuous_scale=['green', 'yellow', 'orange', 'red'],
+                        range_color=[0, 100]  # Fijar escala de 0 a 100%
                     )
                     fig_morosidad_lineas.update_layout(height=400)
                     st.plotly_chart(fig_morosidad_lineas, width='stretch')

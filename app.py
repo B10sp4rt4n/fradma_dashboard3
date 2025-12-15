@@ -19,7 +19,7 @@ from utils.cache_helper import GestorCache, decorador_medicion_tiempo
 logger = configurar_logger("dashboard_app", nivel="INFO")
 
 # Inicializar gestor de caché
-gestor_cache = GestorCache(ttl=300)  # 5 minutos de TTL
+gestor_cache = GestorCache()  # TTL se especifica en cada llamada a obtener_o_calcular()
 
 # Configuración de página con tema mejorado
 st.set_page_config(
@@ -354,29 +354,38 @@ if "df" in st.session_state:
     
     with st.sidebar.expander("📅 Filtro por Fecha", expanded=False):
         if "fecha" in df_filtrado.columns:
-            df_filtrado, info_fecha = aplicar_filtro_fechas(df_filtrado, "fecha")
-            if info_fecha:
-                st.session_state["filtros_aplicados"]["fecha"] = info_fecha
-                st.info(f"✅ {info_fecha['registros_filtrados']:,} registros en el rango")
+            registros_antes = len(df_filtrado)
+            df_filtrado = aplicar_filtro_fechas(df_filtrado, "fecha")
+            if len(df_filtrado) < registros_antes:
+                st.session_state["filtros_aplicados"]["fecha"] = {
+                    "registros_filtrados": len(df_filtrado),
+                    "registros_originales": registros_antes
+                }
         else:
             st.warning("⚠️ No hay columna 'fecha' disponible")
     
     with st.sidebar.expander("👤 Filtro por Cliente", expanded=False):
         if "cliente" in df_filtrado.columns:
-            df_filtrado, info_cliente = aplicar_filtro_cliente(df_filtrado, "cliente")
-            if info_cliente:
-                st.session_state["filtros_aplicados"]["cliente"] = info_cliente
-                st.info(f"✅ {info_cliente['registros_filtrados']:,} registros encontrados")
+            registros_antes = len(df_filtrado)
+            df_filtrado = aplicar_filtro_cliente(df_filtrado, "cliente")
+            if len(df_filtrado) < registros_antes:
+                st.session_state["filtros_aplicados"]["cliente"] = {
+                    "registros_filtrados": len(df_filtrado),
+                    "registros_originales": registros_antes
+                }
         else:
             st.warning("⚠️ No hay columna 'cliente' disponible")
     
     with st.sidebar.expander("💰 Filtro por Monto", expanded=False):
         columna_ventas = st.session_state.get("columna_ventas", None)
         if columna_ventas and columna_ventas in df_filtrado.columns:
-            df_filtrado, info_monto = aplicar_filtro_monto(df_filtrado, columna_ventas)
-            if info_monto:
-                st.session_state["filtros_aplicados"]["monto"] = info_monto
-                st.info(f"✅ {info_monto['registros_filtrados']:,} registros en el rango")
+            registros_antes = len(df_filtrado)
+            df_filtrado = aplicar_filtro_monto(df_filtrado, columna_ventas)
+            if len(df_filtrado) < registros_antes:
+                st.session_state["filtros_aplicados"]["monto"] = {
+                    "registros_filtrados": len(df_filtrado),
+                    "registros_originales": registros_antes
+                }
         else:
             st.warning("⚠️ No hay columna de ventas disponible")
     
@@ -390,7 +399,7 @@ if "df" in st.session_state:
     # Actualizar DataFrame filtrado en session_state
     if len(df_filtrado) < len(df_original):
         st.session_state["df"] = df_filtrado
-        resumen = mostrar_resumen_filtros(st.session_state["filtros_aplicados"])
+        mostrar_resumen_filtros(df_original, df_filtrado)
         with st.sidebar:
             st.success(f"✅ Filtros aplicados: {len(df_filtrado):,} de {len(df_original):,} registros")
 
@@ -402,26 +411,82 @@ if "df" in st.session_state and "archivo_excel" in st.session_state:
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 📥 Exportar Reportes")
     
+    # Intentar obtener datos de CxC primero
+    df_cxc = None
+    df_cxc_procesado = None
+    metricas = None
+    
+    try:
+        archivo_excel = st.session_state["archivo_excel"]
+        
+        # Leer todas las hojas disponibles directamente desde el archivo
+        hojas_disponibles = pd.ExcelFile(archivo_excel).sheet_names
+        hoja_cxc = None
+        
+        for nombre_hoja in hojas_disponibles:
+            if "cxc" in nombre_hoja.lower() or "cuenta" in nombre_hoja.lower():
+                hoja_cxc = nombre_hoja
+                break
+        
+        if hoja_cxc:
+            # Leer la hoja de CxC directamente
+            df_cxc_raw = pd.read_excel(archivo_excel, sheet_name=hoja_cxc)
+            df_cxc = normalizar_columnas(df_cxc_raw)
+            
+            # Asegurar que existe la columna saldo_adeudado
+            if "saldo_adeudado" not in df_cxc.columns:
+                for candidato in ["saldo", "saldo_adeudo", "adeudo", "importe", "monto", "total", "saldo_usd"]:
+                    if candidato in df_cxc.columns:
+                        df_cxc = df_cxc.rename(columns={candidato: "saldo_adeudado"})
+                        break
+            
+            # Limpiar y convertir columna de saldo
+            if "saldo_adeudado" in df_cxc.columns:
+                saldo_txt = df_cxc["saldo_adeudado"].astype(str)
+                saldo_txt = saldo_txt.str.replace(",", "", regex=False)
+                saldo_txt = saldo_txt.str.replace("$", "", regex=False)
+                df_cxc["saldo_adeudado"] = pd.to_numeric(saldo_txt, errors="coerce").fillna(0)
+            else:
+                df_cxc["saldo_adeudado"] = 0
+            
+            # DEBUG: Ver columnas y valores de dias
+            logger.info(f"=== DEBUG CxC COLUMNAS ===")
+            logger.info(f"Columnas disponibles: {list(df_cxc.columns)}")
+            if 'dias_restante' in df_cxc.columns:
+                logger.info(f"dias_restante - min: {df_cxc['dias_restante'].min()}, max: {df_cxc['dias_restante'].max()}, muestra: {df_cxc['dias_restante'].head(5).tolist()}")
+            if 'dias_restantes' in df_cxc.columns:
+                logger.info(f"dias_restantes - min: {df_cxc['dias_restantes'].min()}, max: {df_cxc['dias_restantes'].max()}, muestra: {df_cxc['dias_restantes'].head(5).tolist()}")
+            if 'dias_vencido' in df_cxc.columns:
+                logger.info(f"dias_vencido - min: {df_cxc['dias_vencido'].min()}, max: {df_cxc['dias_vencido'].max()}, muestra: {df_cxc['dias_vencido'].head(5).tolist()}")
+            
+            # Preparar métricas básicas para exportación
+            from utils.cxc_helper import calcular_metricas_basicas, preparar_datos_cxc
+            
+            # preparar_datos_cxc retorna una tupla: (df_prep, df_no_pagados, mask_pagado)
+            df_prep, df_cxc_procesado, _ = preparar_datos_cxc(df_cxc)
+            
+            # DEBUG: Ver dias_overdue calculado
+            logger.info(f"dias_overdue calculado - min: {df_cxc_procesado['dias_overdue'].min()}, max: {df_cxc_procesado['dias_overdue'].max()}")
+            logger.info(f"Registros vigentes (dias_overdue <= 0): {(df_cxc_procesado['dias_overdue'] <= 0).sum()}")
+            logger.info(f"Registros vencidos (dias_overdue > 0): {(df_cxc_procesado['dias_overdue'] > 0).sum()}")
+            
+            metricas = calcular_metricas_basicas(df_cxc_procesado)
+            
+    except Exception as e:
+        logger.error(f"Error cargando datos CxC para exportación: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        df_cxc = None
+        df_cxc_procesado = None
+        metricas = None
+    
     col_excel, col_html = st.sidebar.columns(2)
     
     with col_excel:
-        try:
-            # Obtener datos de CxC si están disponibles
-            archivo_excel = st.session_state["archivo_excel"]
-            xls = pd.ExcelFile(archivo_excel)
-            hoja_cxc = None
-            
-            for nombre_hoja in xls.sheet_names:
-                if "cxc" in nombre_hoja.lower() or "cuenta" in nombre_hoja.lower():
-                    hoja_cxc = nombre_hoja
-                    break
-            
-            if hoja_cxc:
-                df_cxc_raw = pd.read_excel(xls, sheet_name=hoja_cxc)
-                df_cxc = normalizar_columnas(df_cxc_raw)
-                
-                # Generar Excel
-                excel_buffer = crear_excel_metricas_cxc(df_cxc)
+        if df_cxc_procesado is not None and metricas is not None:
+            try:
+                # Generar Excel con métricas completas
+                excel_buffer = crear_excel_metricas_cxc(metricas, df_cxc_procesado)
                 st.download_button(
                     label="📊 Excel",
                     data=excel_buffer,
@@ -429,15 +494,17 @@ if "df" in st.session_state and "archivo_excel" in st.session_state:
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True
                 )
-        except Exception as e:
-            st.warning("⚠️ Excel no disponible")
-            logger.error(f"Error generando Excel: {e}")
+            except Exception as e:
+                st.warning("⚠️ Excel no disponible")
+                logger.error(f"Error generando Excel: {e}")
+        else:
+            st.caption("⚠️ Sin datos CxC")
     
     with col_html:
-        try:
-            if hoja_cxc:
-                # Generar HTML
-                html_content = crear_reporte_html(df_cxc)
+        if df_cxc_procesado is not None and metricas is not None:
+            try:
+                # Generar HTML con métricas completas
+                html_content = crear_reporte_html(metricas, df_cxc_procesado)
                 st.download_button(
                     label="🌐 HTML",
                     data=html_content,
@@ -445,9 +512,11 @@ if "df" in st.session_state and "archivo_excel" in st.session_state:
                     mime="text/html",
                     use_container_width=True
                 )
-        except Exception as e:
-            st.warning("⚠️ HTML no disponible")
-            logger.error(f"Error generando HTML: {e}")
+            except Exception as e:
+                st.warning("⚠️ HTML no disponible")
+                logger.error(f"Error generando HTML: {e}")
+        else:
+            st.caption("⚠️ Sin datos CxC")
 
 # =====================================================================
 # NAVEGACIÓN MEJORADA CON TABS Y TOOLTIPS

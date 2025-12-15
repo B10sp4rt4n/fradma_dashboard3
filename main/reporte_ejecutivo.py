@@ -253,6 +253,14 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc):
         critica = df_cxc_local.loc[mask_no_pagado & (df_cxc_local["dias_overdue"] > 30), "saldo_adeudado"].sum()
         alto_riesgo = df_cxc_local.loc[mask_no_pagado & (df_cxc_local["dias_overdue"] > 90), "saldo_adeudado"].sum()
         
+        # DEBUG: Imprimir tipos y valores
+        import sys
+        print(f"\n=== DEBUG REPORTE EJECUTIVO ===", file=sys.stderr)
+        print(f"vigente: {type(vigente)} = {vigente}", file=sys.stderr)
+        print(f"vencida_0_30: {type(vencida_0_30)} = {vencida_0_30}", file=sys.stderr)
+        print(f"critica: {type(critica)} = {critica}", file=sys.stderr)
+        print(f"alto_riesgo: {type(alto_riesgo)} = {alto_riesgo}", file=sys.stderr)
+        
         pct_vigente = (vigente / total_adeudado * 100) if total_adeudado > 0 else 100
         pct_vencida_0_30 = (vencida_0_30 / total_adeudado * 100) if total_adeudado > 0 else 0
         pct_critica = (critica / total_adeudado * 100) if total_adeudado > 0 else 0
@@ -432,13 +440,38 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc):
 
         # Pie robusto basado en los montos ya calculados (NO pagados):
         # Vigente (<=0), 1-30, 31-90 y >90.
-        vencida_31_90 = max(0, float(critica) - float(alto_riesgo))
-        cartera_por_categoria = pd.DataFrame(
-            {
-                "Categoría": ["Vigente", "1-30 días", "31-90 días", ">90 días (Crítico)"],
-                "Monto": [float(vigente), float(vencida_0_30), float(vencida_31_90), float(alto_riesgo)],
-            }
-        )
+        # Asegurar que todos los valores sean escalares numéricos
+        print(f"\n=== DEBUG COMPOSICIÓN CARTERA ===", file=sys.stderr)
+        print(f"vigente raw: {type(vigente)} = {vigente}", file=sys.stderr)
+        
+        vigente_val = float(vigente) if pd.notna(vigente) else 0.0
+        vencida_0_30_val = float(vencida_0_30) if pd.notna(vencida_0_30) else 0.0
+        critica_val = float(critica) if pd.notna(critica) else 0.0
+        alto_riesgo_val = float(alto_riesgo) if pd.notna(alto_riesgo) else 0.0
+        
+        print(f"vigente_val: {type(vigente_val)} = {vigente_val}", file=sys.stderr)
+        print(f"vencida_0_30_val: {type(vencida_0_30_val)} = {vencida_0_30_val}", file=sys.stderr)
+        print(f"critica_val: {type(critica_val)} = {critica_val}", file=sys.stderr)
+        print(f"alto_riesgo_val: {type(alto_riesgo_val)} = {alto_riesgo_val}", file=sys.stderr)
+        
+        vencida_31_90 = max(0, critica_val - alto_riesgo_val)
+        print(f"vencida_31_90: {type(vencida_31_90)} = {vencida_31_90}", file=sys.stderr)
+        
+        try:
+            cartera_por_categoria = pd.DataFrame(
+                {
+                    "Categoría": ["Vigente", "1-30 días", "31-90 días", ">90 días (Crítico)"],
+                    "Monto": [vigente_val, vencida_0_30_val, vencida_31_90, alto_riesgo_val],
+                }
+            )
+            print(f"DataFrame creado exitosamente", file=sys.stderr)
+            print(f"DataFrame shape: {cartera_por_categoria.shape}", file=sys.stderr)
+            print(f"DataFrame:\n{cartera_por_categoria}", file=sys.stderr)
+        except Exception as e:
+            print(f"ERROR creando DataFrame: {e}", file=sys.stderr)
+            import traceback
+            traceback.print_exc(file=sys.stderr)
+            raise
 
         # Si no hay cartera (o todo está pagado), no mostrar pie vacío
         if cartera_por_categoria["Monto"].sum() <= 0:
@@ -504,7 +537,10 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc):
             top_vendedores_display = top_vendedores.copy()
             top_vendedores_display["Ventas"] = top_vendedores_display["Ventas"].apply(lambda x: formato_moneda(x))
             top_vendedores_display["Ticket"] = top_vendedores_display["Ticket"].apply(lambda x: formato_moneda(x))
-            top_vendedores_display.insert(0, "🏅", ["🥇", "🥈", "🥉", "④", "⑤"])
+            
+            # Medallas según cantidad real de vendedores
+            medallas = ["🥇", "🥈", "🥉", "④", "⑤"][:len(top_vendedores_display)]
+            top_vendedores_display.insert(0, "🏅", medallas)
             
             st.dataframe(top_vendedores_display, width='stretch', hide_index=True)
         else:
