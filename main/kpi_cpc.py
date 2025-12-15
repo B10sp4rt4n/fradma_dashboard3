@@ -859,7 +859,7 @@ def run(archivo):
                 )
                 
                 # Resumen de riesgo
-                riesgo_df = df_riesgo.groupby('nivel_riesgo')['saldo_adeudado'].sum().reset_index()
+                riesgo_df = df_riesgo.groupby('nivel_riesgo', observed=True)['saldo_adeudado'].sum().reset_index()
                 riesgo_df['porcentaje'] = (riesgo_df['saldo_adeudado'] / total_adeudado) * 100
                 
                 # Ordenar por nivel de riesgo
@@ -1000,7 +1000,7 @@ def run(archivo):
                 )
                 
                 # Agrupar por agente y categoría
-                agente_categoria = df_agentes.groupby(['vendedor', 'categoria_agente'])['saldo_adeudado'].sum().unstack().fillna(0)
+                agente_categoria = df_agentes.groupby(['vendedor', 'categoria_agente'], observed=True)['saldo_adeudado'].sum().unstack().fillna(0)
                 
                 # Ordenar por el total de deuda
                 agente_categoria['Total'] = agente_categoria.sum(axis=1)
