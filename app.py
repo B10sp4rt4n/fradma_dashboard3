@@ -346,62 +346,65 @@ if "df" in st.session_state:
     st.sidebar.markdown("### 🔍 Filtros Avanzados")
     
     df_original = st.session_state["df"].copy()
-    df_filtrado = df_original.copy()
     
     # Inicializar estado de filtros si no existe
     if "filtros_aplicados" not in st.session_state:
         st.session_state["filtros_aplicados"] = {}
     
-    with st.sidebar.expander("📅 Filtro por Fecha", expanded=False):
+    # Opción para activar/desactivar filtros
+    usar_filtros = st.sidebar.checkbox(
+        "Activar filtros avanzados",
+        value=False,
+        key="usar_filtros_avanzados",
+        help="Activa esta opción para aplicar filtros por fecha y/o cliente"
+    )
+    
+    if usar_filtros:
+        df_filtrado = df_original.copy()
+        
+        # Filtro por Fecha (sin expander)
+        st.sidebar.markdown("#### 📅 Filtro por Fecha")
         if "fecha" in df_filtrado.columns:
-            registros_antes = len(df_filtrado)
             df_filtrado = aplicar_filtro_fechas(df_filtrado, "fecha")
-            if len(df_filtrado) < registros_antes:
-                st.session_state["filtros_aplicados"]["fecha"] = {
-                    "registros_filtrados": len(df_filtrado),
-                    "registros_originales": registros_antes
-                }
         else:
-            st.warning("⚠️ No hay columna 'fecha' disponible")
-    
-    with st.sidebar.expander("👤 Filtro por Cliente", expanded=False):
+            st.sidebar.warning("⚠️ No hay columna 'fecha' disponible")
+        
+        st.sidebar.markdown("---")
+        
+        # Filtro por Cliente (sin expander)
+        st.sidebar.markdown("#### 👤 Filtro por Cliente")
         if "cliente" in df_filtrado.columns:
-            registros_antes = len(df_filtrado)
             df_filtrado = aplicar_filtro_cliente(df_filtrado, "cliente")
-            if len(df_filtrado) < registros_antes:
-                st.session_state["filtros_aplicados"]["cliente"] = {
-                    "registros_filtrados": len(df_filtrado),
-                    "registros_originales": registros_antes
-                }
         else:
-            st.warning("⚠️ No hay columna 'cliente' disponible")
-    
-    with st.sidebar.expander("💰 Filtro por Monto", expanded=False):
+            st.sidebar.warning("⚠️ No hay columna 'cliente' disponible")
+        
+        st.sidebar.markdown("---")
+        
+        # Filtro por Monto
+        st.sidebar.markdown("#### 💰 Filtro por Monto")
         columna_ventas = st.session_state.get("columna_ventas", None)
         if columna_ventas and columna_ventas in df_filtrado.columns:
-            registros_antes = len(df_filtrado)
             df_filtrado = aplicar_filtro_monto(df_filtrado, columna_ventas)
-            if len(df_filtrado) < registros_antes:
-                st.session_state["filtros_aplicados"]["monto"] = {
-                    "registros_filtrados": len(df_filtrado),
-                    "registros_originales": registros_antes
-                }
         else:
-            st.warning("⚠️ No hay columna de ventas disponible")
-    
-    # Botón para limpiar filtros
-    if st.session_state["filtros_aplicados"]:
-        if st.sidebar.button("🗑️ Limpiar todos los filtros", use_container_width=True):
+            st.sidebar.warning("⚠️ No hay columna de ventas disponible")
+        
+        # Botón para limpiar filtros
+        st.sidebar.markdown("---")
+        if st.sidebar.button("🗑️ Desactivar y limpiar filtros", use_container_width=True):
             st.session_state["filtros_aplicados"] = {}
-            df_filtrado = df_original.copy()
+            st.session_state["usar_filtros_avanzados"] = False
             st.rerun()
-    
-    # Actualizar DataFrame filtrado en session_state
-    if len(df_filtrado) < len(df_original):
+        
+        # Actualizar DataFrame filtrado en session_state
         st.session_state["df"] = df_filtrado
-        mostrar_resumen_filtros(df_original, df_filtrado)
-        with st.sidebar:
-            st.success(f"✅ Filtros aplicados: {len(df_filtrado):,} de {len(df_original):,} registros")
+        
+        # Mostrar resumen de filtros aplicados
+        if len(df_filtrado) < len(df_original):
+            st.sidebar.success(f"✅ Filtros aplicados: {len(df_filtrado):,} de {len(df_original):,} registros")
+            mostrar_resumen_filtros(df_original, df_filtrado)
+    else:
+        # Si no se activan filtros, usar DataFrame original
+        pass
 
 # =====================================================================
 # EXPORTACIÓN DE REPORTES (SPRINT 4)

@@ -17,7 +17,7 @@ def aplicar_filtro_fechas(
     mostrar_widget: bool = True
 ) -> pd.DataFrame:
     """
-    Aplica filtro de rango de fechas al DataFrame.
+    Aplica filtro de rango de fechas al DataFrame (sin dropdown).
     
     Args:
         df: DataFrame a filtrar
@@ -32,7 +32,7 @@ def aplicar_filtro_fechas(
     """
     if columna_fecha not in df.columns:
         if mostrar_widget:
-            st.sidebar.warning(f"⚠️ Columna '{columna_fecha}' no encontrada")
+            st.warning(f"⚠️ Columna '{columna_fecha}' no encontrada")
         return df
     
     # Convertir a datetime si no lo es
@@ -40,53 +40,65 @@ def aplicar_filtro_fechas(
         df[columna_fecha] = pd.to_datetime(df[columna_fecha], errors='coerce')
     
     # Eliminar valores nulos
-    df_con_fechas = df.dropna(subset=[columna_fecha])
+    df_con_fechas = df.dropna(subset=[columna_fecha]).copy()
     
     if df_con_fechas.empty:
         if mostrar_widget:
-            st.sidebar.warning("⚠️ No hay fechas válidas para filtrar")
+            st.warning("⚠️ No hay fechas válidas para filtrar")
         return df
     
-    if mostrar_widget:
-        st.sidebar.markdown("#### 📅 Filtro por Fecha")
-        
-        fecha_min = df_con_fechas[columna_fecha].min().date()
-        fecha_max = df_con_fechas[columna_fecha].max().date()
-        
-        col1, col2 = st.sidebar.columns(2)
-        
-        with col1:
-            fecha_inicio = st.date_input(
-                "Desde",
-                value=fecha_min,
-                min_value=fecha_min,
-                max_value=fecha_max,
-                key="filtro_fecha_inicio"
-            )
-        
-        with col2:
-            fecha_fin = st.date_input(
-                "Hasta",
-                value=fecha_max,
-                min_value=fecha_min,
-                max_value=fecha_max,
-                key="filtro_fecha_fin"
-            )
-        
-        # Aplicar filtro
-        mask = (df_con_fechas[columna_fecha].dt.date >= fecha_inicio) & \
-               (df_con_fechas[columna_fecha].dt.date <= fecha_fin)
-        
-        df_filtrado = df_con_fechas[mask]
-        
-        # Mostrar info
-        registros_filtrados = len(df_filtrado)
-        registros_totales = len(df_con_fechas)
-        st.sidebar.caption(f"📊 {registros_filtrados:,} de {registros_totales:,} registros")
-        
-        return df_filtrado
+    if not mostrar_widget:
+        return df
     
-    return df
+    fecha_min = df_con_fechas[columna_fecha].min().date()
+    fecha_max = df_con_fechas[columna_fecha].max().date()
+    
+    st.write(f"**Rango disponible:** {fecha_min} a {fecha_max}")
+    
+    # Selector de rango de fechas simple y directo
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        fecha_inicio = st.date_input(
+            "📅 Fecha desde",
+            value=fecha_min,
+            min_value=fecha_min,
+            max_value=fecha_max,
+            key="filtro_fecha_inicio",
+            help="Selecciona la fecha de inicio del rango"
+        )
+    
+    with col2:
+        fecha_fin = st.date_input(
+            "📅 Fecha hasta",
+            value=fecha_max,
+            min_value=fecha_min,
+            max_value=fecha_max,
+            key="filtro_fecha_fin",
+            help="Selecciona la fecha final del rango"
+        )
+    
+    # Validar que fecha_inicio <= fecha_fin
+    if fecha_inicio > fecha_fin:
+        st.error("⚠️ La fecha de inicio debe ser anterior o igual a la fecha final")
+        return df
+    
+    # Aplicar filtro
+    mask = (df_con_fechas[columna_fecha].dt.date >= fecha_inicio) & \
+           (df_con_fechas[columna_fecha].dt.date <= fecha_fin)
+    
+    df_filtrado = df_con_fechas[mask].copy()
+    
+    # Mostrar información del filtro
+    registros_filtrados = len(df_filtrado)
+    registros_totales = len(df_con_fechas)
+    
+    if registros_filtrados < registros_totales:
+        st.success(f"📊 Filtrando {registros_filtrados:,} de {registros_totales:,} registros")
+    else:
+        st.info(f"📊 Mostrando todos los {registros_totales:,} registros")
+    
+    return df_filtrado
 
 
 def aplicar_filtro_cliente(
@@ -96,7 +108,7 @@ def aplicar_filtro_cliente(
     max_opciones: int = 50
 ) -> pd.DataFrame:
     """
-    Aplica filtro de selección de clientes.
+    Aplica filtro de selección de clientes con búsqueda intuitiva.
     
     Args:
         df: DataFrame a filtrar
@@ -112,65 +124,55 @@ def aplicar_filtro_cliente(
     """
     if columna_cliente not in df.columns:
         if mostrar_widget:
-            st.sidebar.warning(f"⚠️ Columna '{columna_cliente}' no encontrada")
+            st.warning(f"⚠️ Columna '{columna_cliente}' no encontrada")
         return df
     
-    clientes_unicos = sorted(df[columna_cliente].dropna().unique())
+    # Obtener clientes únicos y ordenarlos
+    clientes_unicos = sorted([str(c) for c in df[columna_cliente].dropna().unique() if str(c).strip()])
     
     if len(clientes_unicos) == 0:
         if mostrar_widget:
-            st.sidebar.warning("⚠️ No hay clientes para filtrar")
+            st.warning("⚠️ No hay clientes para filtrar")
         return df
     
-    if mostrar_widget:
-        st.sidebar.markdown("#### 👥 Filtro por Cliente")
-        
-        # Si hay muchos clientes, usar search box
+    if not mostrar_widget:
+        return df
+    
+    st.write(f"**Total de clientes:** {len(clientes_unicos):,}")
+    
+    # Campo de búsqueda intuitiva
+    busqueda = st.text_input(
+        "🔍 Buscar cliente (empieza a escribir)",
+        key="filtro_cliente_busqueda",
+        placeholder="Escribe parte del nombre del cliente...",
+        help="La búsqueda filtra clientes que contengan el texto ingresado"
+    )
+    
+    # Filtrar clientes según búsqueda
+    if busqueda:
+        clientes_filtrados = [c for c in clientes_unicos if busqueda.lower() in c.lower()]
+        st.caption(f"✅ {len(clientes_filtrados)} cliente(s) encontrado(s)")
+    else:
+        clientes_filtrados = clientes_unicos[:max_opciones]  # Mostrar solo los primeros
         if len(clientes_unicos) > max_opciones:
-            st.sidebar.caption(f"ℹ️ {len(clientes_unicos)} clientes disponibles")
-            
-            busqueda = st.sidebar.text_input(
-                "Buscar cliente",
-                key="filtro_cliente_busqueda",
-                placeholder="Escribe para buscar..."
-            )
-            
-            if busqueda:
-                clientes_filtrados = [c for c in clientes_unicos if busqueda.lower() in str(c).lower()]
-                
-                if clientes_filtrados:
-                    clientes_seleccionados = st.sidebar.multiselect(
-                        "Seleccionar clientes",
-                        options=clientes_filtrados,
-                        default=None,
-                        key="filtro_cliente_select"
-                    )
-                else:
-                    st.sidebar.info("🔍 No se encontraron clientes con ese criterio")
-                    return df
-            else:
-                st.sidebar.info("ℹ️ Escribe para buscar clientes específicos")
-                return df
-        else:
-            # Multiselect normal para pocos clientes
-            clientes_seleccionados = st.sidebar.multiselect(
-                "Seleccionar clientes",
-                options=['Todos'] + list(clientes_unicos),
-                default=['Todos'],
-                key="filtro_cliente_select"
-            )
-            
-            if 'Todos' in clientes_seleccionados:
-                return df
-        
-        if clientes_seleccionados:
-            df_filtrado = df[df[columna_cliente].isin(clientes_seleccionados)]
-            
-            registros_filtrados = len(df_filtrado)
-            registros_totales = len(df)
-            st.sidebar.caption(f"📊 {registros_filtrados:,} de {registros_totales:,} registros")
-            
-            return df_filtrado
+            st.caption(f"ℹ️ Mostrando {max_opciones} de {len(clientes_unicos)} clientes. Usa la búsqueda para encontrar más.")
+    
+    # Selector de clientes
+    clientes_seleccionados = st.multiselect(
+        "Seleccionar cliente(s)",
+        options=clientes_filtrados,
+        default=[],
+        key="filtro_cliente_select",
+        help="Puedes seleccionar múltiples clientes"
+    )
+    
+    # Aplicar filtro si hay clientes seleccionados
+    if clientes_seleccionados:
+        df_filtrado = df[df[columna_cliente].isin(clientes_seleccionados)].copy()
+        registros_filtrados = len(df_filtrado)
+        registros_totales = len(df)
+        st.success(f"📊 Filtrando {registros_filtrados:,} de {registros_totales:,} registros ({len(clientes_seleccionados)} cliente(s))")
+        return df_filtrado
     
     return df
 
