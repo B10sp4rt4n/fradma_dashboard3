@@ -53,13 +53,13 @@ def aplicar_filtro_fechas(
     fecha_min = df_con_fechas[columna_fecha].min().date()
     fecha_max = df_con_fechas[columna_fecha].max().date()
     
-    st.write(f"**Rango disponible:** {fecha_min} a {fecha_max}")
+    st.sidebar.write(f"**Rango disponible:** {fecha_min} a {fecha_max}")
     
     # Selector de rango de fechas simple y directo
-    col1, col2 = st.columns(2)
+    col1, col2 = st.sidebar.columns(2)
     
     with col1:
-        fecha_inicio = st.date_input(
+        fecha_inicio = st.sidebar.date_input(
             "📅 Fecha desde",
             value=fecha_min,
             min_value=fecha_min,
@@ -69,7 +69,7 @@ def aplicar_filtro_fechas(
         )
     
     with col2:
-        fecha_fin = st.date_input(
+        fecha_fin = st.sidebar.date_input(
             "📅 Fecha hasta",
             value=fecha_max,
             min_value=fecha_min,
@@ -80,7 +80,7 @@ def aplicar_filtro_fechas(
     
     # Validar que fecha_inicio <= fecha_fin
     if fecha_inicio > fecha_fin:
-        st.error("⚠️ La fecha de inicio debe ser anterior o igual a la fecha final")
+        st.sidebar.error("⚠️ La fecha de inicio debe ser anterior o igual a la fecha final")
         return df
     
     # Aplicar filtro
@@ -94,9 +94,9 @@ def aplicar_filtro_fechas(
     registros_totales = len(df_con_fechas)
     
     if registros_filtrados < registros_totales:
-        st.success(f"📊 Filtrando {registros_filtrados:,} de {registros_totales:,} registros")
+        st.sidebar.success(f"📊 Filtrando {registros_filtrados:,} de {registros_totales:,} registros")
     else:
-        st.info(f"📊 Mostrando todos los {registros_totales:,} registros")
+        st.sidebar.info(f"📊 Mostrando todos los {registros_totales:,} registros")
     
     return df_filtrado
 
@@ -138,10 +138,10 @@ def aplicar_filtro_cliente(
     if not mostrar_widget:
         return df
     
-    st.write(f"**Total de clientes:** {len(clientes_unicos):,}")
+    st.sidebar.write(f"**Total de clientes:** {len(clientes_unicos):,}")
     
     # Campo de búsqueda intuitiva
-    busqueda = st.text_input(
+    busqueda = st.sidebar.text_input(
         "🔍 Buscar cliente (empieza a escribir)",
         key="filtro_cliente_busqueda",
         placeholder="Escribe parte del nombre del cliente...",
@@ -151,14 +151,14 @@ def aplicar_filtro_cliente(
     # Filtrar clientes según búsqueda
     if busqueda:
         clientes_filtrados = [c for c in clientes_unicos if busqueda.lower() in c.lower()]
-        st.caption(f"✅ {len(clientes_filtrados)} cliente(s) encontrado(s)")
+        st.sidebar.caption(f"✅ {len(clientes_filtrados)} cliente(s) encontrado(s)")
     else:
         clientes_filtrados = clientes_unicos[:max_opciones]  # Mostrar solo los primeros
         if len(clientes_unicos) > max_opciones:
-            st.caption(f"ℹ️ Mostrando {max_opciones} de {len(clientes_unicos)} clientes. Usa la búsqueda para encontrar más.")
+            st.sidebar.caption(f"ℹ️ Mostrando {max_opciones} de {len(clientes_unicos)} clientes. Usa la búsqueda para encontrar más.")
     
     # Selector de clientes
-    clientes_seleccionados = st.multiselect(
+    clientes_seleccionados = st.sidebar.multiselect(
         "Seleccionar cliente(s)",
         options=clientes_filtrados,
         default=[],
@@ -171,7 +171,7 @@ def aplicar_filtro_cliente(
         df_filtrado = df[df[columna_cliente].isin(clientes_seleccionados)].copy()
         registros_filtrados = len(df_filtrado)
         registros_totales = len(df)
-        st.success(f"📊 Filtrando {registros_filtrados:,} de {registros_totales:,} registros ({len(clientes_seleccionados)} cliente(s))")
+        st.sidebar.success(f"📊 Filtrando {registros_filtrados:,} de {registros_totales:,} registros ({len(clientes_seleccionados)} cliente(s))")
         return df_filtrado
     
     return df
@@ -212,8 +212,6 @@ def aplicar_filtro_monto(
         return df
     
     if mostrar_widget:
-        st.sidebar.markdown("#### 💰 Filtro por Monto")
-        
         monto_min = float(df_con_montos[columna_monto].min())
         monto_max = float(df_con_montos[columna_monto].max())
         

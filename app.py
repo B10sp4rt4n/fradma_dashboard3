@@ -384,7 +384,6 @@ if "df" in st.session_state:
         st.sidebar.markdown("---")
         
         # Filtro por Monto
-        st.sidebar.markdown("#### 💰 Filtro por Monto")
         columna_ventas = st.session_state.get("columna_ventas", None)
         if columna_ventas and columna_ventas in df_filtrado.columns:
             df_filtrado = aplicar_filtro_monto(df_filtrado, columna_ventas)
