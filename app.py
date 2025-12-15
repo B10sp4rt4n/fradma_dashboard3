@@ -258,20 +258,21 @@ if archivo:
         if columnas_existentes:
             df = limpiar_columnas_texto(df, columnas=columnas_existentes, usar_aliases=True)
             
-            # Mostrar aviso si hay duplicados similares
-            duplicados_totales = 0
-            for col in columnas_existentes:
-                duplicados = detectar_duplicados_similares(df[col], umbral_similitud=0.85)
-                if duplicados and len(duplicados) > 0:
-                    duplicados_totales += len(duplicados)
-                    with st.sidebar.expander(f"⚠️ Duplicados en '{col}' ({len(duplicados)})"):
-                        for val1, val2, sim in duplicados[:3]:
-                            st.write(f"- '{val1}' ≈ '{val2}'")
-                        if len(duplicados) > 3:
-                            st.write(f"... y {len(duplicados)-3} más")
-            
-            if duplicados_totales > 0:
-                st.sidebar.info("💡 Edita config/aliases.json para unificar")
+            # Mostrar aviso de duplicados solo en modo debug
+            if modo_debug:
+                duplicados_totales = 0
+                for col in columnas_existentes:
+                    duplicados = detectar_duplicados_similares(df[col], umbral_similitud=0.85)
+                    if duplicados and len(duplicados) > 0:
+                        duplicados_totales += len(duplicados)
+                        with st.sidebar.expander(f"⚠️ Duplicados en '{col}' ({len(duplicados)})"):
+                            for val1, val2, sim in duplicados[:3]:
+                                st.write(f"- '{val1}' ≈ '{val2}'")
+                            if len(duplicados) > 3:
+                                st.write(f"... y {len(duplicados)-3} más")
+                
+                if duplicados_totales > 0:
+                    st.sidebar.info("💡 Edita config/aliases.json para unificar")
 
         st.session_state["df"] = df
         st.session_state["archivo_path"] = archivo
