@@ -123,12 +123,23 @@ def run(df):
         df_filtered = pivot_table.loc[:, selected_lineas]
 
         with st.sidebar:
-            min_importe, max_importe = st.slider(
-                "💰 Filtro por importe ($):",
-                min_value=float(df_filtered.min().min()),
-                max_value=float(df_filtered.max().max()),
-                value=(float(df_filtered.min().min()), float(df_filtered.max().max()))
-            )
+            # Obtener min y max de forma segura
+            valores_min = df_filtered.min().min()
+            valores_max = df_filtered.max().max()
+            
+            # Validar que los valores sean válidos y diferentes
+            if pd.notna(valores_min) and pd.notna(valores_max) and valores_min < valores_max:
+                min_importe, max_importe = st.slider(
+                    "💰 Filtro por importe ($):",
+                    min_value=float(valores_min),
+                    max_value=float(valores_max),
+                    value=(float(valores_min), float(valores_max))
+                )
+            else:
+                # Si no hay rango válido, usar valores por defecto
+                min_importe = float(valores_min) if pd.notna(valores_min) else 0.0
+                max_importe = float(valores_max) if pd.notna(valores_max) else 0.0
+                st.sidebar.info("ℹ️ No hay rango de importes suficiente para filtrar")
 
             top_n = st.number_input(
                 "🏅 Top N líneas de negocio:",
