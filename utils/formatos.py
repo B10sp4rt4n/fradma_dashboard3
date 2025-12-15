@@ -3,7 +3,10 @@ Módulo de utilidades para formateo consistente de datos en el dashboard.
 Proporciona funciones helper para monedas, porcentajes y números.
 """
 
-def formato_moneda(valor, decimales=2):
+from typing import Optional, Union
+
+
+def formato_moneda(valor: Optional[Union[int, float]], decimales: int = 2) -> str:
     """
     Formatea un valor numérico como moneda USD con separadores de miles.
     
@@ -29,7 +32,7 @@ def formato_moneda(valor, decimales=2):
         return "$0.00"
 
 
-def formato_numero(valor, decimales=0):
+def formato_numero(valor: Optional[Union[int, float]], decimales: int = 0) -> str:
     """
     Formatea un número con separadores de miles.
     
@@ -53,7 +56,7 @@ def formato_numero(valor, decimales=0):
         return "0"
 
 
-def formato_porcentaje(valor, decimales=1):
+def formato_porcentaje(valor: Optional[Union[int, float]], decimales: int = 1) -> str:
     """
     Formatea un valor como porcentaje.
     
@@ -83,7 +86,7 @@ def formato_porcentaje(valor, decimales=1):
         return "0.0%"
 
 
-def formato_delta_moneda(valor, decimales=2):
+def formato_delta_moneda(valor: Optional[Union[int, float]], decimales: int = 2) -> str:
     """
     Formatea un delta de moneda para usar en st.metric().
     
@@ -112,7 +115,7 @@ def formato_delta_moneda(valor, decimales=2):
         return "$0.00"
 
 
-def formato_compacto(valor):
+def formato_compacto(valor: Optional[Union[int, float]]) -> str:
     """
     Formatea números grandes de manera compacta (K, M, B).
     
@@ -142,7 +145,7 @@ def formato_compacto(valor):
         return "0"
 
 
-def formato_dias(dias):
+def formato_dias(dias: Optional[Union[int, float]]) -> str:
     """
     Formatea días con texto descriptivo.
     

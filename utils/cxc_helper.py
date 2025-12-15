@@ -6,6 +6,7 @@ Centraliza la lógica de negocio para evitar duplicación.
 import pandas as pd
 import numpy as np
 from datetime import datetime
+from typing import List, Optional, Dict
 from .constantes import (
     COLUMNAS_FECHA_PAGO,
     COLUMNAS_DIAS_CREDITO,
@@ -19,7 +20,7 @@ from .constantes import (
 )
 
 
-def detectar_columna(df, lista_candidatos):
+def detectar_columna(df: pd.DataFrame, lista_candidatos: List[str]) -> Optional[str]:
     """
     Detecta la primera columna existente de una lista de candidatos.
     
@@ -39,7 +40,7 @@ def detectar_columna(df, lista_candidatos):
     return None
 
 
-def excluir_pagados(df, col_estatus=None):
+def excluir_pagados(df: pd.DataFrame, col_estatus: Optional[str] = None) -> pd.Series:
     """
     Crea una máscara booleana para excluir registros pagados.
     
@@ -60,7 +61,7 @@ def excluir_pagados(df, col_estatus=None):
     return pd.Series(False, index=df.index)
 
 
-def calcular_dias_overdue(df):
+def calcular_dias_overdue(df: pd.DataFrame) -> pd.Series:
     """
     Calcula días de atraso usando lógica unificada con fallback en cascada.
     
@@ -114,7 +115,7 @@ def calcular_dias_overdue(df):
     return pd.Series(0, index=df.index)
 
 
-def preparar_datos_cxc(df):
+def preparar_datos_cxc(df: pd.DataFrame) -> tuple:
     """
     Prepara datos de CxC con lógica unificada del Reporte Ejecutivo.
     
@@ -146,7 +147,7 @@ def preparar_datos_cxc(df):
     return df_prep, df_np, mask_pagado
 
 
-def calcular_score_salud(pct_vigente, pct_critica):
+def calcular_score_salud(pct_vigente: float, pct_critica: float) -> float:
     """
     Calcula el score de salud financiera usando fórmula del Reporte Ejecutivo.
     
@@ -164,7 +165,7 @@ def calcular_score_salud(pct_vigente, pct_critica):
     return max(0, min(100, score))
 
 
-def clasificar_score_salud(score):
+def clasificar_score_salud(score: float) -> tuple:
     """
     Clasifica un score de salud en categoría y color.
     
@@ -186,7 +187,7 @@ def clasificar_score_salud(score):
         return "Crítico", ScoreSalud.COLOR_CRITICO
 
 
-def clasificar_antiguedad(df, columna_dias='dias_overdue', tipo='completo'):
+def clasificar_antiguedad(df: pd.DataFrame, columna_dias: str = 'dias_overdue', tipo: str = 'completo') -> pd.Series:
     """
     Clasifica deuda por antigüedad en categorías estándar.
     
@@ -212,7 +213,7 @@ def clasificar_antiguedad(df, columna_dias='dias_overdue', tipo='completo'):
     )
 
 
-def calcular_metricas_basicas(df_np, columna_saldo='saldo_adeudado'):
+def calcular_metricas_basicas(df_np: pd.DataFrame, columna_saldo: str = 'saldo_adeudado') -> Dict[str, float]:
     """
     Calcula métricas básicas de CxC a partir de datos no pagados.
     
@@ -258,7 +259,7 @@ def calcular_metricas_basicas(df_np, columna_saldo='saldo_adeudado'):
     }
 
 
-def obtener_semaforo_morosidad(pct_morosidad):
+def obtener_semaforo_morosidad(pct_morosidad: float) -> str:
     """
     Retorna emoji de semáforo según nivel de morosidad.
     
@@ -278,7 +279,7 @@ def obtener_semaforo_morosidad(pct_morosidad):
         return "🔴"
 
 
-def obtener_semaforo_riesgo(pct_riesgo):
+def obtener_semaforo_riesgo(pct_riesgo: float) -> str:
     """
     Retorna emoji de semáforo según nivel de riesgo alto.
     
@@ -298,7 +299,7 @@ def obtener_semaforo_riesgo(pct_riesgo):
         return "🔴"
 
 
-def obtener_semaforo_concentracion(pct_concentracion):
+def obtener_semaforo_concentracion(pct_concentracion: float) -> str:
     """
     Retorna emoji de semáforo según nivel de concentración de cartera.
     
