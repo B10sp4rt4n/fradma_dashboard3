@@ -9,6 +9,10 @@ import plotly.graph_objects as go
 import plotly.express as px
 from datetime import datetime, timedelta
 from utils.formatos import formato_moneda, formato_porcentaje, formato_compacto
+from utils.logger import configurar_logger
+
+# Configurar logger para este módulo
+logger = configurar_logger("reporte_ejecutivo", nivel="INFO")
 
 
 def mostrar_reporte_ejecutivo(df_ventas, df_cxc):
@@ -237,7 +241,8 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc):
                 venc = fecha_base + pd.to_timedelta(dias_credito, unit="D")
 
             fecha_corte = pd.Timestamp.today().normalize()
-            dias_overdue = (fecha_corte - venc).dt.days
+            # Calcular días de diferencia - usar .days directamente sobre el timedelta
+            dias_overdue = (fecha_corte - venc).apply(lambda x: x.days if pd.notna(x) else 0)
             dias_overdue = pd.to_numeric(dias_overdue, errors="coerce").fillna(0)
 
         # Exponer una columna estándar de días para reutilización en el reporte
@@ -253,13 +258,13 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc):
         critica = df_cxc_local.loc[mask_no_pagado & (df_cxc_local["dias_overdue"] > 30), "saldo_adeudado"].sum()
         alto_riesgo = df_cxc_local.loc[mask_no_pagado & (df_cxc_local["dias_overdue"] > 90), "saldo_adeudado"].sum()
         
-        # DEBUG: Imprimir tipos y valores
-        import sys
-        print(f"\n=== DEBUG REPORTE EJECUTIVO ===", file=sys.stderr)
-        print(f"vigente: {type(vigente)} = {vigente}", file=sys.stderr)
-        print(f"vencida_0_30: {type(vencida_0_30)} = {vencida_0_30}", file=sys.stderr)
-        print(f"critica: {type(critica)} = {critica}", file=sys.stderr)
-        print(f"alto_riesgo: {type(alto_riesgo)} = {alto_riesgo}", file=sys.stderr)
+        # Logging estructurado de métricas calculadas
+        logger.debug("Métricas CxC calculadas", extra={
+            "vigente": {"tipo": type(vigente).__name__, "valor": float(vigente)},
+            "vencida_0_30": {"tipo": type(vencida_0_30).__name__, "valor": float(vencida_0_30)},
+            "critica": {"tipo": type(critica).__name__, "valor": float(critica)},
+            "alto_riesgo": {"tipo": type(alto_riesgo).__name__, "valor": float(alto_riesgo)}
+        })
         
         pct_vigente = (vigente / total_adeudado * 100) if total_adeudado > 0 else 100
         pct_vencida_0_30 = (vencida_0_30 / total_adeudado * 100) if total_adeudado > 0 else 0
@@ -441,21 +446,22 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc):
         # Pie robusto basado en los montos ya calculados (NO pagados):
         # Vigente (<=0), 1-30, 31-90 y >90.
         # Asegurar que todos los valores sean escalares numéricos
-        print(f"\n=== DEBUG COMPOSICIÓN CARTERA ===", file=sys.stderr)
-        print(f"vigente raw: {type(vigente)} = {vigente}", file=sys.stderr)
+        logger.debug("Iniciando composición de cartera", extra={"vigente_raw": float(vigente)})
         
         vigente_val = float(vigente) if pd.notna(vigente) else 0.0
         vencida_0_30_val = float(vencida_0_30) if pd.notna(vencida_0_30) else 0.0
         critica_val = float(critica) if pd.notna(critica) else 0.0
         alto_riesgo_val = float(alto_riesgo) if pd.notna(alto_riesgo) else 0.0
         
-        print(f"vigente_val: {type(vigente_val)} = {vigente_val}", file=sys.stderr)
-        print(f"vencida_0_30_val: {type(vencida_0_30_val)} = {vencida_0_30_val}", file=sys.stderr)
-        print(f"critica_val: {type(critica_val)} = {critica_val}", file=sys.stderr)
-        print(f"alto_riesgo_val: {type(alto_riesgo_val)} = {alto_riesgo_val}", file=sys.stderr)
+        logger.debug("Valores normalizados de cartera", extra={
+            "vigente": vigente_val,
+            "vencida_0_30": vencida_0_30_val,
+            "critica": critica_val,
+            "alto_riesgo": alto_riesgo_val
+        })
         
         vencida_31_90 = max(0, critica_val - alto_riesgo_val)
-        print(f"vencida_31_90: {type(vencida_31_90)} = {vencida_31_90}", file=sys.stderr)
+        logger.debug(f"Calculada vencida_31_90: {vencida_31_90}")
         
         try:
             cartera_por_categoria = pd.DataFrame(
@@ -464,13 +470,9 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc):
                     "Monto": [vigente_val, vencida_0_30_val, vencida_31_90, alto_riesgo_val],
                 }
             )
-            print(f"DataFrame creado exitosamente", file=sys.stderr)
-            print(f"DataFrame shape: {cartera_por_categoria.shape}", file=sys.stderr)
-            print(f"DataFrame:\n{cartera_por_categoria}", file=sys.stderr)
+            logger.debug(f"DataFrame de cartera creado: shape={cartera_por_categoria.shape}")
         except Exception as e:
-            print(f"ERROR creando DataFrame: {e}", file=sys.stderr)
-            import traceback
-            traceback.print_exc(file=sys.stderr)
+            logger.exception(f"Error creando DataFrame de cartera: {e}")
             raise
 
         # Si no hay cartera (o todo está pagado), no mostrar pie vacío
