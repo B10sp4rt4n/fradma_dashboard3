@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from unidecode import unidecode
 from main import main_kpi, main_comparativo, heatmap_ventas
-from main import kpi_cpc, reporte_ejecutivo
+from main import kpi_cpc, reporte_ejecutivo, ytd_lineas
 from utils.data_cleaner import limpiar_columnas_texto, detectar_duplicados_similares
 from utils.logger import configurar_logger, log_dataframe_info, log_execution_time
 from utils.filters import (
@@ -158,16 +158,36 @@ def normalizar_columnas(df):
     df.columns = nuevas_columnas
     return df
 
+# 🛠️ FUNCIÓN: Obtener hojas disponibles de un Excel
+def obtener_hojas_excel(archivo_bytes):
+    """Obtiene la lista de hojas de un archivo Excel."""
+    try:
+        xls = pd.ExcelFile(archivo_bytes)
+        return xls.sheet_names
+    except FileNotFoundError:
+        logger.error("Archivo Excel no encontrado")
+        return []
+    except pd.errors.EmptyDataError:
+        logger.error("El archivo Excel está vacío")
+        return []
+    except ValueError as e:
+        logger.error(f"Formato de Excel inválido: {e}")
+        return []
+    except Exception as e:
+        logger.exception(f"Error inesperado al leer Excel: {e}")
+        return []
+
 # 🛠️ FUNCIÓN: Carga de Excel con detección de múltiples hojas y CONTPAQi
 @st.cache_data(ttl=300, show_spinner="📂 Cargando archivo desde caché...")
 @decorador_medicion_tiempo
-def detectar_y_cargar_archivo(archivo_bytes, archivo_nombre):
+def detectar_y_cargar_archivo(archivo_bytes, archivo_nombre, hoja_seleccionada=None):
     """
     Detecta y carga archivos Excel con soporte para múltiples hojas y formato CONTPAQi.
     
     Args:
         archivo_bytes: Contenido del archivo en bytes
         archivo_nombre: Nombre del archivo para logging
+        hoja_seleccionada: Hoja específica a leer (opcional)
         
     Returns:
         DataFrame con datos cargados y normalizados
@@ -176,22 +196,37 @@ def detectar_y_cargar_archivo(archivo_bytes, archivo_nombre):
     
     try:
         xls = pd.ExcelFile(archivo_bytes)
+    except pd.errors.EmptyDataError:
+        logger.error("Archivo Excel vacío")
+        st.error("❌ El archivo Excel está vacío. Por favor, verifica que contenga datos.")
+        return None
+    except ValueError as e:
+        logger.error(f"Formato Excel inválido: {e}")
+        st.error(f"❌ Formato de Excel no válido. Asegúrate de usar .xlsx o .xls")
+        return None
+    except PermissionError:
+        logger.error("Sin permisos para leer el archivo")
+        st.error("❌ No se tienen permisos para leer el archivo. Verifica los permisos.")
+        return None
     except Exception as e:
-        logger.error(f"Error al leer Excel: {e}", exc_info=True)
-        st.error(f"❌ Error al leer el archivo Excel: {e}")
+        logger.exception(f"Error inesperado al leer Excel: {e}")
+        st.error(f"❌ Error al leer el archivo Excel: {str(e)}")
         return None
         
     hojas = xls.sheet_names
     logger.debug(f"Hojas encontradas: {hojas}")
 
-    # Caso 1: Si hay múltiples hojas → Forzar lectura de "X AGENTE"
+    # Caso 1: Si hay múltiples hojas → Forzar lectura de "X AGENTE" o usar la seleccionada
     if len(hojas) > 1:
-        if "X AGENTE" in hojas:
+        if hoja_seleccionada:
+            hoja = hoja_seleccionada
+        elif "X AGENTE" in hojas:
             hoja = "X AGENTE"
             st.info(f"📌 Archivo con múltiples hojas detectado. Leyendo hoja 'X AGENTE'.")
         else:
-            st.warning("⚠️ Múltiples hojas detectadas pero no se encontró la hoja 'X AGENTE'. Selecciona manualmente.")
-            hoja = st.sidebar.selectbox("📄 Selecciona la hoja a leer", hojas)
+            # Si no se especificó hoja y no existe X AGENTE, usar la primera
+            hoja = hojas[0]
+            st.warning(f"⚠️ Múltiples hojas detectadas. Leyendo hoja: {hoja}")
         df = pd.read_excel(xls, sheet_name=hoja)
         df = normalizar_columnas(df)
 
@@ -207,7 +242,14 @@ def detectar_y_cargar_archivo(archivo_bytes, archivo_nombre):
                     df["año"] = df["fecha"].dt.year
                     df["mes"] = df["fecha"].dt.month
                     st.success("✅ Columnas virtuales 'año' y 'mes' generadas correctamente desde 'fecha' en X AGENTE.")
+                except ValueError as e:
+                    logger.error(f"Formato de fecha inválido: {e}")
+                    st.error(f"❌ Formato de fecha inválido en X AGENTE. Usa formato DD/MM/YYYY o YYYY-MM-DD.")
+                except AttributeError as e:
+                    logger.error(f"Error de estructura de datos: {e}")
+                    st.error(f"❌ La columna 'fecha' no tiene el formato esperado.")
                 except Exception as e:
+                    logger.exception(f"Error inesperado al procesar fecha: {e}")
                     st.error(f"❌ Error al procesar la columna 'fecha' en X AGENTE: {e}")
             else:
                 st.error("❌ No existe columna 'fecha' en X AGENTE para poder generar 'año' y 'mes'.")
@@ -263,7 +305,17 @@ if archivo:
         else:
             # Pasar bytes y nombre para que sea cacheable
             archivo_bytes = archivo.getvalue()
-            df = detectar_y_cargar_archivo(archivo_bytes, archivo.name)
+            
+            # Obtener hojas disponibles (sin caché)
+            hojas = obtener_hojas_excel(archivo_bytes)
+            
+            # Si hay múltiples hojas y no existe X AGENTE, permitir selección
+            hoja_seleccionada = None
+            if len(hojas) > 1 and "X AGENTE" not in hojas:
+                st.warning("⚠️ Múltiples hojas detectadas. Selecciona la hoja a leer:")
+                hoja_seleccionada = st.sidebar.selectbox("📄 Selecciona la hoja a leer", hojas)
+            
+            df = detectar_y_cargar_archivo(archivo_bytes, archivo.name, hoja_seleccionada)
             logger.info(f"Excel cargado en {(pd.Timestamp.now() - inicio_carga).total_seconds():.2f}s")
 
         # Guardar archivo original para KPI CxC
@@ -482,10 +534,18 @@ if "df" in st.session_state and "archivo_excel" in st.session_state:
             
             metricas = calcular_metricas_basicas(df_cxc_procesado)
             
+    except KeyError as e:
+        logger.error(f"Columna requerida no encontrada en CxC: {e}")
+        df_cxc = None
+        df_cxc_procesado = None
+        metricas = None
+    except ValueError as e:
+        logger.error(f"Valor inválido en datos CxC: {e}")
+        df_cxc = None
+        df_cxc_procesado = None
+        metricas = None
     except Exception as e:
-        logger.error(f"Error cargando datos CxC para exportación: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
+        logger.exception(f"Error inesperado cargando datos CxC para exportación: {e}")
         df_cxc = None
         df_cxc_procesado = None
         metricas = None
@@ -504,9 +564,15 @@ if "df" in st.session_state and "archivo_excel" in st.session_state:
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True
                 )
+            except ImportError:
+                st.warning("⚠️ Librería xlsxwriter no disponible. Instala con: pip install xlsxwriter")
+                logger.error("Falta dependencia xlsxwriter")
+            except MemoryError:
+                st.warning("⚠️ Datos demasiado grandes para generar Excel")
+                logger.error("Memoria insuficiente para generar Excel")
             except Exception as e:
-                st.warning("⚠️ Excel no disponible")
-                logger.error(f"Error generando Excel: {e}")
+                st.warning(f"⚠️ Excel no disponible: {str(e)}")
+                logger.exception(f"Error generando Excel: {e}")
         else:
             st.caption("⚠️ Sin datos CxC")
     
@@ -522,9 +588,15 @@ if "df" in st.session_state and "archivo_excel" in st.session_state:
                     mime="text/html",
                     use_container_width=True
                 )
+            except KeyError as e:
+                st.warning(f"⚠️ Falta columna requerida para HTML: {e}")
+                logger.error(f"Columna faltante en reporte HTML: {e}")
+            except MemoryError:
+                st.warning("⚠️ Datos demasiado grandes para generar HTML")
+                logger.error("Memoria insuficiente para generar HTML")
             except Exception as e:
-                st.warning("⚠️ HTML no disponible")
-                logger.error(f"Error generando HTML: {e}")
+                st.warning(f"⚠️ HTML no disponible: {str(e)}")
+                logger.exception(f"Error generando HTML: {e}")
         else:
             st.caption("⚠️ Sin datos CxC")
 
@@ -541,7 +613,8 @@ menu = st.sidebar.radio(
         "🎯 Reporte Ejecutivo",
         "📈 KPIs Generales",
         "📊 Comparativo Año vs Año",
-        "🔥 Heatmap Ventas",
+        "� YTD por Línea de Negocio",
+        "�🔥 Heatmap Ventas",
         "💳 KPI Cartera CxC"
     ],
     help="Selecciona el módulo de análisis que deseas visualizar"
@@ -574,6 +647,22 @@ with st.sidebar.expander("ℹ️ Acerca de esta vista"):
         **Comparación interanual**
         
         - Evolución por mes
+        - Análisis de crecimiento
+        - Tendencias históricas
+        """)
+    elif menu == "📆 YTD por Línea de Negocio":
+        st.markdown("""
+        **Reporte Year-to-Date (YTD)**
+        
+        - Ventas acumuladas del año
+        - Comparativa vs año anterior
+        - Análisis por línea de negocio
+        - Top productos y clientes
+        - Proyección anual
+        """)
+    elif menu == "🔥 Heatmap Ventas":
+        st.markdown("""
+        **Mapa de calor de ventas
         - Comparación año actual vs anterior
         - Análisis de crecimiento
         """)
@@ -634,9 +723,18 @@ if menu == "🎯 Reporte Ejecutivo":
                     df_cxc = pd.DataFrame(columns=['cliente', 'saldo_adeudado', 'dias_vencido'])
                 
                 reporte_ejecutivo.mostrar_reporte_ejecutivo(df_ventas, df_cxc)
+            except KeyError as e:
+                st.error(f"❌ Columna requerida no encontrada: {e}")
+                st.info("💡 Verifica que el archivo contenga las columnas: fecha, ventas, cliente, saldo")
+                logger.error(f"Columna faltante en reporte ejecutivo: {e}")
+            except ValueError as e:
+                st.error(f"❌ Error en los valores de datos: {e}")
+                st.info("💡 Revisa que los montos y fechas tengan formato válido")
+                logger.error(f"Valor inválido en reporte ejecutivo: {e}")
             except Exception as e:
                 st.error(f"❌ Error al generar el reporte ejecutivo: {str(e)}")
                 st.info("💡 Asegúrate de haber subido un archivo con datos de ventas y CxC")
+                logger.exception(f"Error inesperado en reporte ejecutivo: {e}")
     else:
         st.warning("⚠️ Primero sube un archivo para visualizar el Reporte Ejecutivo.")
         st.info("📂 Usa el menú lateral para cargar tu archivo de datos.")
@@ -651,7 +749,14 @@ elif menu == "📊 Comparativo Año vs Año":
     else:
         st.warning("⚠️ Primero sube un archivo para visualizar el comparativo año vs año.")
 
-elif menu == "🔥 Heatmap Ventas":
+elif menu == "� YTD por Línea de Negocio":
+    if "df" in st.session_state:
+        ytd_lineas.run(st.session_state["df"])
+    else:
+        st.warning("⚠️ Primero sube un archivo para visualizar el reporte YTD.")
+        st.info("📂 Este reporte requiere datos de ventas con: fecha, linea_de_negocio, ventas_usd")
+
+elif menu == "�🔥 Heatmap Ventas":
     if "df" in st.session_state:
         heatmap_ventas.run(st.session_state["df"])
     else:

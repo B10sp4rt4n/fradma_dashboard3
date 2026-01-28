@@ -847,8 +847,15 @@ def run(archivo):
                 
                 st.pyplot(fig)
                 
+            except KeyError as e:
+                st.error(f"❌ Columna requerida no encontrada: {e}")
+                logger.error(f"Columna faltante en análisis de vencimientos: {e}")
+            except ValueError as e:
+                st.error(f"❌ Error en valores de vencimientos: {e}")
+                logger.error(f"Valor inválido en vencimientos: {e}")
             except Exception as e:
                 st.error(f"❌ Error en análisis de vencimientos: {str(e)}")
+                logger.exception(f"Error inesperado en vencimientos: {e}")
         else:
             st.warning("ℹ️ No se encontró columna de vencimiento")
             
@@ -1167,7 +1174,22 @@ def run(archivo):
         st.write("**Documentos pendientes:**")
         cols = ['fecha_vencimiento', 'saldo_adeudado', 'estatus', 'dias_vencido'] 
         cols = [c for c in cols if c in deudor_df.columns]
-        st.dataframe(deudor_df[cols].sort_values('fecha_vencimiento', ascending=False))
+        
+        # Determinar columna para ordenar (prioridad: fecha_vencimiento, dias_vencido, saldo_adeudado)
+        sort_col = None
+        if 'fecha_vencimiento' in cols:
+            sort_col = 'fecha_vencimiento'
+        elif 'dias_vencido' in cols:
+            sort_col = 'dias_vencido'
+        elif 'saldo_adeudado' in cols:
+            sort_col = 'saldo_adeudado'
+        
+        if sort_col and len(cols) > 0:
+            st.dataframe(deudor_df[cols].sort_values(sort_col, ascending=False))
+        elif len(cols) > 0:
+            st.dataframe(deudor_df[cols])
+        else:
+            st.warning("No hay columnas disponibles para mostrar")
 
         # =====================================================================
         # FASE 5: EXPORTACIÓN Y REPORTES
@@ -1213,14 +1235,21 @@ def run(archivo):
                 df_resumen = pd.DataFrame(resumen_data)
                 df_resumen.to_excel(writer, sheet_name='Resumen Ejecutivo', index=False)
                 
-                # Hoja 2: Detalle Completo
-                df_detalle_export = df_deudas[['deudor', 'saldo_adeudado', 'estatus', 'origen']].copy()
-                if 'dias_vencido' in df_deudas.columns:
-                    df_detalle_export['dias_vencido'] = df_deudas['dias_vencido']
-                if 'vendedor' in df_deudas.columns:
-                    df_detalle_export['vendedor'] = df_deudas['vendedor']
-                if col_linea in df_deudas.columns:
-                    df_detalle_export['linea_negocio'] = df_deudas[col_linea]
+                # Hoja 2: Detalle Completo - construir con columnas disponibles
+                export_cols = ['deudor', 'saldo_adeudado']
+                export_cols_optional = ['estatus', 'origen', 'dias_vencido', 'vendedor', col_linea]
+                
+                # Agregar columnas opcionales que existan
+                for col in export_cols_optional:
+                    if col and col in df_deudas.columns:
+                        export_cols.append(col)
+                
+                df_detalle_export = df_deudas[export_cols].copy()
+                
+                # Renombrar col_linea si existe
+                if col_linea in df_detalle_export.columns:
+                    df_detalle_export = df_detalle_export.rename(columns={col_linea: 'linea_negocio'})
+                    
                 df_detalle_export.to_excel(writer, sheet_name='Detalle Completo', index=False)
                 
                 # Hoja 3: Top Deudores
@@ -1382,7 +1411,14 @@ Departamento de Crédito y Cobranza
         
         st.info("📌 Este reporte se basa en la columna 'Cliente' (F) para identificar deudores.")
 
+    except KeyError as e:
+        st.error(f"❌ Columna requerida no encontrada: {e}")
+        st.info("💡 Verifica que el Excel contenga las hojas 'CXC VIGENTES' y 'CXC VENCIDAS'")
+        logger.error(f"Columna faltante en CxC: {e}")
+    except ValueError as e:
+        st.error(f"❌ Error en formato de datos: {e}")
+        st.info("💡 Revisa que los montos sean numéricos y fechas válidas")
+        logger.error(f"Valor inválido en CxC: {e}")
     except Exception as e:
         st.error(f"❌ Error crítico: {str(e)}")
-        import traceback
-        st.error(traceback.format_exc())
+        logger.exception(f"Error inesperado en CxC: {e}")

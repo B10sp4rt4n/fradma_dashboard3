@@ -101,8 +101,14 @@ def run(df):
                 return f"{year_short}"
             else:
                 return f"{year_short}.{month_num:02d}"
+        except (KeyError, AttributeError) as e:
+            logger.warning(f"Columna o atributo faltante en periodo_id: {e}")
+            return ""
+        except ValueError as e:
+            logger.warning(f"Valor inválido al generar periodo_id: {e}")
+            return ""
         except Exception as e:
-            st.warning(f"Error generando periodo_id: {e}")
+            logger.exception(f"Error inesperado generando periodo_id: {e}")
             return ""
 
     # Asegurar que la columna fecha esté en formato datetime
