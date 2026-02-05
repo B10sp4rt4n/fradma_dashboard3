@@ -18,6 +18,7 @@ from plotly.subplots import make_subplots
 from datetime import datetime, date
 import io
 from utils.logger import configurar_logger
+from utils.ai_helper import generar_resumen_ejecutivo_ytd, validar_api_key
 
 # Configurar logger para este módulo
 logger = configurar_logger("ytd_lineas", nivel="INFO")
@@ -562,6 +563,27 @@ def run(df):
         help="Número de líneas de negocio a mostrar en el panel de detalles expandibles"
     )
     
+    # =====================================================================
+    # Sección de Inteligencia Artificial
+    # =====================================================================
+    st.sidebar.markdown("---")
+    st.sidebar.header("🤖 Análisis con IA")
+    
+    openai_api_key = st.sidebar.text_input(
+        "API Key de OpenAI",
+        type="password",
+        placeholder="sk-...",
+        help="Ingresa tu API Key de OpenAI para obtener insights ejecutivos generados con IA"
+    )
+    
+    # Guardar en session state para uso posterior
+    if openai_api_key:
+        st.session_state["openai_api_key"] = openai_api_key
+        st.sidebar.success("✅ API Key configurada")
+    else:
+        st.session_state["openai_api_key"] = None
+        st.sidebar.info("ℹ️ Ingresa tu API Key para habilitar análisis con IA")
+    
     # Aplicar filtros
     df_filtrado = df[df['linea_de_negocio'].isin(seleccion_lineas)].copy()
     
@@ -969,6 +991,100 @@ def run(df):
             mime="text/csv"
         )
         st.caption(f"Datos crudos YTD {año_actual} ({len(df_ytd_actual)} registros)")
+    
+    # =====================================================================
+    # 9. ANÁLISIS EJECUTIVO CON INTELIGENCIA ARTIFICIAL
+    # =====================================================================
+    st.markdown("---")
+    st.header("🤖 Análisis Ejecutivo con Inteligencia Artificial")
+    
+    if st.session_state.get("openai_api_key"):
+        col_ai1, col_ai2 = st.columns([3, 1])
+        
+        with col_ai1:
+            st.info("💡 Genera un análisis ejecutivo personalizado con recomendaciones estratégicas usando IA")
+        
+        with col_ai2:
+            generar_insights = st.button("🚀 Generar Análisis", type="primary", use_container_width=True)
+        
+        if generar_insights:
+            with st.spinner("🧠 Analizando datos con IA... esto puede tomar unos segundos"):
+                try:
+                    # Validar API key
+                    api_key = st.session_state["openai_api_key"]
+                    if not validar_api_key(api_key):
+                        st.error("❌ API Key inválida. Por favor verifica tu clave de OpenAI.")
+                    else:
+                        # Generar análisis ejecutivo
+                        analisis = generar_resumen_ejecutivo_ytd(
+                            df_ytd_actual=df_ytd_actual,
+                            df_ytd_anterior=df_ytd_anterior,
+                            año_actual=año_actual,
+                            año_anterior=año_anterior,
+                            openai_api_key=api_key
+                        )
+                        
+                        if analisis and "error" not in analisis:
+                            # Mostrar análisis en secciones expandibles
+                            st.success("✅ Análisis generado exitosamente")
+                            
+                            # Sección 1: Resumen Ejecutivo
+                            with st.expander("📋 Resumen Ejecutivo", expanded=True):
+                                st.markdown(analisis.get("resumen_ejecutivo", "No disponible"))
+                            
+                            # Sección 2: Highlights Clave
+                            with st.expander("⭐ Highlights Clave"):
+                                highlights = analisis.get("highlights_clave", [])
+                                if highlights:
+                                    for highlight in highlights:
+                                        st.markdown(f"- {highlight}")
+                                else:
+                                    st.info("No hay highlights disponibles")
+                            
+                            # Sección 3: Áreas de Atención
+                            with st.expander("⚠️ Áreas de Atención"):
+                                areas = analisis.get("areas_atencion", [])
+                                if areas:
+                                    for area in areas:
+                                        st.markdown(f"- {area}")
+                                else:
+                                    st.info("No hay áreas de atención identificadas")
+                            
+                            # Sección 4: Insights Principales
+                            with st.expander("💡 Insights Principales"):
+                                insights = analisis.get("insights_principales", [])
+                                if insights:
+                                    for insight in insights:
+                                        st.markdown(f"- {insight}")
+                                else:
+                                    st.info("No hay insights disponibles")
+                            
+                            # Sección 5: Recomendaciones Ejecutivas
+                            with st.expander("🎯 Recomendaciones Ejecutivas"):
+                                recomendaciones = analisis.get("recomendaciones_ejecutivas", [])
+                                if recomendaciones:
+                                    for rec in recomendaciones:
+                                        st.markdown(f"- {rec}")
+                                else:
+                                    st.info("No hay recomendaciones disponibles")
+                            
+                            st.caption("🤖 Análisis generado con OpenAI GPT-4o-mini | "
+                                      f"Fecha: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                        else:
+                            st.error(f"❌ Error al generar análisis: {analisis.get('error', 'Error desconocido')}")
+                            
+                except Exception as e:
+                    logger.error(f"Error en análisis con IA: {str(e)}")
+                    st.error(f"❌ Error al generar análisis: {str(e)}")
+                    st.info("💡 Verifica que tu API Key sea válida y que tengas créditos disponibles en OpenAI")
+    else:
+        st.warning("⚠️ Para utilizar el análisis con IA, ingresa tu API Key de OpenAI en la barra lateral")
+        st.info("ℹ️ El análisis ejecutivo con IA proporciona:\n"
+                "- Resumen ejecutivo personalizado\n"
+                "- Identificación de tendencias y patrones\n"
+                "- Áreas de oportunidad y riesgo\n"
+                "- Recomendaciones estratégicas accionables\n"
+                "- Insights comparativos año contra año")
     
     # Footer con información
     st.markdown("---")
