@@ -73,6 +73,21 @@ def calcular_ytd(df, año, fecha_corte=None):
     df_año = df[df['fecha'].dt.year == año].copy()
     df_ytd = df_año[df_año['fecha'] <= fecha_corte].copy()
     
+    # Logging para debug
+    total_registros_año = len(df_año)
+    total_registros_ytd = len(df_ytd)
+    total_ventas = df_ytd['ventas_usd'].sum()
+    
+    logger.info(f"calcular_ytd() - Año: {año}, Fecha corte: {fecha_corte.strftime('%Y-%m-%d')}")
+    logger.info(f"  Registros totales del año {año}: {total_registros_año}")
+    logger.info(f"  Registros YTD hasta {fecha_corte.strftime('%Y-%m-%d')}: {total_registros_ytd}")
+    logger.info(f"  Total ventas YTD: ${total_ventas:,.2f}")
+    
+    if total_registros_ytd > 0:
+        fecha_min = df_ytd['fecha'].min()
+        fecha_max = df_ytd['fecha'].max()
+        logger.info(f"  Rango de fechas: {fecha_min.strftime('%Y-%m-%d')} a {fecha_max.strftime('%Y-%m-%d')}")
+    
     return df_ytd
 
 def calcular_metricas_ytd(df_ytd):
@@ -191,17 +206,43 @@ def crear_grafico_lineas_acumulado(df, año_actual, año_anterior=None):
     
     return fig
 
-def crear_grafico_barras_comparativo(df, año_actual, año_anterior):
-    """Crea gráfico de barras comparando año actual vs anterior por línea."""
+def crear_grafico_barras_comparativo(df, año_actual, año_anterior, usar_año_completo_anterior=True):
+    """
+    Crea gráfico de barras comparando año actual vs anterior por línea.
     
-    # Calcular YTD para ambos años
+    Args:
+        df: DataFrame con datos
+        año_actual: Año en curso
+        año_anterior: Año anterior para comparar
+        usar_año_completo_anterior: Si True, usa todo el año anterior. Si False, usa YTD del año anterior
+    """
+    
+    # Calcular YTD para año actual
     fecha_corte = datetime.now()
-    mes_actual = fecha_corte.month
-    dia_actual = fecha_corte.day
-    fecha_corte_anterior = datetime(año_anterior, mes_actual, dia_actual)
-    
     df_actual = calcular_ytd(df, año_actual, fecha_corte)
+    
+    # Para año anterior: usar año completo o YTD según parámetro
+    if usar_año_completo_anterior:
+        # Usar TODO el año anterior completo (hasta 31 de diciembre)
+        fecha_corte_anterior = datetime(año_anterior, 12, 31)
+        logger.info(f"Comparativo - Año {año_actual} YTD vs Año {año_anterior} COMPLETO")
+    else:
+        # Usar YTD del año anterior (misma fecha que año actual)
+        mes_actual = fecha_corte.month
+        dia_actual = fecha_corte.day
+        try:
+            fecha_corte_anterior = datetime(año_anterior, mes_actual, dia_actual)
+        except ValueError:
+            fecha_corte_anterior = datetime(año_anterior, mes_actual, 28)
+            logger.warning(f"Ajustando fecha de corte anterior a {fecha_corte_anterior}")
+        logger.info(f"Comparativo YTD - Ambos años hasta misma fecha del calendario")
+    
+    logger.info(f"Fecha corte actual: {fecha_corte.strftime('%Y-%m-%d')}, anterior: {fecha_corte_anterior.strftime('%Y-%m-%d')}")
+    
     df_anterior = calcular_ytd(df, año_anterior, fecha_corte_anterior)
+    
+    logger.info(f"Registros - Año {año_actual}: {len(df_actual)}, Año {año_anterior}: {len(df_anterior)}")
+    logger.info(f"Total ventas - Año {año_actual}: ${df_actual['ventas_usd'].sum():,.2f}, Año {año_anterior}: ${df_anterior['ventas_usd'].sum():,.2f}")
     
     # Agrupar por línea
     ventas_actual = df_actual.groupby('linea_de_negocio')['ventas_usd'].sum().reset_index()
@@ -212,8 +253,21 @@ def crear_grafico_barras_comparativo(df, año_actual, año_anterior):
     
     # Merge
     comparativo = ventas_actual.merge(ventas_anterior, on='linea_de_negocio', how='outer').fillna(0)
-    comparativo['crecimiento'] = ((comparativo['ventas_actual'] - comparativo['ventas_anterior']) / 
-                                   comparativo['ventas_anterior'] * 100).replace([float('inf'), -float('inf')], 0)
+    
+    # Calcular crecimiento manejando casos especiales
+    def calcular_crecimiento_seguro(row):
+        actual = row['ventas_actual']
+        anterior = row['ventas_anterior']
+        
+        if anterior == 0:
+            if actual == 0:
+                return 0.0  # Sin ventas en ambos períodos
+            else:
+                return 100.0  # Nueva línea o crecimiento desde cero
+        else:
+            return ((actual - anterior) / anterior) * 100
+    
+    comparativo['crecimiento'] = comparativo.apply(calcular_crecimiento_seguro, axis=1)
     
     # Log de resumen para debugging
     logger.debug(f"Comparativo generado con {len(comparativo)} líneas de negocio")
@@ -225,8 +279,11 @@ def crear_grafico_barras_comparativo(df, año_actual, año_anterior):
     fig = go.Figure()
     
     # Barra año anterior - todos los datos
+    label_anterior = f"Año {año_anterior}" + (" (Completo)" if usar_año_completo_anterior else " (YTD)")
+    label_actual = f"Año {año_actual} (YTD)"
+    
     fig.add_trace(go.Bar(
-        name=f"Año {año_anterior}",
+        name=label_anterior,
         x=comparativo['linea_de_negocio'],
         y=comparativo['ventas_anterior'],
         marker=dict(
@@ -237,12 +294,12 @@ def crear_grafico_barras_comparativo(df, año_actual, año_anterior):
         text=comparativo['ventas_anterior'].apply(lambda x: f'${x:,.0f}'),
         textposition='outside',
         hovertemplate='<b>%{x}</b><br>' +
-                     f'Año {año_anterior}: $%{{y:,.2f}}<extra></extra>'
+                     f'{label_anterior}: $%{{y:,.2f}}<extra></extra>'
     ))
     
     # Barra año actual - todos los datos
     fig.add_trace(go.Bar(
-        name=f"Año {año_actual}",
+        name=label_actual,
         x=comparativo['linea_de_negocio'],
         y=comparativo['ventas_actual'],
         marker=dict(
@@ -253,12 +310,18 @@ def crear_grafico_barras_comparativo(df, año_actual, año_anterior):
         text=comparativo['ventas_actual'].apply(lambda x: f'${x:,.0f}'),
         textposition='outside',
         hovertemplate='<b>%{x}</b><br>' +
-                     f'Año {año_actual}: $%{{y:,.2f}}<extra></extra>'
+                     f'{label_actual}: $%{{y:,.2f}}<extra></extra>'
     ))
+    
+    titulo_comparativo = f'<b>Comparativo: {año_actual} YTD vs {año_anterior}'
+    if usar_año_completo_anterior:
+        titulo_comparativo += ' (Año Completo)</b>'
+    else:
+        titulo_comparativo += ' YTD</b>'
     
     fig.update_layout(
         title={
-            'text': f'<b>Comparativo YTD: {año_actual} vs {año_anterior}</b>',
+            'text': titulo_comparativo,
             'x': 0.5,
             'xanchor': 'center',
             'font': {'size': 18}
@@ -457,6 +520,21 @@ def run(df):
     
     comparar_año = st.sidebar.checkbox("📊 Comparar con año anterior", value=True)
     
+    # Modo de comparación
+    modo_comparacion = "año_completo"
+    if comparar_año:
+        st.sidebar.markdown("**Tipo de Comparación:**")
+        modo_comparacion = st.sidebar.radio(
+            "Selecciona el modo",
+            options=["año_completo", "ytd_equivalente"],
+            format_func=lambda x: {
+                "año_completo": "📅 Año Anterior Completo vs YTD Actual",
+                "ytd_equivalente": "📆 YTD Equivalente (mismo período)"
+            }[x],
+            help="Año Completo: Compara YTD actual con todo el año anterior | YTD Equivalente: Compara mismo período en ambos años",
+            label_visibility="collapsed"
+        )
+    
     año_anterior = None
     if comparar_año and (año_actual - 1) in años_disponibles:
         año_anterior = año_actual - 1
@@ -503,17 +581,33 @@ def run(df):
     
     # Calcular crecimiento si hay año anterior
     crecimiento_pct = 0
+    total_anterior = 0
     if año_anterior:
-        fecha_corte = datetime.now()
-        mes_actual = fecha_corte.month
-        dia_actual = fecha_corte.day
-        fecha_corte_anterior = datetime(año_anterior, mes_actual, dia_actual)
+        # Determinar fecha de corte según modo de comparación
+        if modo_comparacion == "año_completo":
+            # Usar TODO el año anterior completo
+            fecha_corte_anterior = datetime(año_anterior, 12, 31)
+            label_comparacion = f"Año completo {año_anterior}"
+        else:
+            # Usar YTD equivalente (misma fecha del calendario)
+            fecha_corte = datetime.now()
+            mes_actual = fecha_corte.month
+            dia_actual = fecha_corte.day
+            try:
+                fecha_corte_anterior = datetime(año_anterior, mes_actual, dia_actual)
+            except ValueError:
+                fecha_corte_anterior = datetime(año_anterior, mes_actual, 28)
+            label_comparacion = f"YTD {año_anterior}"
         
         df_ytd_anterior = calcular_ytd(df_filtrado, año_anterior, fecha_corte_anterior)
         total_anterior = df_ytd_anterior['ventas_usd'].sum()
         
+        logger.info(f"KPIs - YTD {año_actual}: ${metricas['total_ytd']:,.2f}, {label_comparacion}: ${total_anterior:,.2f}")
+        
         if total_anterior > 0:
             crecimiento_pct = ((metricas['total_ytd'] - total_anterior) / total_anterior) * 100
+        elif metricas['total_ytd'] > 0:
+            crecimiento_pct = 100.0  # Crecimiento desde cero
     
     # Línea top
     linea_top = df_ytd_actual.groupby('linea_de_negocio')['ventas_usd'].sum().idxmax()
@@ -523,19 +617,33 @@ def run(df):
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
+        if año_anterior:
+            if modo_comparacion == "año_completo":
+                delta_label = f"vs {año_anterior} completo: ${total_anterior:,.0f}"
+            else:
+                delta_label = f"vs YTD {año_anterior}: ${total_anterior:,.0f}"
+        else:
+            delta_label = None
+            
         st.metric(
             label="💰 Total YTD",
             value=f"${metricas['total_ytd']:,.0f}",
-            delta=f"vs ${total_anterior:,.0f}" if año_anterior else None
+            delta=delta_label
         )
     
     with col2:
-        delta_text = f"{crecimiento_pct:+.1f}%" if año_anterior else None
+        if año_anterior:
+            if modo_comparacion == "año_completo":
+                label_crec = f"📈 vs {año_anterior} Completo"
+            else:
+                label_crec = f"📈 vs YTD {año_anterior}"
+        else:
+            label_crec = "📈 Crecimiento"
+            
         st.metric(
-            label="📈 Crecimiento",
+            label=label_crec,
             value=f"{crecimiento_pct:+.1f}%" if año_anterior else "N/A",
-            delta=delta_text,
-            delta_color="normal"
+            delta_color="off"
         )
     
     with col3:
@@ -569,7 +677,13 @@ def run(df):
     with col_left:
         # Gráfico de barras comparativo
         if año_anterior:
-            fig_barras, comparativo_df = crear_grafico_barras_comparativo(df_filtrado, año_actual, año_anterior)
+            usar_año_completo = (modo_comparacion == "año_completo")
+            fig_barras, comparativo_df = crear_grafico_barras_comparativo(
+                df_filtrado, 
+                año_actual, 
+                año_anterior, 
+                usar_año_completo_anterior=usar_año_completo
+            )
             st.plotly_chart(fig_barras, use_container_width=True)
             
             # Panel extendible con detalles por línea de negocio
@@ -826,7 +940,13 @@ def run(df):
         st.subheader("📊 Excel Completo")
         comparativo_df_export = None
         if año_anterior:
-            _, comparativo_df_export = crear_grafico_barras_comparativo(df_filtrado, año_actual, año_anterior)
+            usar_año_completo = (modo_comparacion == "año_completo")
+            _, comparativo_df_export = crear_grafico_barras_comparativo(
+                df_filtrado, 
+                año_actual, 
+                año_anterior,
+                usar_año_completo_anterior=usar_año_completo
+            )
         
         excel_buffer = exportar_excel_ytd(df_ytd_actual, año_actual, comparativo_df_export)
         
