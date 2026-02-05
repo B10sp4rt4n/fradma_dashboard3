@@ -164,7 +164,7 @@ def preparar_datos_para_analisis(df_actual, df_anterior, año_actual, año_anter
         fecha_fin_anterior = f"31/12/{año_anterior}"
     
     # Descripción del tipo de comparación
-    tipo_comparacion = "YTD vs Año Completo" if modo_comparacion == "año_completo" else "YTD vs YTD Equivalente"
+    tipo_comparacion = "Año Anterior Completo vs Avance Año Actual" if modo_comparacion == "año_completo" else "Período vs Período Anterior Equivalente"
     
     # Totales
     total_actual = df_actual['ventas_usd'].sum()
@@ -205,14 +205,14 @@ def preparar_datos_para_analisis(df_actual, df_anterior, año_actual, año_anter
     return {
         "tipo_analisis": tipo_comparacion,
         "periodo_actual": {
-            "descripcion": f"YTD {año_actual}",
+            "descripcion": f"Avance año {año_actual}",
             "fecha_inicio": fecha_inicio_actual_str,
             "fecha_fin": fecha_fin_actual,
             "total_ventas_usd": round(total_actual, 2),
             "numero_transacciones": len(df_actual)
         },
         "periodo_anterior": {
-            "descripcion": f"{'Año completo' if modo_comparacion == 'año_completo' else 'YTD'} {año_anterior}",
+            "descripcion": f"{'Año completo' if modo_comparacion == 'año_completo' else 'Período anterior'} {año_anterior}",
             "fecha_inicio": fecha_inicio_anterior_str,
             "fecha_fin": fecha_fin_anterior,
             "total_ventas_usd": round(total_anterior, 2),
