@@ -15,7 +15,8 @@ from utils.logger import configurar_logger
 
 logger = configurar_logger("ai_helper", nivel="INFO")
 
-def generar_resumen_ejecutivo_ytd(df_ytd_actual, df_ytd_anterior, año_actual, año_anterior, openai_api_key):
+def generar_resumen_ejecutivo_ytd(df_ytd_actual, df_ytd_anterior, año_actual, año_anterior, openai_api_key, 
+                                  modo_comparacion="año_completo", fecha_corte_actual=None, fecha_corte_anterior=None):
     """
     Genera un resumen ejecutivo completo usando OpenAI.
     
@@ -25,6 +26,9 @@ def generar_resumen_ejecutivo_ytd(df_ytd_actual, df_ytd_anterior, año_actual, a
         año_actual: Año en análisis
         año_anterior: Año de comparación
         openai_api_key: API key de OpenAI
+        modo_comparacion: "año_completo" o "ytd_equivalente"
+        fecha_corte_actual: Fecha límite del período actual
+        fecha_corte_anterior: Fecha límite del período anterior
     
     Returns:
         dict con secciones del reporte ejecutivo
@@ -33,46 +37,74 @@ def generar_resumen_ejecutivo_ytd(df_ytd_actual, df_ytd_anterior, año_actual, a
         from openai import OpenAI
         client = OpenAI(api_key=openai_api_key)
         
-        # Preparar datos resumidos
-        datos_analisis = preparar_datos_para_analisis(df_ytd_actual, df_ytd_anterior, año_actual, año_anterior)
+        # Preparar datos resumidos con información temporal
+        datos_analisis = preparar_datos_para_analisis(
+            df_ytd_actual, df_ytd_anterior, año_actual, año_anterior,
+            modo_comparacion, fecha_corte_actual, fecha_corte_anterior
+        )
         
-        # Prompt estructurado para CEO - Solicitar JSON
-        prompt = f"""Eres un analista financiero senior reportando al CEO. Analiza los siguientes datos de ventas YTD y genera un reporte ejecutivo conciso y accionable.
+        # Prompt estructurado para CEO - Solicitar JSON con recomendaciones 100% estructuradas
+        prompt = f"""Eres un analista financiero senior reportando al CEO. Analiza los siguientes datos de ventas comparando PERÍODOS ESTRUCTURADOS.
 
-DATOS:
+DATOS DEL ANÁLISIS:
 {json.dumps(datos_analisis, indent=2, ensure_ascii=False)}
 
-Genera un análisis ejecutivo y devuélvelo ÚNICAMENTE como un objeto JSON válido con esta estructura EXACTA:
+GENERA un análisis ejecutivo y devuélvelo ÚNICAMENTE como JSON válido con esta estructura EXACTA:
 
 {{
-  "resumen_ejecutivo": "Párrafo de 2-3 líneas sobre desempeño general del período",
+  "resumen_ejecutivo": "Párrafo de 2-3 líneas sobre desempeño general comparando EXPLÍCITAMENTE los dos períodos con fechas y números concretos",
   "highlights_clave": [
-    "Logro o métrica positiva 1",
-    "Logro o métrica positiva 2",
-    "Logro o métrica positiva 3"
+    "Logro específico con número/porcentaje y período",
+    "Métrica positiva con cambio cuantificado entre períodos",
+    "Éxito destacable con contexto temporal preciso"
   ],
   "areas_atencion": [
-    "Preocupación o área de mejora 1",
-    "Preocupación o área de mejora 2",
-    "Preocupación o área de mejora 3"
+    "Preocupación con datos específicos y comparación entre períodos",
+    "Área de mejora con métrica cuantificada y tendencia temporal",
+    "Riesgo identificado con números concretos y contexto"
   ],
   "insights_principales": [
-    "Descubrimiento importante 1",
-    "Descubrimiento importante 2",
-    "Descubrimiento importante 3"
+    "Descubrimiento con análisis comparativo entre períodos",
+    "Patrón identificado con evidencia cuantitativa",
+    "Tendencia relevante con datos específicos de ambos períodos",
+    "Oportunidad estratégica basada en la comparación temporal"
   ],
   "recomendaciones_ejecutivas": [
-    "Acción específica y priorizada 1",
-    "Acción específica y priorizada 2",
-    "Acción específica y priorizada 3"
+    {{
+      "accion": "Acción específica y concreta",
+      "prioridad": "Alta/Media/Baja",
+      "plazo": "Inmediato (1-2 semanas) / Corto (1 mes) / Mediano (3 meses)",
+      "area_responsable": "Ventas/Operaciones/Finanzas/General",
+      "impacto_esperado": "Descripción cuantificable del resultado esperado",
+      "justificacion": "Razón específica basada en los datos de los períodos comparados"
+    }},
+    {{
+      "accion": "Segunda acción estructurada",
+      "prioridad": "Alta/Media/Baja",
+      "plazo": "Inmediato/Corto/Mediano",
+      "area_responsable": "Área específica",
+      "impacto_esperado": "Resultado cuantificable",
+      "justificacion": "Fundamento basado en datos"
+    }},
+    {{
+      "accion": "Tercera acción estructurada",
+      "prioridad": "Alta/Media/Baja",
+      "plazo": "Inmediato/Corto/Mediano",
+      "area_responsable": "Área específica",
+      "impacto_esperado": "Resultado cuantificable",
+      "justificacion": "Fundamento basado en datos"
+    }}
   ]
 }}
 
-IMPORTANTE: 
-- Devuelve SOLO el JSON, sin texto adicional
-- Basa tu análisis 100% en los datos proporcionados
-- Sé específico con números y porcentajes
-- Las recomendaciones deben ser accionables"""
+REQUISITOS CRÍTICOS:
+- SIEMPRE menciona los períodos exactos comparados (fechas)
+- TODOS los números deben incluir símbolo $ y formato con comas
+- TODOS los porcentajes deben ser explícitos
+- Las recomendaciones DEBEN estar 100% estructuradas como objetos JSON
+- Cada recomendación DEBE tener los 6 campos obligatorios
+- Basa TODO en los datos proporcionados, sin especulaciones
+- Sé específico, directo y orientado a acción"""
 
         logger.info("Solicitando análisis ejecutivo a OpenAI...")
         
@@ -110,8 +142,29 @@ IMPORTANTE:
             "error": str(e)
         }
 
-def preparar_datos_para_analisis(df_actual, df_anterior, año_actual, año_anterior):
-    """Prepara un resumen de datos para enviar a OpenAI."""
+def preparar_datos_para_analisis(df_actual, df_anterior, año_actual, año_anterior,
+                                 modo_comparacion="año_completo", fecha_corte_actual=None, fecha_corte_anterior=None):
+    """Prepara un resumen detallado de datos para enviar a OpenAI con información temporal estructurada."""
+    
+    # Información temporal estructurada
+    if fecha_corte_actual:
+        fecha_inicio_actual = df_actual['fecha'].min() if 'fecha' in df_actual.columns else None
+        fecha_fin_actual = fecha_corte_actual.strftime('%d/%m/%Y') if fecha_corte_actual else "Presente"
+        fecha_inicio_actual_str = fecha_inicio_actual.strftime('%d/%m/%Y') if fecha_inicio_actual else "01/01/" + str(año_actual)
+    else:
+        fecha_inicio_actual_str = f"01/01/{año_actual}"
+        fecha_fin_actual = "Presente"
+    
+    if fecha_corte_anterior:
+        fecha_inicio_anterior = df_anterior['fecha'].min() if not df_anterior.empty and 'fecha' in df_anterior.columns else None
+        fecha_fin_anterior = fecha_corte_anterior.strftime('%d/%m/%Y') if fecha_corte_anterior else "31/12/" + str(año_anterior)
+        fecha_inicio_anterior_str = fecha_inicio_anterior.strftime('%d/%m/%Y') if fecha_inicio_anterior else "01/01/" + str(año_anterior)
+    else:
+        fecha_inicio_anterior_str = f"01/01/{año_anterior}"
+        fecha_fin_anterior = f"31/12/{año_anterior}"
+    
+    # Descripción del tipo de comparación
+    tipo_comparacion = "YTD vs Año Completo" if modo_comparacion == "año_completo" else "YTD vs YTD Equivalente"
     
     # Totales
     total_actual = df_actual['ventas_usd'].sum()
@@ -150,13 +203,27 @@ def preparar_datos_para_analisis(df_actual, df_anterior, año_actual, año_anter
         top_clientes = {k: round(v, 2) for k, v in top_clientes.items()}
     
     return {
-        "periodo_analisis": f"YTD {año_actual}",
-        "periodo_comparacion": f"Año completo {año_anterior}" if not df_anterior.empty else "Sin comparación",
-        "total_ventas_actual": round(total_actual, 2),
-        "total_ventas_anterior": round(total_anterior, 2),
-        "crecimiento_pct": round(crecimiento_pct, 1),
-        "numero_registros": len(df_actual),
-        "lineas_negocio": lineas_comparativo[:10],  # Top 10
+        "tipo_analisis": tipo_comparacion,
+        "periodo_actual": {
+            "descripcion": f"YTD {año_actual}",
+            "fecha_inicio": fecha_inicio_actual_str,
+            "fecha_fin": fecha_fin_actual,
+            "total_ventas_usd": round(total_actual, 2),
+            "numero_transacciones": len(df_actual)
+        },
+        "periodo_anterior": {
+            "descripcion": f"{'Año completo' if modo_comparacion == 'año_completo' else 'YTD'} {año_anterior}",
+            "fecha_inicio": fecha_inicio_anterior_str,
+            "fecha_fin": fecha_fin_anterior,
+            "total_ventas_usd": round(total_anterior, 2),
+            "numero_transacciones": len(df_anterior) if not df_anterior.empty else 0
+        },
+        "comparativo": {
+            "diferencia_absoluta_usd": round(total_actual - total_anterior, 2),
+            "crecimiento_porcentual": round(crecimiento_pct, 1),
+            "interpretacion": "Crecimiento" if crecimiento_pct > 0 else "Decrecimiento" if crecimiento_pct < 0 else "Sin cambio"
+        },
+        "lineas_negocio_detalle": lineas_comparativo[:10],
         "top_5_clientes": top_clientes
     }
 

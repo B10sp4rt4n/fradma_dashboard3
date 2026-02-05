@@ -1018,14 +1018,31 @@ def run(df):
                         st.error(f"❌ API Key inválida: {mensaje_validacion}")
                         st.info("💡 Verifica que tu API Key comience con 'sk-' y tenga créditos disponibles")
                     else:
-                        # Generar análisis ejecutivo
-                        logger.info(f"Generando análisis ejecutivo para {año_actual} vs {año_anterior}")
+                        # Generar análisis ejecutivo con información de períodos estructurados
+                        fecha_corte_actual = datetime.now()
+                        
+                        # Recuperar fecha_corte_anterior del cálculo previo
+                        if modo_comparacion == "año_completo":
+                            fecha_corte_anterior_ai = datetime(año_anterior, 12, 31)
+                        else:
+                            mes_act = fecha_corte_actual.month
+                            dia_act = fecha_corte_actual.day
+                            try:
+                                fecha_corte_anterior_ai = datetime(año_anterior, mes_act, dia_act)
+                            except ValueError:
+                                fecha_corte_anterior_ai = datetime(año_anterior, mes_act, 28)
+                        
+                        logger.info(f"Generando análisis ejecutivo: {año_actual} ({fecha_corte_actual.strftime('%d/%m/%Y')}) vs {año_anterior} ({fecha_corte_anterior_ai.strftime('%d/%m/%Y')}) - Modo: {modo_comparacion}")
+                        
                         analisis = generar_resumen_ejecutivo_ytd(
                             df_ytd_actual=df_ytd_actual,
                             df_ytd_anterior=df_ytd_anterior,
                             año_actual=año_actual,
                             año_anterior=año_anterior,
-                            openai_api_key=api_key
+                            openai_api_key=api_key,
+                            modo_comparacion=modo_comparacion,
+                            fecha_corte_actual=fecha_corte_actual,
+                            fecha_corte_anterior=fecha_corte_anterior_ai
                         )
                         
                         logger.info(f"Respuesta de OpenAI recibida: {list(analisis.keys()) if isinstance(analisis, dict) else type(analisis)}")
@@ -1065,12 +1082,31 @@ def run(df):
                                 else:
                                     st.info("No hay insights disponibles")
                             
-                            # Sección 5: Recomendaciones Ejecutivas
-                            with st.expander("🎯 Recomendaciones Ejecutivas"):
+                            # Sección 5: Recomendaciones Ejecutivas (ESTRUCTURADAS 100%)
+                            with st.expander("🎯 Recomendaciones Ejecutivas", expanded=True):
                                 recomendaciones = analisis.get("recomendaciones_ejecutivas", [])
                                 if recomendaciones:
-                                    for rec in recomendaciones:
-                                        st.markdown(f"- {rec}")
+                                    for i, rec in enumerate(recomendaciones, 1):
+                                        # Verificar si es un objeto estructurado o string simple
+                                        if isinstance(rec, dict):
+                                            # Formato estructurado al 100%
+                                            prioridad_emoji = "🔴" if rec.get("prioridad") == "Alta" else "🟡" if rec.get("prioridad") == "Media" else "🟢"
+                                            
+                                            st.markdown(f"### {prioridad_emoji} Recomendación {i}: {rec.get('accion', 'Sin especificar')}")
+                                            
+                                            col_rec1, col_rec2 = st.columns(2)
+                                            with col_rec1:
+                                                st.markdown(f"**📅 Plazo:** {rec.get('plazo', 'No definido')}")
+                                                st.markdown(f"**🎯 Prioridad:** {rec.get('prioridad', 'No definida')}")
+                                            with col_rec2:
+                                                st.markdown(f"**👥 Área:** {rec.get('area_responsable', 'No asignada')}")
+                                                st.markdown(f"**📊 Impacto:** {rec.get('impacto_esperado', 'No especificado')}")
+                                            
+                                            st.markdown(f"**💡 Justificación:** {rec.get('justificacion', 'No disponible')}")
+                                            st.markdown("---")
+                                        else:
+                                            # Formato simple (fallback)
+                                            st.markdown(f"- {rec}")
                                 else:
                                     st.info("No hay recomendaciones disponibles")
                             
