@@ -177,12 +177,12 @@ def obtener_hojas_excel(archivo_bytes):
         logger.exception(f"Error inesperado al leer Excel: {e}")
         return []
 
-# 🛠️ FUNCIÓN: Carga de Excel con detección de múltiples hojas y CONTPAQi
+# 🛠️ FUNCIÓN: Carga de Excel con detección de múltiples hojas y CONTPAQi (SIN WIDGETS)
 @st.cache_data(ttl=300, show_spinner="📂 Cargando archivo desde caché...")
 @decorador_medicion_tiempo
-def detectar_y_cargar_archivo(archivo_bytes, archivo_nombre, hoja_seleccionada=None):
+def cargar_excel_puro(archivo_bytes, archivo_nombre, hoja_seleccionada=None):
     """
-    Detecta y carga archivos Excel con soporte para múltiples hojas y formato CONTPAQi.
+    Carga archivos Excel sin widgets de UI (versión cacheable).
     
     Args:
         archivo_bytes: Contenido del archivo en bytes
@@ -190,28 +190,29 @@ def detectar_y_cargar_archivo(archivo_bytes, archivo_nombre, hoja_seleccionada=N
         hoja_seleccionada: Hoja específica a leer (opcional)
         
     Returns:
-        DataFrame con datos cargados y normalizados
+        Tupla (DataFrame, dict con metadata) o (None, dict con error)
     """
     logger.info(f"Iniciando carga de archivo: {archivo_nombre}")
+    metadata = {"error": None, "hoja_leida": None, "es_contpaqi": False, "es_x_agente": False}
     
     try:
         xls = pd.ExcelFile(archivo_bytes)
     except pd.errors.EmptyDataError:
         logger.error("Archivo Excel vacío")
-        st.error("❌ El archivo Excel está vacío. Por favor, verifica que contenga datos.")
-        return None
+        metadata["error"] = "empty"
+        return None, metadata
     except ValueError as e:
         logger.error(f"Formato Excel inválido: {e}")
-        st.error(f"❌ Formato de Excel no válido. Asegúrate de usar .xlsx o .xls")
-        return None
+        metadata["error"] = "invalid_format"
+        return None, metadata
     except PermissionError:
         logger.error("Sin permisos para leer el archivo")
-        st.error("❌ No se tienen permisos para leer el archivo. Verifica los permisos.")
-        return None
+        metadata["error"] = "permission"
+        return None, metadata
     except Exception as e:
         logger.exception(f"Error inesperado al leer Excel: {e}")
-        st.error(f"❌ Error al leer el archivo Excel: {str(e)}")
-        return None
+        metadata["error"] = f"unexpected: {str(e)}"
+        return None, metadata
         
     hojas = xls.sheet_names
     logger.debug(f"Hojas encontradas: {hojas}")
@@ -222,54 +223,93 @@ def detectar_y_cargar_archivo(archivo_bytes, archivo_nombre, hoja_seleccionada=N
             hoja = hoja_seleccionada
         elif "X AGENTE" in hojas:
             hoja = "X AGENTE"
-            st.info(f"📌 Archivo con múltiples hojas detectado. Leyendo hoja 'X AGENTE'.")
+            metadata["es_x_agente"] = True
         else:
             # Si no se especificó hoja y no existe X AGENTE, usar la primera
             hoja = hojas[0]
-            st.warning(f"⚠️ Múltiples hojas detectadas. Leyendo hoja: {hoja}")
+        
+        metadata["hoja_leida"] = hoja
         df = pd.read_excel(xls, sheet_name=hoja)
         df = normalizar_columnas(df)
 
-        if st.session_state.get("modo_debug"):
-            with st.expander("🛠️ Debug - Columnas leídas desde X AGENTE"):
-                st.write(df.columns.tolist())
-
         # Generación virtual de columnas año y mes para X AGENTE
         if hoja == "X AGENTE":
+            metadata["es_x_agente"] = True
             if "fecha" in df.columns:
                 try:
                     df["fecha"] = pd.to_datetime(df["fecha"], errors="coerce")
                     df["año"] = df["fecha"].dt.year
                     df["mes"] = df["fecha"].dt.month
-                    st.success("✅ Columnas virtuales 'año' y 'mes' generadas correctamente desde 'fecha' en X AGENTE.")
-                except ValueError as e:
-                    logger.error(f"Formato de fecha inválido: {e}")
-                    st.error(f"❌ Formato de fecha inválido en X AGENTE. Usa formato DD/MM/YYYY o YYYY-MM-DD.")
-                except AttributeError as e:
-                    logger.error(f"Error de estructura de datos: {e}")
-                    st.error(f"❌ La columna 'fecha' no tiene el formato esperado.")
+                    metadata["fecha_procesada"] = True
                 except Exception as e:
-                    logger.exception(f"Error inesperado al procesar fecha: {e}")
-                    st.error(f"❌ Error al procesar la columna 'fecha' en X AGENTE: {e}")
+                    logger.exception(f"Error al procesar fecha: {e}")
+                    metadata["fecha_error"] = str(e)
             else:
-                st.error("❌ No existe columna 'fecha' en X AGENTE para poder generar 'año' y 'mes'.")
                 logger.warning("Columna 'fecha' no encontrada en X AGENTE")
+                metadata["fecha_no_encontrada"] = True
 
     else:
         # Caso 2: Solo una hoja → Detectar si es CONTPAQi
         hoja = hojas[0]
         logger.info(f"Una sola hoja encontrada: {hoja}")
-        st.info(f"✅ Solo una hoja encontrada: **{hoja}**. Procediendo con detección CONTPAQi.")
+        metadata["hoja_leida"] = hoja
+        metadata["unica_hoja"] = True
+        
         preview = pd.read_excel(xls, sheet_name=hoja, nrows=5, header=None)
         contiene_contpaqi = preview.iloc[0, 0]
         skiprows = 3 if isinstance(contiene_contpaqi, str) and "contpaqi" in contiene_contpaqi.lower() else 0
+        
         if skiprows:
             logger.info("Formato CONTPAQi detectado, saltando 3 filas")
-            st.info("📌 Archivo CONTPAQi detectado. Saltando primeras 3 filas.")
+            metadata["es_contpaqi"] = True
+            
         df = pd.read_excel(xls, sheet_name=hoja, skiprows=skiprows)
         df = normalizar_columnas(df)
 
     log_dataframe_info(logger, df, f"Archivo cargado: {archivo_nombre}")
+    return df, metadata
+
+
+def detectar_y_cargar_archivo(archivo_bytes, archivo_nombre, hoja_seleccionada=None):
+    """
+    Wrapper con UI para cargar_excel_puro.
+    Muestra mensajes y widgets basados en la metadata.
+    """
+    df, metadata = cargar_excel_puro(archivo_bytes, archivo_nombre, hoja_seleccionada)
+    
+    # Manejar errores
+    if metadata.get("error"):
+        if metadata["error"] == "empty":
+            st.error("❌ El archivo Excel está vacío. Por favor, verifica que contenga datos.")
+        elif metadata["error"] == "invalid_format":
+            st.error("❌ Formato de Excel no válido. Asegúrate de usar .xlsx o .xls")
+        elif metadata["error"] == "permission":
+            st.error("❌ No se tienen permisos para leer el archivo. Verifica los permisos.")
+        else:
+            st.error(f"❌ Error al leer el archivo Excel: {metadata['error']}")
+        return None
+    
+    # Mostrar mensajes informativos
+    if metadata.get("es_x_agente"):
+        st.info("📌 Archivo con múltiples hojas detectado. Leyendo hoja 'X AGENTE'.")
+        if metadata.get("fecha_procesada"):
+            st.success("✅ Columnas virtuales 'año' y 'mes' generadas correctamente desde 'fecha' en X AGENTE.")
+        elif metadata.get("fecha_no_encontrada"):
+            st.error("❌ No existe columna 'fecha' en X AGENTE para poder generar 'año' y 'mes'.")
+        elif metadata.get("fecha_error"):
+            st.error(f"❌ Error al procesar la columna 'fecha' en X AGENTE: {metadata['fecha_error']}")
+    elif metadata.get("unica_hoja"):
+        st.info(f"✅ Solo una hoja encontrada: **{metadata['hoja_leida']}**. Procediendo con detección CONTPAQi.")
+        if metadata.get("es_contpaqi"):
+            st.info("📌 Archivo CONTPAQi detectado. Saltando primeras 3 filas.")
+    elif hoja_seleccionada:
+        st.info(f"📌 Leyendo hoja seleccionada: {metadata['hoja_leida']}")
+    
+    # Mostrar debug si está activado
+    if st.session_state.get("modo_debug") and df is not None:
+        with st.expander("🛠️ Debug - Columnas leídas"):
+            st.write(df.columns.tolist())
+    
     return df
 
 # =====================================================================
