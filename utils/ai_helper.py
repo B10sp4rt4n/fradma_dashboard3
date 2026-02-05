@@ -36,52 +36,72 @@ def generar_resumen_ejecutivo_ytd(df_ytd_actual, df_ytd_anterior, año_actual, a
         # Preparar datos resumidos
         datos_analisis = preparar_datos_para_analisis(df_ytd_actual, df_ytd_anterior, año_actual, año_anterior)
         
-        # Prompt estructurado para CEO
+        # Prompt estructurado para CEO - Solicitar JSON
         prompt = f"""Eres un analista financiero senior reportando al CEO. Analiza los siguientes datos de ventas YTD y genera un reporte ejecutivo conciso y accionable.
 
 DATOS:
-{json.dumps(datos_analisis, indent=2)}
+{json.dumps(datos_analisis, indent=2, ensure_ascii=False)}
 
-Genera un reporte ejecutivo con estas secciones EXACTAS (usa emojis):
+Genera un análisis ejecutivo y devuélvelo ÚNICAMENTE como un objeto JSON válido con esta estructura EXACTA:
 
-1. 📊 RESUMEN EJECUTIVO (2-3 líneas)
-   - Desempeño general del período
+{{
+  "resumen_ejecutivo": "Párrafo de 2-3 líneas sobre desempeño general del período",
+  "highlights_clave": [
+    "Logro o métrica positiva 1",
+    "Logro o métrica positiva 2",
+    "Logro o métrica positiva 3"
+  ],
+  "areas_atencion": [
+    "Preocupación o área de mejora 1",
+    "Preocupación o área de mejora 2",
+    "Preocupación o área de mejora 3"
+  ],
+  "insights_principales": [
+    "Descubrimiento importante 1",
+    "Descubrimiento importante 2",
+    "Descubrimiento importante 3"
+  ],
+  "recomendaciones_ejecutivas": [
+    "Acción específica y priorizada 1",
+    "Acción específica y priorizada 2",
+    "Acción específica y priorizada 3"
+  ]
+}}
 
-2. 🎯 HIGHLIGHTS CLAVE (bullet points)
-   - Top 3 logros o métricas positivas
-
-3. ⚠️ ÁREAS DE ATENCIÓN (bullet points)
-   - Top 3 preocupaciones o áreas de mejora
-
-4. 💡 INSIGHTS PRINCIPALES (bullet points)
-   - 3-4 descubrimientos importantes de los datos
-
-5. 🚀 RECOMENDACIONES EJECUTIVAS (bullet points)
-   - 3-4 acciones específicas y priorizadas
-
-Formato: Markdown limpio, directo, basado 100% en los datos proporcionados."""
+IMPORTANTE: 
+- Devuelve SOLO el JSON, sin texto adicional
+- Basa tu análisis 100% en los datos proporcionados
+- Sé específico con números y porcentajes
+- Las recomendaciones deben ser accionables"""
 
         logger.info("Solicitando análisis ejecutivo a OpenAI...")
         
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "Eres un analista financiero experto que genera reportes ejecutivos concisos y accionables para CEOs."},
+                {"role": "system", "content": "Eres un analista financiero experto. Respondes ÚNICAMENTE con JSON válido, sin texto adicional."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.7,
-            max_tokens=1500
+            max_tokens=1500,
+            response_format={"type": "json_object"}
         )
         
-        reporte = response.choices[0].message.content
+        reporte_texto = response.choices[0].message.content
         logger.info("Reporte ejecutivo generado exitosamente")
         
-        return {
-            "exito": True,
-            "reporte": reporte,
-            "tokens_usados": response.usage.total_tokens,
-            "modelo": response.model
-        }
+        # Parsear JSON
+        try:
+            reporte_json = json.loads(reporte_texto)
+            logger.info(f"JSON parseado exitosamente: {list(reporte_json.keys())}")
+            return reporte_json
+        except json.JSONDecodeError as e:
+            logger.error(f"Error al parsear JSON de OpenAI: {e}")
+            logger.error(f"Respuesta recibida: {reporte_texto[:500]}")
+            return {
+                "error": "Error al parsear respuesta de OpenAI",
+                "reporte_raw": reporte_texto
+            }
         
     except Exception as e:
         logger.error(f"Error al generar reporte ejecutivo: {e}")
@@ -213,11 +233,14 @@ Formato: Markdown con bullets."""
 def validar_api_key(api_key):
     """Valida que la API key de OpenAI sea válida."""
     if not api_key or len(api_key) < 20:
+        logger.warning("API key inválida: muy corta o vacía")
         return False, "API key inválida o muy corta"
     
     if not api_key.startswith("sk-"):
+        logger.warning("API key no comienza con 'sk-'")
         return False, "API key debe comenzar con 'sk-'"
     
+    logger.info("Validando API key con OpenAI...")
     try:
         from openai import OpenAI
         client = OpenAI(api_key=api_key)
@@ -227,6 +250,8 @@ def validar_api_key(api_key):
             messages=[{"role": "user", "content": "test"}],
             max_tokens=5
         )
+        logger.info("API key validada exitosamente")
         return True, "API key válida"
     except Exception as e:
-        return False, f"Error al validar API key: {str(e)}"
+        logger.error(f"Error al validar API key: {str(e)}")
+        return False, f"Error: {str(e)[:100]}"

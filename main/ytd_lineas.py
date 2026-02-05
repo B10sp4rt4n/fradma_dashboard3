@@ -1012,10 +1012,14 @@ def run(df):
                 try:
                     # Validar API key
                     api_key = st.session_state["openai_api_key"]
-                    if not validar_api_key(api_key):
-                        st.error("❌ API Key inválida. Por favor verifica tu clave de OpenAI.")
+                    es_valida, mensaje_validacion = validar_api_key(api_key)
+                    
+                    if not es_valida:
+                        st.error(f"❌ API Key inválida: {mensaje_validacion}")
+                        st.info("💡 Verifica que tu API Key comience con 'sk-' y tenga créditos disponibles")
                     else:
                         # Generar análisis ejecutivo
+                        logger.info(f"Generando análisis ejecutivo para {año_actual} vs {año_anterior}")
                         analisis = generar_resumen_ejecutivo_ytd(
                             df_ytd_actual=df_ytd_actual,
                             df_ytd_anterior=df_ytd_anterior,
@@ -1023,6 +1027,8 @@ def run(df):
                             año_anterior=año_anterior,
                             openai_api_key=api_key
                         )
+                        
+                        logger.info(f"Respuesta de OpenAI recibida: {list(analisis.keys()) if isinstance(analisis, dict) else type(analisis)}")
                         
                         if analisis and "error" not in analisis:
                             # Mostrar análisis en secciones expandibles
@@ -1071,7 +1077,13 @@ def run(df):
                             st.caption("🤖 Análisis generado con OpenAI GPT-4o-mini | "
                                       f"Fecha: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
                         else:
-                            st.error(f"❌ Error al generar análisis: {analisis.get('error', 'Error desconocido')}")
+                            error_msg = analisis.get('error', 'Error desconocido')
+                            st.error(f"❌ Error al generar análisis: {error_msg}")
+                            
+                            # Si hay respuesta raw, mostrarla para debugging
+                            if 'reporte_raw' in analisis:
+                                with st.expander("🔍 Ver respuesta cruda (debugging)"):
+                                    st.code(analisis['reporte_raw'][:1000], language="text")
                             
                 except Exception as e:
                     logger.error(f"Error en análisis con IA: {str(e)}")
