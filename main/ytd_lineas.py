@@ -474,6 +474,16 @@ def run(df):
         default=lineas_disponibles
     )
     
+    # Control para número de líneas a mostrar en detalle
+    num_total_lineas = len(lineas_disponibles)
+    num_lineas_mostrar = st.sidebar.slider(
+        "📊 Líneas en Panel Detallado",
+        min_value=1,
+        max_value=num_total_lineas,
+        value=min(10, num_total_lineas),
+        help="Número de líneas de negocio a mostrar en el panel de detalles expandibles"
+    )
+    
     # Aplicar filtros
     df_filtrado = df[df['linea_de_negocio'].isin(seleccion_lineas)].copy()
     
@@ -561,12 +571,113 @@ def run(df):
         if año_anterior:
             fig_barras, comparativo_df = crear_grafico_barras_comparativo(df_filtrado, año_actual, año_anterior)
             st.plotly_chart(fig_barras, use_container_width=True)
+            
+            # Panel extendible con detalles por línea de negocio
+            st.subheader("📊 Detalle Comparativo por Línea")
+            
+            # Ordenar por ventas actuales descendente
+            comparativo_ordenado = comparativo_df.sort_values('ventas_actual', ascending=False)
+            
+            # Limitar según slider del usuario
+            comparativo_a_mostrar = comparativo_ordenado.head(num_lineas_mostrar)
+            
+            # Mostrar información del filtro
+            total_lineas = len(comparativo_ordenado)
+            if num_lineas_mostrar < total_lineas:
+                st.info(f"📋 Mostrando las top {num_lineas_mostrar} de {total_lineas} líneas disponibles. Ajusta el slider en el panel lateral para ver más.")
+            
+            # Crear expanders para cada línea de negocio
+            for idx, row in comparativo_a_mostrar.iterrows():
+                linea = row['linea_de_negocio']
+                ventas_actual = row['ventas_actual']
+                ventas_anterior = row['ventas_anterior']
+                crecimiento = row['crecimiento']
+                
+                # Calcular variación absoluta
+                variacion_absoluta = ventas_actual - ventas_anterior
+                
+                # Obtener color de la línea
+                color_linea = COLORES_LINEAS.get(linea, '#808080')
+                
+                # Determinar emoji basado en crecimiento
+                if crecimiento > 0:
+                    emoji_trend = "📈"
+                    delta_color = "normal"
+                elif crecimiento < 0:
+                    emoji_trend = "📉"
+                    delta_color = "inverse"
+                else:
+                    emoji_trend = "➖"
+                    delta_color = "off"
+                
+                # Crear expander con título informativo
+                with st.expander(f"{emoji_trend} **{linea}** - ${ventas_actual:,.0f} ({crecimiento:+.1f}%)", expanded=False):
+                    # Mostrar métricas en columnas
+                    col_a, col_b, col_c = st.columns(3)
+                    
+                    with col_a:
+                        st.metric(
+                            label=f"Año {año_actual}",
+                            value=f"${ventas_actual:,.0f}",
+                            delta=None
+                        )
+                    
+                    with col_b:
+                        st.metric(
+                            label=f"Año {año_anterior}",
+                            value=f"${ventas_anterior:,.0f}",
+                            delta=None
+                        )
+                    
+                    with col_c:
+                        st.metric(
+                            label="Crecimiento",
+                            value=f"{crecimiento:+.1f}%",
+                            delta=f"${variacion_absoluta:+,.0f}",
+                            delta_color=delta_color
+                        )
+                    
+                    # Barra visual de comparación
+                    if ventas_anterior > 0:
+                        ratio = ventas_actual / ventas_anterior
+                        st.markdown(f"**Ratio:** {ratio:.2f}x")
+                        
+                        # Crear mini gráfico de barras comparativo
+                        import plotly.graph_objects as go
+                        
+                        fig_mini = go.Figure()
+                        fig_mini.add_trace(go.Bar(
+                            x=[f'{año_anterior}', f'{año_actual}'],
+                            y=[ventas_anterior, ventas_actual],
+                            marker=dict(color=[color_linea, color_linea], opacity=[0.6, 1.0]),
+                            text=[f'${ventas_anterior:,.0f}', f'${ventas_actual:,.0f}'],
+                            textposition='outside'
+                        ))
+                        
+                        fig_mini.update_layout(
+                            height=200,
+                            margin=dict(l=0, r=0, t=0, b=0),
+                            showlegend=False,
+                            yaxis=dict(showgrid=True, gridcolor='lightgray'),
+                            xaxis=dict(showgrid=False),
+                            paper_bgcolor='rgba(0,0,0,0)',
+                            plot_bgcolor='rgba(0,0,0,0)'
+                        )
+                        
+                        st.plotly_chart(fig_mini, use_container_width=True)
+                    else:
+                        st.info("💡 Sin datos del año anterior para comparar")
         else:
             st.info("💡 Selecciona 'Comparar con año anterior' para ver análisis comparativo")
     
     with col_right:
-        # Treemap de participación
-        fig_treemap = crear_treemap_participacion(df_ytd_actual)
+        # Treemap de participación (limitado según slider)
+        # Filtrar top N líneas para el treemap
+        top_lineas = df_ytd_actual.groupby('linea_de_negocio')['ventas_usd'].sum()\
+            .sort_values(ascending=False).head(num_lineas_mostrar).index.tolist()
+        df_ytd_treemap = df_ytd_actual[df_ytd_actual['linea_de_negocio'].isin(top_lineas)]
+        
+        fig_treemap = crear_treemap_participacion(df_ytd_treemap)
         st.plotly_chart(fig_treemap, use_container_width=True)
         
         # Tabla resumen por línea con colores
@@ -574,7 +685,16 @@ def run(df):
         ventas_linea = df_ytd_actual.groupby('linea_de_negocio')['ventas_usd'].sum().reset_index()
         ventas_linea['participacion'] = (ventas_linea['ventas_usd'] / ventas_linea['ventas_usd'].sum() * 100)
         ventas_linea = ventas_linea.sort_values('ventas_usd', ascending=False)
-        ventas_linea.columns = ['Línea', 'Ventas USD', 'Part. %']
+        
+        # Limitar según slider del usuario
+        ventas_linea_mostrar = ventas_linea.head(num_lineas_mostrar)
+        
+        # Mostrar información del filtro
+        total_lineas_tabla = len(ventas_linea)
+        if num_lineas_mostrar < total_lineas_tabla:
+            st.caption(f"Mostrando top {num_lineas_mostrar} de {total_lineas_tabla} líneas")
+        
+        ventas_linea_mostrar.columns = ['Línea', 'Ventas USD', 'Part. %']
         
         # Función para aplicar colores de fondo a la columna Línea
         def aplicar_color_fondo(val):
@@ -593,7 +713,7 @@ def run(df):
             return f'background-color: {color}; color: {text_color}'
 
         # Aplicar estilos usando Pandas Styler
-        st_tabla = ventas_linea.style\
+        st_tabla = ventas_linea_mostrar.style\
             .format({'Ventas USD': '${:,.2f}', 'Part. %': '{:.2f}%'})\
             .applymap(aplicar_color_fondo, subset=['Línea'])
             
