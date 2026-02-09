@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import os
 from unidecode import unidecode
 from datetime import datetime
 import matplotlib.pyplot as plt
@@ -19,6 +20,11 @@ from utils.cxc_helper import (
     calcular_score_salud, clasificar_score_salud, clasificar_antiguedad,
     obtener_semaforo_morosidad, obtener_semaforo_riesgo, obtener_semaforo_concentracion
 )
+from utils.ai_helper import generar_resumen_ejecutivo_cxc, validar_api_key
+from utils.logger import configurar_logger
+
+# Configurar logger
+logger = configurar_logger("kpi_cpc", nivel="INFO")
 
 def normalizar_columnas(df):
     nuevas_columnas = []
@@ -41,6 +47,43 @@ def run(archivo):
     if not archivo.name.endswith(('.xls', '.xlsx')):
         st.error("❌ Solo se aceptan archivos Excel para el reporte de deudas.")
         return
+
+    # =====================================================================
+    # CONFIGURACIÓN DE ANÁLISIS CON IA
+    # =====================================================================
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("🤖 Análisis con IA")
+    
+    habilitar_ia = st.sidebar.checkbox(
+        "Habilitar Análisis Ejecutivo con IA",
+        value=False,
+        help="Genera insights automáticos sobre la salud de CxC usando OpenAI GPT-4o-mini"
+    )
+    
+    openai_api_key = None
+    if habilitar_ia:
+        # Intentar obtener la API key de variable de entorno primero
+        api_key_env = os.getenv("OPENAI_API_KEY", "")
+        
+        if api_key_env:
+            openai_api_key = api_key_env
+            st.sidebar.success("✅ API key detectada desde variable de entorno")
+        else:
+            openai_api_key = st.sidebar.text_input(
+                "OpenAI API Key",
+                type="password",
+                help="Ingresa tu API key de OpenAI para habilitar el análisis con IA"
+            )
+            
+            if openai_api_key:
+                # Validar la API key
+                if validar_api_key(openai_api_key):
+                    st.sidebar.success("✅ API key válida")
+                else:
+                    st.sidebar.error("❌ API key inválida")
+                    openai_api_key = None
+        
+        st.sidebar.caption("💡 El análisis con IA genera insights sobre riesgos de cartera y recomendaciones de cobranza")
 
     try:
         xls = pd.ExcelFile(archivo)
@@ -318,6 +361,123 @@ def run(archivo):
             st.info("💡 **Nota:** DSO y Rotación CxC son estimados. Para cálculos precisos, se requieren datos de ventas.")
         
         st.write("---")
+        
+        # =====================================================================
+        # FASE 2.5: ANÁLISIS EJECUTIVO CON IA (OPCIONAL)
+        # =====================================================================
+        if habilitar_ia and openai_api_key:
+            st.header("🤖 Análisis Ejecutivo con IA")
+            
+            with st.spinner("🔄 Generando análisis ejecutivo con GPT-4o-mini..."):
+                try:
+                    # Preparar datos de top deudores para el análisis
+                    top_deudores_lista = []
+                    top_deudores_df = df_np.groupby('deudor')['saldo_adeudado'].sum().nlargest(5)
+                    for nombre, monto in top_deudores_df.items():
+                        pct = (monto / total_adeudado * 100) if total_adeudado > 0 else 0
+                        top_deudores_lista.append({
+                            'nombre': nombre,
+                            'monto': monto,
+                            'porcentaje': pct
+                        })
+                    
+                    # Contar alertas (calcular antes si no está disponible)
+                    try:
+                        # Intentar contar alertas de los datos disponibles
+                        umbral_critico = UmbralesCxC.CRITICO_MONTO
+                        clientes_criticos = df_np[df_np['saldo_adeudado'] >= umbral_critico]
+                        alertas_count = len(clientes_criticos)
+                    except:
+                        alertas_count = 0
+                    
+                    # Contar casos urgentes
+                    try:
+                        urgente_count = len(df_np[df_np['prioridad_cobranza'] == 'URGENTE'])
+                    except:
+                        urgente_count = 0
+                    
+                    # Calcular índice de morosidad
+                    indice_morosidad = (vencida / total_adeudado * 100) if total_adeudado > 0 else 0
+                    
+                    # Generar análisis
+                    analisis = generar_resumen_ejecutivo_cxc(
+                        total_adeudado=total_adeudado,
+                        vigente=vigente,
+                        vencida=vencida,
+                        critica=critica,
+                        pct_vigente=pct_vigente,
+                        pct_critica=pct_critica,
+                        score_salud=score_salud,
+                        score_status=score_status,
+                        top_deudor=top_deudores.index[0] if len(top_deudores) > 0 else "N/A",
+                        monto_top_deudor=top_deudores.iloc[0] if len(top_deudores) > 0 else 0,
+                        indice_morosidad=indice_morosidad,
+                        casos_urgentes=urgente_count,
+                        alertas_count=alertas_count,
+                        api_key=openai_api_key,
+                        datos_top_deudores=top_deudores_lista
+                    )
+                    
+                    # Mostrar análisis estructurado
+                    if analisis:
+                        # Resumen ejecutivo principal
+                        st.markdown("### 📋 Resumen Ejecutivo")
+                        st.info(analisis.get('resumen_ejecutivo', 'No disponible'))
+                        
+                        # Crear columnas para organizar el contenido
+                        col_izq, col_der = st.columns(2)
+                        
+                        with col_izq:
+                            # Highlights clave
+                            st.markdown("### ✨ Highlights Clave")
+                            highlights = analisis.get('highlights_clave', [])
+                            if highlights:
+                                for highlight in highlights:
+                                    st.markdown(f"- {highlight}")
+                            else:
+                                st.caption("No disponible")
+                            
+                            st.markdown("")
+                            
+                            # Insights principales
+                            st.markdown("### 💡 Insights Principales")
+                            insights = analisis.get('insights_principales', [])
+                            if insights:
+                                for insight in insights:
+                                    st.markdown(f"- {insight}")
+                            else:
+                                st.caption("No disponible")
+                        
+                        with col_der:
+                            # Áreas de atención
+                            st.markdown("### ⚠️ Áreas de Atención")
+                            areas = analisis.get('areas_atencion', [])
+                            if areas:
+                                for area in areas:
+                                    st.markdown(f"- {area}")
+                            else:
+                                st.caption("No hay áreas críticas identificadas")
+                            
+                            st.markdown("")
+                            
+                            # Recomendaciones ejecutivas
+                            st.markdown("### 🎯 Recomendaciones Ejecutivas")
+                            recomendaciones = analisis.get('recomendaciones_ejecutivas', [])
+                            if recomendaciones:
+                                for rec in recomendaciones:
+                                    st.markdown(f"- {rec}")
+                            else:
+                                st.caption("No disponible")
+                        
+                        st.caption("🤖 Análisis generado por OpenAI GPT-4o-mini")
+                    else:
+                        st.warning("⚠️ No se pudo generar el análisis ejecutivo")
+                        
+                except Exception as e:
+                    st.error(f"❌ Error al generar análisis con IA: {str(e)}")
+                    logger.error(f"Error en análisis con IA CxC: {e}", exc_info=True)
+            
+            st.write("---")
         
         # =====================================================================
         # FASE 3: ALERTAS INTELIGENTES Y PRIORIDADES DE COBRANZA
