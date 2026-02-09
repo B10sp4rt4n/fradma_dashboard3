@@ -20,6 +20,8 @@ import os
 from utils.logger import configurar_logger
 from utils.ai_helper import validar_api_key, generar_analisis_consolidado_ia
 from utils.cxc_helper import calcular_metricas_basicas, calcular_score_salud, clasificar_score_salud, calcular_dias_overdue
+from utils.data_normalizer import normalizar_datos_cxc, normalizar_columna_fecha, detectar_columnas_cxc
+from utils.constantes import DIAS_CREDITO_ESTANDAR
 
 # Configurar logger
 logger = configurar_logger("reporte_consolidado", nivel="INFO")
@@ -142,117 +144,47 @@ def crear_pie_cxc(metricas_cxc):
     return fig
 
 
-def run(df_ventas, df_cxc=None):
+# =====================================================================
+# FUNCIONES HELPER PRIVADAS
+# =====================================================================
+
+def _preparar_datos_iniciales(df_ventas, df_cxc):
     """
-    Función principal del Reporte Consolidado.
+    Normaliza y prepara datos iniciales de ventas y CxC.
     
-    Args:
-        df_ventas: DataFrame con datos de ventas
-        df_cxc: DataFrame opcional con datos de CxC
+    Returns:
+        Tuple (df_ventas, df_cxc) normalizados
     """
-    st.title("📊 Reporte Consolidado - Dashboard Ejecutivo")
-    st.markdown("---")
+    # Usar normalización centralizada
+    df_ventas, df_cxc = normalizar_datos_cxc(df_ventas, df_cxc)
     
-    # =====================================================================
-    # NORMALIZACIÓN - Igual que Reporte Ejecutivo
-    # =====================================================================
+    # Normalizar fechas
+    df_ventas = normalizar_columna_fecha(df_ventas, 'fecha')
     
-    # Trabajar sobre copias locales
-    df_ventas = df_ventas.copy() if df_ventas is not None else pd.DataFrame()
-    df_cxc = df_cxc.copy() if df_cxc is not None else pd.DataFrame()
-    
-    # Normalizar columna de ventas
-    if "valor_usd" not in df_ventas.columns:
-        for candidato in ["ventas_usd_con_iva", "ventas_usd", "importe", "monto_usd", "total_usd", "valor"]:
-            if candidato in df_ventas.columns:
-                df_ventas = df_ventas.rename(columns={candidato: "valor_usd"})
-                break
-    
-    if "valor_usd" in df_ventas.columns:
-        df_ventas["valor_usd"] = pd.to_numeric(df_ventas["valor_usd"], errors="coerce").fillna(0)
-    else:
-        df_ventas["valor_usd"] = 0
-        st.warning("⚠️ No se encontró columna de ventas en USD")
-        return
-    
-    # Normalizar columna de fecha
-    if "fecha" in df_ventas.columns:
-        df_ventas["fecha"] = pd.to_datetime(df_ventas["fecha"], errors="coerce")
-    else:
-        st.warning("⚠️ No se encontró columna de fecha")
-        return
-    
-    # Normalizar CxC si está disponible
-    if not df_cxc.empty:
-        if "saldo_adeudado" not in df_cxc.columns:
-            for candidato in ["saldo", "saldo_adeudo", "adeudo", "importe", "monto", "total", "saldo_usd"]:
-                if candidato in df_cxc.columns:
-                    df_cxc = df_cxc.rename(columns={candidato: "saldo_adeudado"})
-                    break
+    # Calcular dias_overdue en CxC si es necesario
+    if not df_cxc.empty and "dias_overdue" not in df_cxc.columns:
+        # Verificar qué columnas están disponibles
+        columnas_disponibles = set(df_cxc.columns)
+        columnas_ideales = {"vencimiento", "fecha_vencimiento", "dias_restantes", "dias_restante", "dias_vencido"}
         
-        if "saldo_adeudado" in df_cxc.columns:
-            saldo_txt = df_cxc["saldo_adeudado"].astype(str)
-            saldo_txt = saldo_txt.str.replace(",", "", regex=False).str.replace("$", "", regex=False)
-            df_cxc["saldo_adeudado"] = pd.to_numeric(saldo_txt, errors="coerce").fillna(0)
-    
-    # =====================================================================
-    # SI NO HAY HOJA CXC SEPARADA, USAR DATOS DE VENTAS (IGUAL QUE REPORTE EJECUTIVO)
-    # =====================================================================
-    if df_cxc.empty:
-        cols_cartera = {
-            "saldo", "saldo_usd", "saldo_adeudado",
-            "dias_restante", "dias_restantes", "dias_de_credito", "dias_de_credit",
-            "vencimient", "vencimiento",
-            "fecha_de_pago", "fecha_pago", "fecha_tentativa_de_pag", "fecha_tentativa_de_pago",
-            "estatus", "status", "pagado",
-        }
-        if len(cols_cartera.intersection(set(df_ventas.columns))) > 0:
-            df_cxc = df_ventas.copy()
-            logger.info("CxC: usando datos de la hoja de ventas (X AGENTE)")
-    
-    # Normalizar saldo de CxC si se tomó de ventas
-    if not df_cxc.empty and "saldo_adeudado" not in df_cxc.columns:
-        for candidato in ["saldo", "saldo_adeudo", "adeudo", "saldo_usd"]:
-            if candidato in df_cxc.columns:
-                df_cxc = df_cxc.rename(columns={candidato: "saldo_adeudado"})
-                break
-    
-    if not df_cxc.empty and "saldo_adeudado" in df_cxc.columns:
-        saldo_txt = df_cxc["saldo_adeudado"].astype(str)
-        saldo_txt = saldo_txt.str.replace(",", "", regex=False).str.replace("$", "", regex=False)
-        df_cxc["saldo_adeudado"] = pd.to_numeric(saldo_txt, errors="coerce").fillna(0)
+        if not columnas_disponibles.intersection(columnas_ideales):
+            st.warning(f"⚠️ Los datos de CxC no contienen columnas de vencimiento. "
+                      f"Se estimará usando fecha de factura + {DIAS_CREDITO_ESTANDAR} días de crédito estándar.")
+            logger.warning(f"CxC sin columnas de vencimiento. Usando estimación con {DIAS_CREDITO_ESTANDAR} días.")
         
-        # Excluir pagados
-        col_estatus = None
-        for col in ["estatus", "status", "pagado"]:
-            if col in df_cxc.columns:
-                col_estatus = col
-                break
-        if col_estatus:
-            estatus_norm = df_cxc[col_estatus].astype(str).str.strip().str.lower()
-            df_cxc = df_cxc[~estatus_norm.str.contains("pagado", na=False)]
-        
-        # Calcular dias_overdue usando función robusta de cxc_helper
-        if "dias_overdue" not in df_cxc.columns:
-            # Verificar qué columnas están disponibles para el cálculo
-            columnas_cxc_disponibles = set(df_cxc.columns)
-            columnas_ideales = {"vencimiento", "fecha_vencimiento", "dias_restantes", "dias_restante", "dias_vencido"}
-            
-            if not columnas_cxc_disponibles.intersection(columnas_ideales):
-                st.warning("⚠️ Los datos de CxC no contienen columnas de vencimiento. Se estimará usando fecha de factura + 30 días de crédito estándar.")
-                logger.warning(f"CxC sin columnas de vencimiento. Usando estimación. Columnas disponibles: {list(df_cxc.columns)}")
-            
-            df_cxc["dias_overdue"] = calcular_dias_overdue(df_cxc)
-            logger.info(f"dias_overdue calculado - min: {df_cxc['dias_overdue'].min():.0f}, max: {df_cxc['dias_overdue'].max():.0f}")
-            logger.info(f"Registros vigentes (dias_overdue <= 0): {(df_cxc['dias_overdue'] <= 0).sum()}")
-            logger.info(f"Registros vencidos (dias_overdue > 0): {(df_cxc['dias_overdue'] > 0).sum()}")
-        
-        logger.info(f"CxC normalizado: {len(df_cxc)} registros, saldo total: ${df_cxc['saldo_adeudado'].sum():,.2f}")
+        df_cxc["dias_overdue"] = calcular_dias_overdue(df_cxc)
+        logger.info(f"dias_overdue calculado - min: {df_cxc['dias_overdue'].min():.0f}, max: {df_cxc['dias_overdue'].max():.0f}")
     
-    # =====================================================================
-    # CONFIGURACIÓN
-    # =====================================================================
+    return df_ventas, df_cxc
+
+
+def _obtener_configuracion_ui():
+    """
+    Obtiene configuración de periodicidad e IA desde sidebar.
     
+    Returns:
+        Dict con configuración {'tipo_periodo', 'habilitar_ia', 'api_key'}
+    """
     st.sidebar.markdown("---")
     st.sidebar.header("⚙️ Configuración del Reporte")
     
@@ -306,97 +238,94 @@ def run(df_ventas, df_cxc=None):
         
         st.sidebar.caption("💡 El análisis con IA conecta ventas con liquidez y salud financiera")
     
-    # =====================================================================
-    # PROCESAMIENTO DE DATOS DE VENTAS
-    # =====================================================================
+    return {
+        'tipo_periodo': tipo_periodo,
+        'habilitar_ia': habilitar_ia,
+        'api_key': openai_api_key
+    }
+
+
+def _calcular_metricas_ventas(df_ventas, tipo_periodo):
+    """
+    Agrupa ventas por período y calcula métricas.
     
-    logger.info("Validando columnas requeridas...")
+    Returns:
+        Dict con métricas de ventas
+    """
+    # Renombrar para compatibilidad
+    df_ventas_proc = df_ventas.rename(columns={'valor_usd': 'ventas_usd'})
     
-    # Validar que existan las columnas requeridas después de normalización
-    required_cols = ['fecha', 'valor_usd']
-    missing_cols = [col for col in required_cols if col not in df_ventas.columns]
+    # Agrupar por período
+    df_agrupado = agrupar_por_periodo(df_ventas_proc, tipo_periodo)
     
-    if missing_cols:
-        logger.error(f"Faltan columnas: {missing_cols}")
-        logger.error(f"Columnas disponibles después de normalización: {list(df_ventas.columns)}")
-        st.error(f"❌ Faltan columnas requeridas: {', '.join(missing_cols)}")
-        with st.expander("🔍 Ver columnas disponibles"):
-            st.write("**Columnas detectadas:**")
-            st.write(sorted(df_ventas.columns.tolist()))
-        st.info("💡 Este reporte requiere: **fecha** y **ventas_usd** (o sus variantes)")
-        return
-    
-    logger.info("✅ Columnas requeridas encontradas")
-    
-    # Limpiar datos: eliminar filas sin fecha o ventas nulas/cero
-    registros_original = len(df_ventas)
-    df_ventas_limpio = df_ventas.dropna(subset=['fecha', 'valor_usd'])
-    df_ventas_limpio = df_ventas_limpio[df_ventas_limpio['valor_usd'] > 0]
-    registros_limpio = len(df_ventas_limpio)
-    
-    logger.info(f"Limpieza de datos: {registros_original} → {registros_limpio} registros")
-    
-    if len(df_ventas_limpio) == 0:
-        logger.error("No hay datos válidos después de limpieza")
-        st.warning("⚠️ No hay datos de ventas válidos para procesar")
-        st.info(f"Registros originales: {registros_original}, después de limpieza: 0")
-        st.info("💡 Verifica que la columna de ventas tenga valores > 0 y fechas válidas")
-        return
-    
-    logger.info(f"Procesando con {registros_limpio} registros válidos")
-    
-    # Renombrar para compatibilidad con funciones de agrupamiento
-    df_ventas_limpio = df_ventas_limpio.rename(columns={'valor_usd': 'ventas_usd'})
-    
-    # Agrupar ventas por período
-    try:
-        df_ventas_agrupado = agrupar_por_periodo(df_ventas_limpio, tipo_periodo)
-        logger.info(f"Datos agrupados por {tipo_periodo}: {len(df_ventas_agrupado)} registros")
-    except Exception as e:
-        st.error(f"❌ Error al agrupar datos: {str(e)}")
-        logger.error(f"Error en agrupar_por_periodo: {e}", exc_info=True)
-        return
-    
-    # Calcular métricas de ventas
-    total_ventas = df_ventas_agrupado['ventas_usd'].sum()
-    ventas_por_periodo = df_ventas_agrupado.groupby('periodo')['ventas_usd'].sum().sort_index()
+    # Calcular métricas
+    total_ventas = df_agrupado['ventas_usd'].sum()
+    ventas_por_periodo = df_agrupado.groupby('periodo')['ventas_usd'].sum().sort_index()
     periodos_count = len(ventas_por_periodo)
     promedio_periodo = total_ventas / periodos_count if periodos_count > 0 else 0
     
-    logger.info(f"Métricas: Total=${total_ventas:,.2f}, Períodos={periodos_count}, Promedio=${promedio_periodo:,.2f}")
-    
     # Calcular crecimiento
-    crecimiento_ventas_pct = 0
+    crecimiento_pct = 0
     if len(ventas_por_periodo) >= 2:
-        ultimo_periodo = ventas_por_periodo.iloc[-1]
-        penultimo_periodo = ventas_por_periodo.iloc[-2]
-        if penultimo_periodo > 0:
-            crecimiento_ventas_pct = ((ultimo_periodo - penultimo_periodo) / penultimo_periodo) * 100
+        ultimo = ventas_por_periodo.iloc[-1]
+        penultimo = ventas_por_periodo.iloc[-2]
+        if penultimo > 0:
+            crecimiento_pct = ((ultimo - penultimo) / penultimo) * 100
     
-    # =====================================================================
-    # PROCESAMIENTO DE DATOS DE CXC (SI ESTÁ DISPONIBLE)
-    # =====================================================================
+    return {
+        'df_agrupado': df_agrupado,
+        'total_ventas': total_ventas,
+        'promedio_periodo': promedio_periodo,
+        'periodos_count': periodos_count,
+        'crecimiento_pct': crecimiento_pct
+    }
+
+
+def _calcular_metricas_cxc(df_cxc):
+    """
+    Calcula métricas de CxC.
     
-    metricas_cxc = None
-    score_salud_cxc = None
-    score_status_cxc = None
+    Returns:
+        Dict con métricas de CxC o None si no hay datos
+    """
+    if df_cxc is None or df_cxc.empty:
+        return None
     
-    if df_cxc is not None and not df_cxc.empty:
-        try:
-            metricas_cxc = calcular_metricas_basicas(df_cxc)
-            score_salud_cxc = calcular_score_salud(
-                metricas_cxc['pct_vigente'],
-                metricas_cxc['pct_critica']
-            )
-            score_status_cxc, _ = clasificar_score_salud(score_salud_cxc)
-        except Exception as e:
-            logger.error(f"Error calculando métricas CxC: {e}")
-            metricas_cxc = None
+    try:
+        metricas = calcular_metricas_basicas(df_cxc)
+        score = calcular_score_salud(metricas['pct_vigente'], metricas['pct_critica'])
+        status, _ = clasificar_score_salud(score)
+        
+        return {
+            'metricas': metricas,
+            'score': score,
+            'status': status
+        }
+    except Exception as e:
+        logger.error(f"Error calculando métricas CxC: {e}")
+        return None
+
+
+# =====================================================================
+# FUNCIONES DE RENDERIZADO
+# =====================================================================
+
+def _renderizar_kpis(total_ventas, promedio_periodo, crecimiento_ventas_pct, 
+                     periodos_count, metricas_cxc, score_salud_cxc, 
+                     score_status_cxc, config):
+    """
+    Renderiza la sección de KPIs principales.
     
-    # =====================================================================
-    # SECCIÓN 1: KPIs PRINCIPALES
-    # =====================================================================
-    
+    Args:
+        total_ventas: Total de ventas en USD
+        promedio_periodo: Promedio de ventas por período
+        crecimiento_ventas_pct: Porcentaje de crecimiento
+        periodos_count: Número de períodos analizados
+        metricas_cxc: Dict con métricas de CxC o None
+        score_salud_cxc: Score de salud CxC o None
+        score_status_cxc: Status textual del score o None
+        config: Dict con configuración (tipo_periodo, etc)
+    """
     st.header("📈 Métricas Principales")
     
     col1, col2, col3, col4 = st.columns(4)
@@ -410,7 +339,7 @@ def run(df_ventas, df_cxc=None):
     
     with col2:
         st.metric(
-            label=f"📊 Promedio por {tipo_periodo.capitalize()}",
+            label=f"📊 Promedio por {config['tipo_periodo'].capitalize()}",
             value=f"${promedio_periodo:,.0f}",
             delta=f"{periodos_count} períodos"
         )
@@ -444,16 +373,22 @@ def run(df_ventas, df_cxc=None):
             )
     
     st.markdown("---")
+
+
+def _renderizar_visualizaciones(df_ventas_agrupado, metricas_cxc, config):
+    """
+    Renderiza gráficos de ventas y CxC.
     
-    # =====================================================================
-    # SECCIÓN 2: VISUALIZACIONES PRINCIPALES
-    # =====================================================================
-    
+    Args:
+        df_ventas_agrupado: DataFrame con ventas agrupadas por período
+        metricas_cxc: Dict con métricas de CxC o None
+        config: Dict con configuración (tipo_periodo, etc)
+    """
     col_left, col_right = st.columns([6, 4])
     
     with col_left:
-        st.subheader(f"📊 Evolución de Ventas ({tipo_periodo.capitalize()})")
-        fig_ventas = crear_grafico_ventas_periodo(df_ventas_agrupado, tipo_periodo)
+        st.subheader(f"📊 Evolución de Ventas ({config['tipo_periodo'].capitalize()})")
+        fig_ventas = crear_grafico_ventas_periodo(df_ventas_agrupado, config['tipo_periodo'])
         st.plotly_chart(fig_ventas, use_container_width=True)
     
     with col_right:
@@ -465,123 +400,137 @@ def run(df_ventas, df_cxc=None):
             st.info("📋 Datos de CxC no disponibles\n\nSube un archivo de CxC en la sección correspondiente para ver esta visualización.")
     
     st.markdown("---")
+
+
+def _renderizar_analisis_ia(total_ventas, crecimiento_ventas_pct, metricas_cxc, 
+                            score_salud_cxc, config):
+    """
+    Renderiza la sección de análisis con IA.
     
-    # =====================================================================
-    # SECCIÓN 3: ANÁLISIS CON IA (OPCIONAL)
-    # =====================================================================
+    Args:
+        total_ventas: Total de ventas en USD
+        crecimiento_ventas_pct: Porcentaje de crecimiento
+        metricas_cxc: Dict con métricas de CxC o None
+        score_salud_cxc: Score de salud CxC o None
+        config: Dict con configuración (habilitar_ia, api_key, tipo_periodo)
+    """
+    if not config['habilitar_ia'] or not config['api_key']:
+        return
     
-    if habilitar_ia and openai_api_key:
-        st.header("🤖 Análisis Ejecutivo con IA")
-        
-        periodo_label = {
-            'semanal': 'Análisis Semanal',
-            'mensual': 'Análisis Mensual',
-            'trimestral': 'Análisis Trimestral',
-            'anual': 'Análisis Anual'
-        }[tipo_periodo]
-        
-        # Valores de CxC (usar 0 si no hay datos)
-        _total_cxc = metricas_cxc['total_adeudado'] if metricas_cxc else 0
-        _pct_vigente = metricas_cxc['pct_vigente'] if metricas_cxc else 0
-        _pct_critica = metricas_cxc['pct_critica'] if metricas_cxc else 0
-        _score_salud = score_salud_cxc if score_salud_cxc else 0
-        
-        # Crear clave única para cachear análisis (sin periodo - para que persista al cambiar vista)
-        cache_key = f"analisis_consolidado_{int(total_ventas)}_{int(_total_cxc)}_{int(crecimiento_ventas_pct)}"
-        
-        # Botón para regenerar análisis
-        col_titulo, col_boton = st.columns([4, 1])
-        with col_boton:
-            if st.button("🔄 Regenerar", key="btn_regenerar_ia_consolidado", help="Genera un nuevo análisis con IA"):
-                if cache_key in st.session_state:
-                    del st.session_state[cache_key]
-                st.rerun()
-        
-        # Verificar si ya existe análisis en session_state
-        analisis = st.session_state.get(cache_key)
-        
-        if analisis is None:
-            with st.spinner("🔄 Generando análisis ejecutivo consolidado con GPT-4o-mini..."):
-                try:
-                    analisis = generar_analisis_consolidado_ia(
-                        total_ventas=total_ventas,
-                        crecimiento_ventas_pct=crecimiento_ventas_pct,
-                        total_cxc=_total_cxc,
-                        pct_vigente_cxc=_pct_vigente,
-                        pct_critica_cxc=_pct_critica,
-                        score_salud_cxc=_score_salud,
-                        periodo_analisis=periodo_label,
-                        api_key=openai_api_key
-                    )
-                    
-                    # Guardar en session_state para que persista al cambiar periodo
-                    if analisis:
-                        st.session_state[cache_key] = analisis
-                except Exception as e:
-                    st.error(f"❌ Error al generar análisis: {str(e)}")
-                    logger.error(f"Error en análisis IA consolidado: {e}", exc_info=True)
-                    analisis = None
-        
-        # Mostrar análisis (ya sea nuevo o cacheado)
-        if analisis:
+    st.header("🤖 Análisis Ejecutivo con IA")
+    
+    periodo_label = {
+        'semanal': 'Análisis Semanal',
+        'mensual': 'Análisis Mensual',
+        'trimestral': 'Análisis Trimestral',
+        'anual': 'Análisis Anual'
+    }[config['tipo_periodo']]
+    
+    # Valores de CxC (usar 0 si no hay datos)
+    _total_cxc = metricas_cxc['total_adeudado'] if metricas_cxc else 0
+    _pct_vigente = metricas_cxc['pct_vigente'] if metricas_cxc else 0
+    _pct_critica = metricas_cxc['pct_critica'] if metricas_cxc else 0
+    _score_salud = score_salud_cxc if score_salud_cxc else 0
+    
+    # Crear clave única para cachear análisis
+    cache_key = f"analisis_consolidado_{int(total_ventas)}_{int(_total_cxc)}_{int(crecimiento_ventas_pct)}"
+    
+    # Botón para regenerar análisis
+    col_titulo, col_boton = st.columns([4, 1])
+    with col_boton:
+        if st.button("🔄 Regenerar", key="btn_regenerar_ia_consolidado", help="Genera un nuevo análisis con IA"):
+            if cache_key in st.session_state:
+                del st.session_state[cache_key]
+            st.rerun()
+    
+    # Verificar si ya existe análisis en session_state
+    analisis = st.session_state.get(cache_key)
+    
+    if analisis is None:
+        with st.spinner("🔄 Generando análisis ejecutivo consolidado con GPT-4o-mini..."):
             try:
-                # Resumen ejecutivo
-                st.markdown("### 📋 Resumen Ejecutivo")
-                st.info(analisis.get('resumen_ejecutivo', 'No disponible'))
+                analisis = generar_analisis_consolidado_ia(
+                    total_ventas=total_ventas,
+                    crecimiento_ventas_pct=crecimiento_ventas_pct,
+                    total_cxc=_total_cxc,
+                    pct_vigente_cxc=_pct_vigente,
+                    pct_critica_cxc=_pct_critica,
+                    score_salud_cxc=_score_salud,
+                    periodo_analisis=periodo_label,
+                    api_key=config['api_key']
+                )
                 
-                # Columnas para contenido
-                col_izq, col_der = st.columns(2)
-                
-                with col_izq:
-                    st.markdown("### ⭐ Highlights Clave")
-                    highlights = analisis.get('highlights_clave', [])
-                    if highlights:
-                        for h in highlights:
-                            st.markdown(f"- {h}")
-                    else:
-                        st.caption("No disponible")
-                    
-                    st.markdown("")
-                    st.markdown("### 💡 Insights Principales")
-                    insights = analisis.get('insights_principales', [])
-                    if insights:
-                        for i in insights:
-                            st.markdown(f"- {i}")
-                    else:
-                        st.caption("No disponible")
-                
-                with col_der:
-                    st.markdown("### ⚠️ Áreas de Atención")
-                    areas = analisis.get('areas_atencion', [])
-                    if areas:
-                        for a in areas:
-                            st.markdown(f"- {a}")
-                    else:
-                        st.caption("No hay áreas críticas")
-                    
-                    st.markdown("")
-                    st.markdown("### 🎯 Recomendaciones Ejecutivas")
-                    recs = analisis.get('recomendaciones_ejecutivas', [])
-                    if recs:
-                        for r in recs:
-                            st.markdown(f"- {r}")
-                    else:
-                        st.caption("No disponible")
-                
-                st.caption("🤖 Análisis generado por OpenAI GPT-4o-mini")
+                if analisis:
+                    st.session_state[cache_key] = analisis
             except Exception as e:
-                st.error(f"❌ Error al mostrar análisis: {str(e)}")
-                logger.error(f"Error mostrando análisis IA consolidado: {e}", exc_info=True)
-        else:
-            st.warning("⚠️ No se pudo generar el análisis")
-        
-        st.markdown("---")
+                st.error(f"❌ Error al generar análisis: {str(e)}")
+                logger.error(f"Error en análisis IA consolidado: {e}", exc_info=True)
+                analisis = None
     
-    # =====================================================================
-    # SECCIÓN 4: TABLA DETALLADA POR PERÍODO
-    # =====================================================================
+    # Mostrar análisis
+    if analisis:
+        try:
+            st.markdown("### 📋 Resumen Ejecutivo")
+            st.info(analisis.get('resumen_ejecutivo', 'No disponible'))
+            
+            col_izq, col_der = st.columns(2)
+            
+            with col_izq:
+                st.markdown("### ⭐ Highlights Clave")
+                highlights = analisis.get('highlights_clave', [])
+                if highlights:
+                    for h in highlights:
+                        st.markdown(f"- {h}")
+                else:
+                    st.caption("No disponible")
+                
+                st.markdown("")
+                st.markdown("### 💡 Insights Principales")
+                insights = analisis.get('insights_principales', [])
+                if insights:
+                    for i in insights:
+                        st.markdown(f"- {i}")
+                else:
+                    st.caption("No disponible")
+            
+            with col_der:
+                st.markdown("### ⚠️ Áreas de Atención")
+                areas = analisis.get('areas_atencion', [])
+                if areas:
+                    for a in areas:
+                        st.markdown(f"- {a}")
+                else:
+                    st.caption("No hay áreas críticas")
+                
+                st.markdown("")
+                st.markdown("### 🎯 Recomendaciones Ejecutivas")
+                recs = analisis.get('recomendaciones_ejecutivas', [])
+                if recs:
+                    for r in recs:
+                        st.markdown(f"- {r}")
+                else:
+                    st.caption("No disponible")
+            
+            st.caption("🤖 Análisis generado por OpenAI GPT-4o-mini")
+        except Exception as e:
+            st.error(f"❌ Error al mostrar análisis: {str(e)}")
+            logger.error(f"Error mostrando análisis IA consolidado: {e}", exc_info=True)
+    else:
+        st.warning("⚠️ No se pudo generar el análisis")
     
-    st.header(f"📋 Detalle por {tipo_periodo.capitalize()}")
+    st.markdown("---")
+
+
+def _renderizar_tabla_detalle(df_ventas_agrupado, periodos_count, config):
+    """
+    Renderiza tabla detallada por período.
+    
+    Args:
+        df_ventas_agrupado: DataFrame con ventas agrupadas
+        periodos_count: Número de períodos analizados
+        config: Dict con configuración (tipo_periodo, etc)
+    """
+    st.header(f"📋 Detalle por {config['tipo_periodo'].capitalize()}")
     
     # Preparar tabla resumen
     tabla_resumen = df_ventas_agrupado.groupby(['periodo', 'periodo_label']).agg({
@@ -608,5 +557,93 @@ def run(df_ventas, df_cxc=None):
     # Footer
     st.markdown("---")
     st.caption(f"📅 Reporte generado: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | "
-              f"Período: {tipo_periodo.capitalize()} | "
+              f"Período: {config['tipo_periodo'].capitalize()} | "
               f"Períodos analizados: {periodos_count}")
+
+
+def run(df_ventas, df_cxc=None):
+    """
+    Función principal del Reporte Consolidado.
+    
+    Args:
+        df_ventas: DataFrame con datos de ventas
+        df_cxc: DataFrame opcional con datos de CxC
+    """
+    st.title("📊 Reporte Consolidado - Dashboard Ejecutivo")
+    st.markdown("---")
+    
+    # =====================================================================
+    # PASO 1: PREPARAR Y NORMALIZAR DATOS
+    # =====================================================================
+    df_ventas, df_cxc = _preparar_datos_iniciales(df_ventas, df_cxc)
+    
+    # =====================================================================
+    # PASO 2: VALIDACIONES BÁSICAS
+    # =====================================================================
+    if "valor_usd" not in df_ventas.columns or "fecha" not in df_ventas.columns:
+        st.error("❌ El DataFrame de ventas no tiene las columnas requeridas (valor_usd, fecha)")
+        with st.expander("🔍 Ver columnas disponibles"):
+            st.write("**Columnas detectadas:**")
+            st.write(sorted(df_ventas.columns.tolist()))
+        st.info("💡 Este reporte requiere: **fecha** y **ventas_usd** (o sus variantes)")
+        return
+    
+    # Limpiar datos sin fecha o ventas
+    df_ventas_limpio = df_ventas.dropna(subset=['fecha', 'valor_usd'])
+    df_ventas_limpio = df_ventas_limpio[df_ventas_limpio['valor_usd'] > 0]
+    
+    if len(df_ventas_limpio) == 0:
+        st.warning("⚠️ No hay datos de ventas válidos para procesar")
+        return
+    
+    logger.info(f"Procesando {len(df_ventas_limpio)} registros válidos de ventas")
+    
+    # =====================================================================
+    # PASO 3: OBTENER CONFIGURACIÓN DE UI
+    # =====================================================================
+    config = _obtener_configuracion_ui()
+    
+    # =====================================================================
+    # PASO 4: CALCULAR MÉTRICAS
+    # =====================================================================
+    # Renombrar para compatibilidad con funciones de agrupamiento
+    df_ventas_limpio = df_ventas_limpio.rename(columns={'valor_usd': 'ventas_usd'})
+    
+    metricas_ventas = _calcular_metricas_ventas(df_ventas_limpio, config['tipo_periodo'])
+    metricas_cxc_dict = _calcular_metricas_cxc(df_cxc)
+    
+    # Validar que se obtuvieron datos agrupados
+    if metricas_ventas is None or metricas_ventas['df_agrupado'] is None:
+        st.error("❌ Error al procesar datos de ventas")
+        return
+    
+    # Extraer métricas de ventas
+    df_ventas_agrupado = metricas_ventas['df_agrupado']
+    total_ventas = metricas_ventas['total']
+    promedio_periodo = metricas_ventas['promedio']
+    crecimiento_ventas_pct = metricas_ventas['crecimiento_pct']
+    periodos_count = metricas_ventas['total_periodos']
+    
+    # Extraer métricas de CxC (si están disponibles)
+    metricas_cxc = metricas_cxc_dict.get('metricas', None) if metricas_cxc_dict else None
+    score_salud_cxc = metricas_cxc_dict.get('score', None) if metricas_cxc_dict else None
+    score_status_cxc = metricas_cxc_dict.get('status', None) if metricas_cxc_dict else None
+    
+    # =====================================================================
+    # PASO 5: RENDERIZAR REPORTES
+    # =====================================================================
+    
+    _renderizar_kpis(
+        total_ventas, promedio_periodo, crecimiento_ventas_pct, 
+        periodos_count, metricas_cxc, score_salud_cxc, 
+        score_status_cxc, config
+    )
+    
+    _renderizar_visualizaciones(df_ventas_agrupado, metricas_cxc, config)
+    
+    _renderizar_analisis_ia(
+        total_ventas, crecimiento_ventas_pct, metricas_cxc, 
+        score_salud_cxc, config
+    )
+    
+    _renderizar_tabla_detalle(df_ventas_agrupado, periodos_count, config)

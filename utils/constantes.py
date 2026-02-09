@@ -42,6 +42,28 @@ COLUMNAS_ESTATUS = [
     'pagado'
 ]
 
+# Variantes de estatus pagado
+ESTATUS_PAGADO_VARIANTES = [
+    'pagado',
+    'paid',
+    'cancelado',
+    'cerrado',
+    'liquidado',
+    'finiquitado'
+]
+
+# Columnas de saldo/adeudo
+COLUMNAS_SALDO_CANDIDATAS = [
+    'saldo_adeudado',
+    'saldo',
+    'saldo_adeudo',
+    'adeudo',
+    'importe',
+    'monto',
+    'total',
+    'saldo_usd'
+]
+
 # Columnas de cliente/deudor
 COLUMNAS_CLIENTE = [
     'cliente',
@@ -65,6 +87,19 @@ COLUMNAS_VENDEDOR = [
     'ejecutivo',
     'vendedor_asignado'
 ]
+
+# =====================================================================
+# CONSTANTES DE NEGOCIO
+# =====================================================================
+
+# Días de crédito estándar cuando no existe columna en datos
+DIAS_CREDITO_ESTANDAR = 30  # Estándar industrial B2B en México
+
+# Límite para considerar un archivo grande (en filas)
+LIMITE_FILAS_GRANDE = 10_000
+
+# Separador para normalización de texto
+SEPARADOR_NORMALIZADO = '_'
 
 # =====================================================================
 # UMBRALES DE CUENTAS POR COBRAR
@@ -214,6 +249,28 @@ COLORES_SEMAFORO = {
     'naranja': '🟠',
     'rojo': '🔴'
 }
+
+# =====================================================================
+# THRESHOLDS DE NEGOCIO - CxC
+# =====================================================================
+
+# Días de vencimiento para clasificación de cartera
+DIAS_VENCIDO_RIESGO = 30  # Después de este punto, la cuenta se considera en riesgo
+DIAS_VENCIDO_CRITICO = 90  # Después de este punto, la cuenta se considera crítica/incobrable
+
+# Scores de salud financiera
+SCORE_SALUD_EXCELENTE = 80  # Score >= 80: Excelente salud financiera
+SCORE_SALUD_BUENO = 60      # Score >= 60: Buena salud financiera
+SCORE_SALUD_REGULAR = 40    # Score >= 40: Salud financiera regular
+# Score < 40: Salud financiera crítica
+
+# Límites de visualización
+LIMITE_TOP_DEUDORES = 10    # Cantidad de deudores top a mostrar en reportes
+LIMITE_TOP_PRODUCTOS = 10   # Cantidad de productos top a mostrar en reportes
+
+# Colores para gráficos (paleta consistente)
+COLORES_GRAFICO_VENTAS = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
+COLORES_GRAFICO_CXC = ['#2ecc71', '#f39c12', '#e74c3c', '#95a5a6']  # Verde, amarillo, rojo, gris
 
 # =====================================================================
 # CONFIGURACIÓN DE VISUALIZACIÓN
