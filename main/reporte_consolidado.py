@@ -19,7 +19,7 @@ from datetime import datetime, timedelta
 import os
 from utils.logger import configurar_logger
 from utils.ai_helper import validar_api_key, generar_analisis_consolidado_ia
-from utils.cxc_helper import calcular_metricas_basicas, calcular_score_salud, clasificar_score_salud
+from utils.cxc_helper import calcular_metricas_basicas, calcular_score_salud, clasificar_score_salud, calcular_dias_overdue
 
 # Configurar logger
 logger = configurar_logger("reporte_consolidado", nivel="INFO")
@@ -196,6 +196,60 @@ def run(df_ventas, df_cxc=None):
             df_cxc["saldo_adeudado"] = pd.to_numeric(saldo_txt, errors="coerce").fillna(0)
     
     # =====================================================================
+    # SI NO HAY HOJA CXC SEPARADA, USAR DATOS DE VENTAS (IGUAL QUE REPORTE EJECUTIVO)
+    # =====================================================================
+    if df_cxc.empty:
+        cols_cartera = {
+            "saldo", "saldo_usd", "saldo_adeudado",
+            "dias_restante", "dias_restantes", "dias_de_credito", "dias_de_credit",
+            "vencimient", "vencimiento",
+            "fecha_de_pago", "fecha_pago", "fecha_tentativa_de_pag", "fecha_tentativa_de_pago",
+            "estatus", "status", "pagado",
+        }
+        if len(cols_cartera.intersection(set(df_ventas.columns))) > 0:
+            df_cxc = df_ventas.copy()
+            logger.info("CxC: usando datos de la hoja de ventas (X AGENTE)")
+    
+    # Normalizar saldo de CxC si se tomó de ventas
+    if not df_cxc.empty and "saldo_adeudado" not in df_cxc.columns:
+        for candidato in ["saldo", "saldo_adeudo", "adeudo", "saldo_usd"]:
+            if candidato in df_cxc.columns:
+                df_cxc = df_cxc.rename(columns={candidato: "saldo_adeudado"})
+                break
+    
+    if not df_cxc.empty and "saldo_adeudado" in df_cxc.columns:
+        saldo_txt = df_cxc["saldo_adeudado"].astype(str)
+        saldo_txt = saldo_txt.str.replace(",", "", regex=False).str.replace("$", "", regex=False)
+        df_cxc["saldo_adeudado"] = pd.to_numeric(saldo_txt, errors="coerce").fillna(0)
+        
+        # Excluir pagados
+        col_estatus = None
+        for col in ["estatus", "status", "pagado"]:
+            if col in df_cxc.columns:
+                col_estatus = col
+                break
+        if col_estatus:
+            estatus_norm = df_cxc[col_estatus].astype(str).str.strip().str.lower()
+            df_cxc = df_cxc[~estatus_norm.str.contains("pagado", na=False)]
+        
+        # Calcular dias_overdue usando función robusta de cxc_helper
+        if "dias_overdue" not in df_cxc.columns:
+            # Verificar qué columnas están disponibles para el cálculo
+            columnas_cxc_disponibles = set(df_cxc.columns)
+            columnas_ideales = {"vencimiento", "fecha_vencimiento", "dias_restantes", "dias_restante", "dias_vencido"}
+            
+            if not columnas_cxc_disponibles.intersection(columnas_ideales):
+                st.warning("⚠️ Los datos de CxC no contienen columnas de vencimiento. Se estimará usando fecha de factura + 30 días de crédito estándar.")
+                logger.warning(f"CxC sin columnas de vencimiento. Usando estimación. Columnas disponibles: {list(df_cxc.columns)}")
+            
+            df_cxc["dias_overdue"] = calcular_dias_overdue(df_cxc)
+            logger.info(f"dias_overdue calculado - min: {df_cxc['dias_overdue'].min():.0f}, max: {df_cxc['dias_overdue'].max():.0f}")
+            logger.info(f"Registros vigentes (dias_overdue <= 0): {(df_cxc['dias_overdue'] <= 0).sum()}")
+            logger.info(f"Registros vencidos (dias_overdue > 0): {(df_cxc['dias_overdue'] > 0).sum()}")
+        
+        logger.info(f"CxC normalizado: {len(df_cxc)} registros, saldo total: ${df_cxc['saldo_adeudado'].sum():,.2f}")
+    
+    # =====================================================================
     # CONFIGURACIÓN
     # =====================================================================
     
@@ -206,13 +260,15 @@ def run(df_ventas, df_cxc=None):
     tipo_periodo = st.sidebar.selectbox(
         "📅 Periodicidad",
         options=['semanal', 'mensual', 'trimestral', 'anual'],
+        index=1,
         format_func=lambda x: {
             'semanal': '📆 Semanal',
             'mensual': '📅 Mensual',
             'trimestral': '📊 Trimestral',
             'anual': '📈 Anual'
         }[x],
-        help="Selecciona el período de agrupación para el análisis"
+        help="Selecciona el período de agrupación para el análisis",
+        key="consolidado_periodicidad"
     )
     
     # Configuración de IA
@@ -222,7 +278,8 @@ def run(df_ventas, df_cxc=None):
     habilitar_ia = st.sidebar.checkbox(
         "Habilitar Análisis Consolidado con IA",
         value=False,
-        help="Genera insights ejecutivos integrales sobre ventas y CxC"
+        help="Genera insights ejecutivos integrales sobre ventas y CxC",
+        key="consolidado_habilitar_ia"
     )
     
     openai_api_key = None
@@ -236,7 +293,8 @@ def run(df_ventas, df_cxc=None):
             openai_api_key = st.sidebar.text_input(
                 "OpenAI API Key",
                 type="password",
-                help="Ingresa tu API key de OpenAI"
+                help="Ingresa tu API key de OpenAI",
+                key="consolidado_api_key"
             )
             
             if openai_api_key:
@@ -428,70 +486,94 @@ def run(df_ventas, df_cxc=None):
         _pct_critica = metricas_cxc['pct_critica'] if metricas_cxc else 0
         _score_salud = score_salud_cxc if score_salud_cxc else 0
         
-        with st.spinner("🔄 Generando análisis ejecutivo consolidado con GPT-4o-mini..."):
+        # Crear clave única para cachear análisis (sin periodo - para que persista al cambiar vista)
+        cache_key = f"analisis_consolidado_{int(total_ventas)}_{int(_total_cxc)}_{int(crecimiento_ventas_pct)}"
+        
+        # Botón para regenerar análisis
+        col_titulo, col_boton = st.columns([4, 1])
+        with col_boton:
+            if st.button("🔄 Regenerar", key="btn_regenerar_ia_consolidado", help="Genera un nuevo análisis con IA"):
+                if cache_key in st.session_state:
+                    del st.session_state[cache_key]
+                st.rerun()
+        
+        # Verificar si ya existe análisis en session_state
+        analisis = st.session_state.get(cache_key)
+        
+        if analisis is None:
+            with st.spinner("🔄 Generando análisis ejecutivo consolidado con GPT-4o-mini..."):
+                try:
+                    analisis = generar_analisis_consolidado_ia(
+                        total_ventas=total_ventas,
+                        crecimiento_ventas_pct=crecimiento_ventas_pct,
+                        total_cxc=_total_cxc,
+                        pct_vigente_cxc=_pct_vigente,
+                        pct_critica_cxc=_pct_critica,
+                        score_salud_cxc=_score_salud,
+                        periodo_analisis=periodo_label,
+                        api_key=openai_api_key
+                    )
+                    
+                    # Guardar en session_state para que persista al cambiar periodo
+                    if analisis:
+                        st.session_state[cache_key] = analisis
+                except Exception as e:
+                    st.error(f"❌ Error al generar análisis: {str(e)}")
+                    logger.error(f"Error en análisis IA consolidado: {e}", exc_info=True)
+                    analisis = None
+        
+        # Mostrar análisis (ya sea nuevo o cacheado)
+        if analisis:
             try:
-                analisis = generar_analisis_consolidado_ia(
-                    total_ventas=total_ventas,
-                    crecimiento_ventas_pct=crecimiento_ventas_pct,
-                    total_cxc=_total_cxc,
-                    pct_vigente_cxc=_pct_vigente,
-                    pct_critica_cxc=_pct_critica,
-                    score_salud_cxc=_score_salud,
-                    periodo_analisis=periodo_label,
-                    api_key=openai_api_key
-                )
+                # Resumen ejecutivo
+                st.markdown("### 📋 Resumen Ejecutivo")
+                st.info(analisis.get('resumen_ejecutivo', 'No disponible'))
                 
-                if analisis:
-                    # Resumen ejecutivo
-                    st.markdown("### 📋 Resumen Ejecutivo")
-                    st.info(analisis.get('resumen_ejecutivo', 'No disponible'))
+                # Columnas para contenido
+                col_izq, col_der = st.columns(2)
+                
+                with col_izq:
+                    st.markdown("### ⭐ Highlights Clave")
+                    highlights = analisis.get('highlights_clave', [])
+                    if highlights:
+                        for h in highlights:
+                            st.markdown(f"- {h}")
+                    else:
+                        st.caption("No disponible")
                     
-                    # Columnas para contenido
-                    col_izq, col_der = st.columns(2)
+                    st.markdown("")
+                    st.markdown("### 💡 Insights Principales")
+                    insights = analisis.get('insights_principales', [])
+                    if insights:
+                        for i in insights:
+                            st.markdown(f"- {i}")
+                    else:
+                        st.caption("No disponible")
+                
+                with col_der:
+                    st.markdown("### ⚠️ Áreas de Atención")
+                    areas = analisis.get('areas_atencion', [])
+                    if areas:
+                        for a in areas:
+                            st.markdown(f"- {a}")
+                    else:
+                        st.caption("No hay áreas críticas")
                     
-                    with col_izq:
-                        st.markdown("### ⭐ Highlights Clave")
-                        highlights = analisis.get('highlights_clave', [])
-                        if highlights:
-                            for h in highlights:
-                                st.markdown(f"- {h}")
-                        else:
-                            st.caption("No disponible")
-                        
-                        st.markdown("")
-                        st.markdown("### 💡 Insights Principales")
-                        insights = analisis.get('insights_principales', [])
-                        if insights:
-                            for i in insights:
-                                st.markdown(f"- {i}")
-                        else:
-                            st.caption("No disponible")
-                    
-                    with col_der:
-                        st.markdown("### ⚠️ Áreas de Atención")
-                        areas = analisis.get('areas_atencion', [])
-                        if areas:
-                            for a in areas:
-                                st.markdown(f"- {a}")
-                        else:
-                            st.caption("No hay áreas críticas")
-                        
-                        st.markdown("")
-                        st.markdown("### 🎯 Recomendaciones Ejecutivas")
-                        recs = analisis.get('recomendaciones_ejecutivas', [])
-                        if recs:
-                            for r in recs:
-                                st.markdown(f"- {r}")
-                        else:
-                            st.caption("No disponible")
-                    
-                    st.caption("🤖 Análisis generado por OpenAI GPT-4o-mini")
-                else:
-                    st.warning("⚠️ No se pudo generar el análisis")
-                    
+                    st.markdown("")
+                    st.markdown("### 🎯 Recomendaciones Ejecutivas")
+                    recs = analisis.get('recomendaciones_ejecutivas', [])
+                    if recs:
+                        for r in recs:
+                            st.markdown(f"- {r}")
+                    else:
+                        st.caption("No disponible")
+                
+                st.caption("🤖 Análisis generado por OpenAI GPT-4o-mini")
             except Exception as e:
-                st.error(f"❌ Error al generar análisis: {str(e)}")
-                logger.error(f"Error en análisis IA consolidado: {e}", exc_info=True)
+                st.error(f"❌ Error al mostrar análisis: {str(e)}")
+                logger.error(f"Error mostrando análisis IA consolidado: {e}", exc_info=True)
+        else:
+            st.warning("⚠️ No se pudo generar el análisis")
         
         st.markdown("---")
     
