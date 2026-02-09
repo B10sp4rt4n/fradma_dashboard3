@@ -314,7 +314,7 @@ def _renderizar_kpis(total_ventas, promedio_periodo, crecimiento_ventas_pct,
                      periodos_count, metricas_cxc, score_salud_cxc, 
                      score_status_cxc, config):
     """
-    Renderiza la sección de KPIs principales.
+    Sección 1: Renderiza los KPIs principales.
     
     Args:
         total_ventas: Total de ventas en USD
@@ -377,7 +377,7 @@ def _renderizar_kpis(total_ventas, promedio_periodo, crecimiento_ventas_pct,
 
 def _renderizar_visualizaciones(df_ventas_agrupado, metricas_cxc, config):
     """
-    Renderiza gráficos de ventas y CxC.
+    Sección 2: Renderiza gráficos de ventas y CxC.
     
     Args:
         df_ventas_agrupado: DataFrame con ventas agrupadas por período
@@ -405,7 +405,7 @@ def _renderizar_visualizaciones(df_ventas_agrupado, metricas_cxc, config):
 def _renderizar_analisis_ia(total_ventas, crecimiento_ventas_pct, metricas_cxc, 
                             score_salud_cxc, config):
     """
-    Renderiza la sección de análisis con IA.
+    Sección 4: Renderiza análisis con IA (opcional, al final como skill avanzado).
     
     Args:
         total_ventas: Total de ventas en USD
@@ -417,7 +417,10 @@ def _renderizar_analisis_ia(total_ventas, crecimiento_ventas_pct, metricas_cxc,
     if not config['habilitar_ia'] or not config['api_key']:
         return
     
-    st.header("🤖 Análisis Ejecutivo con IA")
+    # Separador visual para indicar nueva sección avanzada
+    st.markdown("---")
+    st.markdown("## 🤖 Análisis Avanzado con Inteligencia Artificial")
+    st.caption("💡 Insights generados por IA basados en los datos anteriores")
     
     periodo_label = {
         'semanal': 'Análisis Semanal',
@@ -517,13 +520,11 @@ def _renderizar_analisis_ia(total_ventas, crecimiento_ventas_pct, metricas_cxc,
             logger.error(f"Error mostrando análisis IA consolidado: {e}", exc_info=True)
     else:
         st.warning("⚠️ No se pudo generar el análisis")
-    
-    st.markdown("---")
 
 
 def _renderizar_tabla_detalle(df_ventas_agrupado, periodos_count, config):
     """
-    Renderiza tabla detallada por período.
+    Sección 3: Renderiza tabla detallada por período (análisis natural).
     
     Args:
         df_ventas_agrupado: DataFrame con ventas agrupadas
@@ -553,12 +554,6 @@ def _renderizar_tabla_detalle(df_ventas_agrupado, periodos_count, config):
         use_container_width=True,
         hide_index=True
     )
-    
-    # Footer
-    st.markdown("---")
-    st.caption(f"📅 Reporte generado: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | "
-              f"Período: {config['tipo_periodo'].capitalize()} | "
-              f"Períodos analizados: {periodos_count}")
 
 
 def run(df_ventas, df_cxc=None):
@@ -630,20 +625,32 @@ def run(df_ventas, df_cxc=None):
     score_status_cxc = metricas_cxc_dict.get('status', None) if metricas_cxc_dict else None
     
     # =====================================================================
-    # PASO 5: RENDERIZAR REPORTES
+    # PASO 5: RENDERIZAR REPORTES (Orden: análisis natural → análisis IA)
     # =====================================================================
     
+    # Sección 1: KPIs principales
     _renderizar_kpis(
         total_ventas, promedio_periodo, crecimiento_ventas_pct, 
         periodos_count, metricas_cxc, score_salud_cxc, 
         score_status_cxc, config
     )
     
+    # Sección 2: Visualizaciones (gráficos de ventas y CxC)
     _renderizar_visualizaciones(df_ventas_agrupado, metricas_cxc, config)
     
+    # Sección 3: Tabla detallada por período (análisis natural)
+    _renderizar_tabla_detalle(df_ventas_agrupado, periodos_count, config)
+    
+    # Sección 4: Análisis con IA (opcional, al final como skill avanzado)
     _renderizar_analisis_ia(
         total_ventas, crecimiento_ventas_pct, metricas_cxc, 
         score_salud_cxc, config
     )
     
-    _renderizar_tabla_detalle(df_ventas_agrupado, periodos_count, config)
+    # =====================================================================
+    # FOOTER: Información del reporte
+    # =====================================================================
+    st.markdown("---")
+    st.caption(f"📅 Reporte generado: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | "
+              f"Período: {config['tipo_periodo'].capitalize()} | "
+              f"Períodos analizados: {periodos_count}")
