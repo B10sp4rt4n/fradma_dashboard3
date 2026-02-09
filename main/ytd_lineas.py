@@ -17,7 +17,9 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime, date
 import io
+import os
 from utils.logger import configurar_logger
+from utils.ai_helper import generar_resumen_ejecutivo_ytd, validar_api_key
 
 # Configurar logger para este módulo
 logger = configurar_logger("ytd_lineas", nivel="INFO")
@@ -487,13 +489,79 @@ def run(df):
     st.title("📊 Reporte YTD por Línea de Negocio")
     st.markdown("---")
     
-    # Validar columnas requeridas
+    # =====================================================================
+    # NORMALIZACIÓN Y MAPEO AUTOMÁTICO DE COLUMNAS
+    # =====================================================================
+    
+    # Hacer una copia para no modificar el original
+    df = df.copy()
+    
+    # 1. Detectar y mapear columna de ventas (ventas_usd)
+    if 'ventas_usd' not in df.columns:
+        # Variantes comunes de columna de ventas
+        variantes_ventas = [
+            'valor_usd', 'ventas_usd_con_iva', 'venta_usd', 'ventas', 'venta',
+            'importe_usd', 'importe', 'monto_usd', 'monto', 'total_usd', 'total'
+        ]
+        
+        for variante in variantes_ventas:
+            if variante in df.columns:
+                df['ventas_usd'] = df[variante]
+                logger.info(f"Columna de ventas mapeada: '{variante}' → 'ventas_usd'")
+                break
+    
+    # 2. Detectar y mapear columna de línea de negocio
+    if 'linea_de_negocio' not in df.columns:
+        variantes_linea = [
+            'linea', 'linea_negocio', 'producto', 'categoria', 'familia', 
+            'linea_producto', 'tipo_producto', 'division'
+        ]
+        
+        for variante in variantes_linea:
+            if variante in df.columns:
+                df['linea_de_negocio'] = df[variante]
+                logger.info(f"Columna de línea mapeada: '{variante}' → 'linea_de_negocio'")
+                break
+    
+    # 3. Normalizar nombre de columna fecha si tiene variantes
+    if 'fecha' not in df.columns:
+        variantes_fecha = ['date', 'fecha_factura', 'fecha_documento', 'fecha_emision']
+        
+        for variante in variantes_fecha:
+            if variante in df.columns:
+                df['fecha'] = df[variante]
+                logger.info(f"Columna de fecha mapeada: '{variante}' → 'fecha'")
+                break
+    
+    # =====================================================================
+    # VALIDACIÓN DE COLUMNAS REQUERIDAS
+    # =====================================================================
+    
     required_cols = ['fecha', 'linea_de_negocio', 'ventas_usd']
     missing_cols = [col for col in required_cols if col not in df.columns]
     
     if missing_cols:
         st.error(f"❌ Faltan columnas requeridas: {', '.join(missing_cols)}")
-        st.info("💡 Este reporte requiere datos de ventas con columnas: fecha, linea_de_negocio, ventas_usd")
+        st.info("💡 Este reporte requiere datos de ventas con columnas: **fecha**, **linea_de_negocio**, **ventas_usd** (o variantes)")
+        
+        # Mostrar columnas disponibles para ayudar al usuario
+        with st.expander("🔍 Ver columnas disponibles en el archivo"):
+            st.write("**Columnas detectadas:**")
+            cols_ordenadas = sorted(df.columns.tolist())
+            for i in range(0, len(cols_ordenadas), 3):
+                cols_chunk = cols_ordenadas[i:i+3]
+                st.write(", ".join(f"`{col}`" for col in cols_chunk))
+            
+            st.markdown("---")
+            st.markdown("""
+            **💡 Variantes aceptadas automáticamente:**
+            - **Ventas:** `valor_usd`, `ventas_usd_con_iva`, `venta_usd`, `ventas`, `importe_usd`, `monto_usd`, etc.
+            - **Línea:** `linea`, `linea_negocio`, `producto`, `categoria`, `familia`, `division`, etc.
+            - **Fecha:** `date`, `fecha_factura`, `fecha_documento`, `fecha_emision`, etc.
+            """)
+        
+        logger.warning(f"Columnas faltantes en YTD: {missing_cols}")
+        logger.debug(f"Columnas disponibles: {df.columns.tolist()}")
         return
     
     # Asegurar que fecha es datetime
@@ -561,6 +629,43 @@ def run(df):
         value=min(10, num_total_lineas),
         help="Número de líneas de negocio a mostrar en el panel de detalles expandibles"
     )
+    
+    # =====================================================================
+    # CONFIGURACIÓN DE ANÁLISIS CON IA
+    # =====================================================================
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("🤖 Análisis con IA")
+    
+    habilitar_ia = st.sidebar.checkbox(
+        "Habilitar Análisis Ejecutivo con IA",
+        value=False,
+        help="Genera insights automáticos usando OpenAI GPT-4o-mini"
+    )
+    
+    openai_api_key = None
+    if habilitar_ia:
+        # Intentar obtener la API key de variable de entorno primero
+        api_key_env = os.getenv("OPENAI_API_KEY", "")
+        
+        if api_key_env:
+            openai_api_key = api_key_env
+            st.sidebar.success("✅ API key detectada desde variable de entorno")
+        else:
+            openai_api_key = st.sidebar.text_input(
+                "OpenAI API Key",
+                type="password",
+                help="Ingresa tu API key de OpenAI para habilitar el análisis con IA"
+            )
+            
+            if openai_api_key:
+                # Validar la API key
+                if validar_api_key(openai_api_key):
+                    st.sidebar.success("✅ API key válida")
+                else:
+                    st.sidebar.error("❌ API key inválida")
+                    openai_api_key = None
+        
+        st.sidebar.caption("💡 Los análisis con IA son generados por GPT-4o-mini y pueden tardar unos segundos")
     
     # Aplicar filtros
     df_filtrado = df[df['linea_de_negocio'].isin(seleccion_lineas)].copy()
@@ -661,6 +766,104 @@ def run(df):
         )
     
     st.markdown("---")
+    
+    # =====================================================================
+    # SECCIÓN 2.5: ANÁLISIS EJECUTIVO CON IA (OPCIONAL)
+    # =====================================================================
+    if habilitar_ia and openai_api_key:
+        st.header("🤖 Análisis Ejecutivo con IA")
+        
+        with st.spinner("🔄 Generando análisis ejecutivo con GPT-4o-mini..."):
+            try:
+                # Preparar datos por línea para el análisis
+                datos_lineas = {}
+                for linea in df_ytd_actual['linea_de_negocio'].unique():
+                    ventas_linea_actual = df_ytd_actual[df_ytd_actual['linea_de_negocio'] == linea]['ventas_usd'].sum()
+                    
+                    crecimiento_linea = 0
+                    if año_anterior:
+                        ventas_linea_anterior = df_ytd_anterior[df_ytd_anterior['linea_de_negocio'] == linea]['ventas_usd'].sum()
+                        if ventas_linea_anterior > 0:
+                            crecimiento_linea = ((ventas_linea_actual - ventas_linea_anterior) / ventas_linea_anterior) * 100
+                    
+                    datos_lineas[linea] = {
+                        'ventas': ventas_linea_actual,
+                        'crecimiento': crecimiento_linea
+                    }
+                
+                # Generar análisis
+                analisis = generar_resumen_ejecutivo_ytd(
+                    ventas_ytd_actual=metricas['total_ytd'],
+                    ventas_ytd_anterior=total_anterior if año_anterior else 0,
+                    crecimiento_pct=crecimiento_pct,
+                    dias_transcurridos=metricas['dias_transcurridos'],
+                    proyeccion_anual=metricas['proyeccion_anual'],
+                    linea_top=linea_top,
+                    ventas_linea_top=ventas_linea_top,
+                    api_key=openai_api_key,
+                    datos_lineas=datos_lineas
+                )
+                
+                # Mostrar análisis estructurado
+                if analisis:
+                    # Resumen ejecutivo principal
+                    st.markdown("### 📋 Resumen Ejecutivo")
+                    st.info(analisis.get('resumen_ejecutivo', 'No disponible'))
+                    
+                    # Crear columnas para organizar el contenido
+                    col_izq, col_der = st.columns(2)
+                    
+                    with col_izq:
+                        # Highlights clave
+                        st.markdown("### ✨ Highlights Clave")
+                        highlights = analisis.get('highlights_clave', [])
+                        if highlights:
+                            for highlight in highlights:
+                                st.markdown(f"- {highlight}")
+                        else:
+                            st.caption("No disponible")
+                        
+                        st.markdown("")
+                        
+                        # Insights principales
+                        st.markdown("### 💡 Insights Principales")
+                        insights = analisis.get('insights_principales', [])
+                        if insights:
+                            for insight in insights:
+                                st.markdown(f"- {insight}")
+                        else:
+                            st.caption("No disponible")
+                    
+                    with col_der:
+                        # Áreas de atención
+                        st.markdown("### ⚠️ Áreas de Atención")
+                        areas = analisis.get('areas_atencion', [])
+                        if areas:
+                            for area in areas:
+                                st.markdown(f"- {area}")
+                        else:
+                            st.caption("No hay áreas críticas identificadas")
+                        
+                        st.markdown("")
+                        
+                        # Recomendaciones ejecutivas
+                        st.markdown("### 🎯 Recomendaciones Ejecutivas")
+                        recomendaciones = analisis.get('recomendaciones_ejecutivas', [])
+                        if recomendaciones:
+                            for rec in recomendaciones:
+                                st.markdown(f"- {rec}")
+                        else:
+                            st.caption("No disponible")
+                    
+                    st.caption("🤖 Análisis generado por OpenAI GPT-4o-mini")
+                else:
+                    st.warning("⚠️ No se pudo generar el análisis ejecutivo")
+                    
+            except Exception as e:
+                st.error(f"❌ Error al generar análisis con IA: {str(e)}")
+                logger.error(f"Error en análisis con IA: {e}", exc_info=True)
+        
+        st.markdown("---")
     
     # =====================================================================
     # SECCIÓN 3: VISUALIZACIONES PRINCIPALES

@@ -215,6 +215,10 @@ def aplicar_filtro_monto(
         monto_min = float(df_con_montos[columna_monto].min())
         monto_max = float(df_con_montos[columna_monto].max())
         
+        # Evitar error de slider cuando min == max
+        if monto_min >= monto_max:
+            monto_max = monto_min + 1.0
+        
         # Rangos predefinidos
         rangos_predefinidos = {
             "Todos los montos": (monto_min, monto_max),

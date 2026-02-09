@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from unidecode import unidecode
 from main import main_kpi, main_comparativo, heatmap_ventas
-from main import kpi_cpc, reporte_ejecutivo, ytd_lineas
+from main import kpi_cpc, reporte_ejecutivo, ytd_lineas, reporte_consolidado
 from utils.data_cleaner import limpiar_columnas_texto, detectar_duplicados_similares
 from utils.logger import configurar_logger, log_dataframe_info, log_execution_time
 from utils.filters import (
@@ -651,10 +651,11 @@ menu = st.sidebar.radio(
     "Selecciona una vista:",
     [
         "🎯 Reporte Ejecutivo",
+        "📊 Reporte Consolidado",
         "📈 KPIs Generales",
         "📊 Comparativo Año vs Año",
-        "� YTD por Línea de Negocio",
-        "�🔥 Heatmap Ventas",
+        "📉 YTD por Línea de Negocio",
+        "🔥 Heatmap Ventas",
         "💳 KPI Cartera CxC"
     ],
     help="Selecciona el módulo de análisis que deseas visualizar"
@@ -673,6 +674,16 @@ with st.sidebar.expander("ℹ️ Acerca de esta vista"):
         - Análisis de top performers
         - Insights estratégicos
         """)
+    elif menu == "📊 Reporte Consolidado":
+        st.markdown("""
+        **Dashboard ejecutivo integral**
+        
+        - Ventas por período (semanal/mensual/trimestral/anual)
+        - Estado de cuentas por cobrar
+        - Gráficos ejecutivos consolidados
+        - Análisis con IA del estado del negocio
+        - Métricas de desempeño integral
+        """)
     elif menu == "📈 KPIs Generales":
         st.markdown("""
         **Análisis general de ventas**
@@ -690,7 +701,7 @@ with st.sidebar.expander("ℹ️ Acerca de esta vista"):
         - Análisis de crecimiento
         - Tendencias históricas
         """)
-    elif menu == "📆 YTD por Línea de Negocio":
+    elif menu == "📉 YTD por Línea de Negocio":
         st.markdown("""
         **Reporte Year-to-Date (YTD)**
         
@@ -699,12 +710,6 @@ with st.sidebar.expander("ℹ️ Acerca de esta vista"):
         - Análisis por línea de negocio
         - Top productos y clientes
         - Proyección anual
-        """)
-    elif menu == "🔥 Heatmap Ventas":
-        st.markdown("""
-        **Mapa de calor de ventas
-        - Comparación año actual vs anterior
-        - Análisis de crecimiento
         """)
     elif menu == "🔥 Heatmap Ventas":
         st.markdown("""
@@ -789,14 +794,14 @@ elif menu == "📊 Comparativo Año vs Año":
     else:
         st.warning("⚠️ Primero sube un archivo para visualizar el comparativo año vs año.")
 
-elif menu == "� YTD por Línea de Negocio":
+elif menu == "📉 YTD por Línea de Negocio":
     if "df" in st.session_state:
         ytd_lineas.run(st.session_state["df"])
     else:
         st.warning("⚠️ Primero sube un archivo para visualizar el reporte YTD.")
         st.info("📂 Este reporte requiere datos de ventas con: fecha, linea_de_negocio, ventas_usd")
 
-elif menu == "�🔥 Heatmap Ventas":
+elif menu == "🔥 Heatmap Ventas":
     if "df" in st.session_state:
         heatmap_ventas.run(st.session_state["df"])
     else:
@@ -807,3 +812,43 @@ elif menu == "💳 KPI Cartera CxC":
         kpi_cpc.run(st.session_state["archivo_excel"])
     else:
         st.warning("⚠️ Primero sube un archivo para visualizar CXC.")
+
+elif menu == "📊 Reporte Consolidado":
+    if "df" in st.session_state and "archivo_excel" in st.session_state:
+        with st.spinner("📊 Generando reporte consolidado..."):
+            try:
+                # Obtener datos de ventas (igual que Reporte Ejecutivo)
+                df_ventas = st.session_state["df"]
+                
+                # Obtener datos de CxC (misma lógica que Reporte Ejecutivo)
+                archivo_excel = st.session_state["archivo_excel"]
+                xls = pd.ExcelFile(archivo_excel)
+                
+                # Buscar hoja de CxC
+                hoja_cxc = None
+                for nombre_hoja in xls.sheet_names:
+                    if "cxc" in nombre_hoja.lower() or "cuenta" in nombre_hoja.lower() or "cobrar" in nombre_hoja.lower():
+                        hoja_cxc = nombre_hoja
+                        break
+                
+                if hoja_cxc:
+                    df_cxc_raw = pd.read_excel(xls, sheet_name=hoja_cxc)
+                    # Normalizar columnas
+                    df_cxc = df_cxc_raw.copy()
+                    nuevas_columnas = []
+                    for col in df_cxc.columns:
+                        col_str = str(col).lower().strip().replace(" ", "_")
+                        col_str = unidecode(col_str)
+                        nuevas_columnas.append(col_str)
+                    df_cxc.columns = nuevas_columnas
+                else:
+                    df_cxc = pd.DataFrame()
+                
+                reporte_consolidado.run(df_ventas, df_cxc)
+            except Exception as e:
+                st.error(f"❌ Error al generar el reporte consolidado: {str(e)}")
+                logger.exception(f"Error en reporte consolidado: {e}")
+    elif "df" in st.session_state:
+        reporte_consolidado.run(st.session_state["df"], None)
+    else:
+        st.warning("⚠️ Primero sube un archivo para visualizar el Reporte Consolidado.")

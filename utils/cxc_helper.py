@@ -67,9 +67,10 @@ def calcular_dias_overdue(df: pd.DataFrame) -> pd.Series:
     
     Prioridad de cálculo:
     1. dias_vencido (si existe)
-    2. dias_restante (invertido, negativo = vencido)
-    3. fecha_vencimiento (vs hoy)
+    2. fecha_vencimiento (vs hoy)
+    3. dias_restante/dias_restantes (invertido, negativo = vencido)
     4. fecha_pago + dias_de_credito (calculado)
+    5. fecha + 30 días crédito estándar (estimado)
     
     Args:
         df: DataFrame con datos de CxC
@@ -88,12 +89,18 @@ def calcular_dias_overdue(df: pd.DataFrame) -> pd.Series:
             return dias
     
     # Método 2: Calcular desde fecha de vencimiento (MÁS CONFIABLE)
-    # Priorizar vencimiento sobre dias_restantes porque dias_restantes puede estar desactualizado
     for col_venc in ['vencimiento', 'fecha_vencimiento', 'vencimient']:
         if col_venc in df.columns:
             fecha_venc = pd.to_datetime(df[col_venc], errors='coerce', dayfirst=True)
             dias = (pd.Timestamp.today().normalize() - fecha_venc).dt.days
             return pd.to_numeric(dias, errors='coerce').fillna(0)
+    
+    # Método 3: dias_restante/dias_restantes (INVERTIDO: positivo = vigente, negativo = vencido)
+    for col_rest in ['dias_restantes', 'dias_restante']:
+        if col_rest in df.columns:
+            dias_restantes = pd.to_numeric(df[col_rest], errors='coerce').fillna(0)
+            # Invertir: si faltan 5 días = -5 overdue (vigente), si pasaron 10 días = +10 overdue (vencido)
+            return -dias_restantes
     
     # Método 4: fecha_pago + dias_de_credito
     col_fecha_pago = detectar_columna(df, COLUMNAS_FECHA_PAGO)
@@ -111,7 +118,14 @@ def calcular_dias_overdue(df: pd.DataFrame) -> pd.Series:
         dias = (pd.Timestamp.today().normalize() - fecha_venc).dt.days
         return pd.to_numeric(dias, errors='coerce').fillna(0)
     
-    # Fallback: todos vigentes
+    # Método 5: Si solo existe 'fecha' (fecha de factura), asumir 30 días de crédito estándar
+    if 'fecha' in df.columns:
+        fecha_factura = pd.to_datetime(df['fecha'], errors='coerce', dayfirst=True)
+        fecha_venc_estimada = fecha_factura + pd.Timedelta(days=30)
+        dias = (pd.Timestamp.today().normalize() - fecha_venc_estimada).dt.days
+        return pd.to_numeric(dias, errors='coerce').fillna(0)
+    
+    # Fallback final: todos vigentes (días = 0)
     return pd.Series(0, index=df.index)
 
 
