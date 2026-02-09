@@ -274,9 +274,9 @@ def _calcular_metricas_ventas(df_ventas, tipo_periodo):
     
     return {
         'df_agrupado': df_agrupado,
-        'total_ventas': total_ventas,
-        'promedio_periodo': promedio_periodo,
-        'periodos_count': periodos_count,
+        'total': total_ventas,
+        'promedio': promedio_periodo,
+        'total_periodos': periodos_count,
         'crecimiento_pct': crecimiento_pct
     }
 
