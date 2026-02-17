@@ -305,13 +305,16 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc):
     
     col1, col2, col3, col4 = st.columns(4)
     
-    # KPI 1: Salud Financiera General (Score 0-100)
+    # KPI 1: Salud General del Negocio (Score 0-100) 
+    # Combina desempeño de ventas + salud de cartera
+    # (Diferente al "Score de Salud" de CxC que solo mide cartera)
     score_ventas = min(100, (ventas_mes_actual / 1_000_000) * 50) if "fecha" in df_ventas.columns else 50
     score_cartera = pct_vigente * 0.7 + max(0, 100 - pct_critica * 2) * 0.3
     score_general = (score_ventas + score_cartera) / 2
     
     color_score = "🟢" if score_general >= 80 else "🟡" if score_general >= 60 else "🟠" if score_general >= 40 else "🔴"
-    col1.metric(f"{color_score} Salud Financiera", f"{score_general:.0f}/100")
+    col1.metric(f"{color_score} Salud General", f"{score_general:.0f}/100", 
+                help="Combina desempeño de ventas (50%) + salud de cartera (50%)")
     
     # KPI 2: Índice de Liquidez
     indice_liquidez = (vigente + ventas_mes_actual) / (critica + 1) if critica > 0 else 10

@@ -108,11 +108,8 @@ def run():
             total_ventas = agente_data["valor_usd"].sum()
             operaciones_count = len(agente_data)
             
-            # Ticket promedio
+            # Ticket promedio (ventas por operación)
             ticket_promedio = total_ventas / operaciones_count if operaciones_count > 0 else 0
-            
-            # Eficiencia (ventas por operación)
-            eficiencia = total_ventas / operaciones_count if operaciones_count > 0 else 0
             
             # Clientes únicos (si existe columna cliente)
             if 'cliente' in agente_data.columns:
@@ -127,7 +124,6 @@ def run():
                 'total_ventas': total_ventas,
                 'operaciones': operaciones_count,
                 'ticket_promedio': ticket_promedio,
-                'eficiencia': eficiencia,
                 'clientes_unicos': clientes_unicos,
                 'ventas_por_cliente': ventas_por_cliente
             })
@@ -135,17 +131,17 @@ def run():
         df_eficiencia_ventas = pd.DataFrame(vendedores_eficiencia)
         
         # Clasificar vendedores
-        # Alto volumen = muchas operaciones, Alta eficiencia = alto ticket promedio
+        # Alto volumen = muchas operaciones, Alto ticket = mayor valor por operación
         mediana_ops = df_eficiencia_ventas['operaciones'].median()
         mediana_ticket = df_eficiencia_ventas['ticket_promedio'].median()
         
         def clasificar_vendedor(row):
             if row['operaciones'] > mediana_ops and row['ticket_promedio'] > mediana_ticket:
-                return "🌟 Elite (Alto Volumen + Alta Eficiencia)"
+                return "🌟 Elite (Alto Volumen + Alto Ticket)"
             elif row['operaciones'] > mediana_ops:
                 return "📊 Alto Volumen"
             elif row['ticket_promedio'] > mediana_ticket:
-                return "💎 Alta Eficiencia"
+                return "💎 Alto Ticket (Eficiencia)"
             else:
                 return "🔄 En Desarrollo"
         

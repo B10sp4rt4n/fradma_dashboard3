@@ -95,7 +95,20 @@ def calcular_ytd(df, año, fecha_corte=None):
 def calcular_metricas_ytd(df_ytd):
     """Calcula métricas agregadas YTD."""
     total_ytd = df_ytd['ventas_usd'].sum()
-    dias_transcurridos = (datetime.now() - datetime(datetime.now().year, 1, 1)).days + 1
+    
+    # Obtener el año de los datos (no usar año actual si estamos analizando histórico)
+    if len(df_ytd) > 0:
+        año_datos = df_ytd['fecha'].max().year
+        inicio_año = datetime(año_datos, 1, 1)
+        # Si es año actual, usar fecha actual; si es histórico, usar 31 dic
+        if año_datos == datetime.now().year:
+            fecha_fin = datetime.now()
+        else:
+            fecha_fin = datetime(año_datos, 12, 31)
+        dias_transcurridos = (fecha_fin - inicio_año).days + 1
+    else:
+        dias_transcurridos = 1
+    
     promedio_diario = total_ytd / dias_transcurridos if dias_transcurridos > 0 else 0
     proyeccion_anual = promedio_diario * 365
     
@@ -265,7 +278,9 @@ def crear_grafico_barras_comparativo(df, año_actual, año_anterior, usar_año_c
             if actual == 0:
                 return 0.0  # Sin ventas en ambos períodos
             else:
-                return 100.0  # Nueva línea o crecimiento desde cero
+                # Nueva línea o crecimiento desde cero - retornar valor muy alto pero calculable
+                # para mantener proporciones (999% cap para no romper escalas visuales)
+                return min(999.0, (actual / 1000) * 100)  # Escala relativa, cap en 999%
         else:
             return ((actual - anterior) / anterior) * 100
     
@@ -631,41 +646,46 @@ def run(df):
     )
     
     # =====================================================================
-    # CONFIGURACIÓN DE ANÁLISIS CON IA
+    # CONFIGURACIÓN DE ANÁLISIS CON IA - TEMPORALMENTE DESHABILITADO
     # =====================================================================
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("🤖 Análisis con IA")
+    # TODO: Reactivar cuando se simplifique la integración de IA
+    # st.sidebar.markdown("---")
+    # st.sidebar.subheader("🤖 Análisis con IA")
+    # 
+    # habilitar_ia = st.sidebar.checkbox(
+    #     "Habilitar Análisis Ejecutivo con IA",
+    #     value=False,
+    #     help="Genera insights automáticos usando OpenAI GPT-4o-mini"
+    # )
+    # 
+    # openai_api_key = None
+    # if habilitar_ia:
+    #     # Intentar obtener la API key de variable de entorno primero
+    #     api_key_env = os.getenv("OPENAI_API_KEY", "")
+    #     
+    #     if api_key_env:
+    #         openai_api_key = api_key_env
+    #         st.sidebar.success("✅ API key detectada desde variable de entorno")
+    #     else:
+    #         openai_api_key = st.sidebar.text_input(
+    #             "OpenAI API Key",
+    #             type="password",
+    #             help="Ingresa tu API key de OpenAI para habilitar el análisis con IA"
+    #         )
+    #         
+    #         if openai_api_key:
+    #             # Validar la API key
+    #             if validar_api_key(openai_api_key):
+    #                 st.sidebar.success("✅ API key válida")
+    #             else:
+    #                 st.sidebar.error("❌ API key inválida")
+    #                 openai_api_key = None
+    #     
+    #     st.sidebar.caption("💡 Los análisis con IA son generados por GPT-4o-mini y pueden tardar unos segundos")
     
-    habilitar_ia = st.sidebar.checkbox(
-        "Habilitar Análisis Ejecutivo con IA",
-        value=False,
-        help="Genera insights automáticos usando OpenAI GPT-4o-mini"
-    )
-    
+    # Forzar como deshabilitada mientras se optimiza
+    habilitar_ia = False
     openai_api_key = None
-    if habilitar_ia:
-        # Intentar obtener la API key de variable de entorno primero
-        api_key_env = os.getenv("OPENAI_API_KEY", "")
-        
-        if api_key_env:
-            openai_api_key = api_key_env
-            st.sidebar.success("✅ API key detectada desde variable de entorno")
-        else:
-            openai_api_key = st.sidebar.text_input(
-                "OpenAI API Key",
-                type="password",
-                help="Ingresa tu API key de OpenAI para habilitar el análisis con IA"
-            )
-            
-            if openai_api_key:
-                # Validar la API key
-                if validar_api_key(openai_api_key):
-                    st.sidebar.success("✅ API key válida")
-                else:
-                    st.sidebar.error("❌ API key inválida")
-                    openai_api_key = None
-        
-        st.sidebar.caption("💡 Los análisis con IA son generados por GPT-4o-mini y pueden tardar unos segundos")
     
     # Aplicar filtros
     df_filtrado = df[df['linea_de_negocio'].isin(seleccion_lineas)].copy()
@@ -768,9 +788,10 @@ def run(df):
     st.markdown("---")
     
     # =====================================================================
-    # SECCIÓN 2.5: ANÁLISIS EJECUTIVO CON IA (OPCIONAL)
+    # SECCIÓN 2.5: ANÁLISIS EJECUTIVO CON IA (TEMPORALMENTE DESHABILITADO)
     # =====================================================================
-    if habilitar_ia and openai_api_key:
+    # TODO: Reactivar cuando se refine la integración
+    if False:  # habilitar_ia and openai_api_key:
         st.header("🤖 Análisis Ejecutivo con IA")
         
         with st.spinner("🔄 Generando análisis ejecutivo con GPT-4o-mini..."):

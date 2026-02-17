@@ -49,41 +49,24 @@ def run(archivo):
         return
 
     # =====================================================================
-    # CONFIGURACIÓN DE ANÁLISIS CON IA
+    # CONFIGURACIÓN DE ANÁLISIS CON IA - TEMPORALMENTE DESHABILITADO
     # =====================================================================
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("🤖 Análisis con IA")
+    # TODO: Reactivar cuando se simplifique y optimice
+    # st.sidebar.markdown("---")
+    # st.sidebar.subheader("🤖 Análisis con IA")
+    # 
+    # habilitar_ia = st.sidebar.checkbox(
+    #     "Habilitar Análisis Ejecutivo con IA",
+    #     value=False,
+    #     help="Genera insights automáticos sobre la salud de CxC usando OpenAI GPT-4o-mini"
+    # )
+    # 
+    # openai_api_key = None
+    # ...
     
-    habilitar_ia = st.sidebar.checkbox(
-        "Habilitar Análisis Ejecutivo con IA",
-        value=False,
-        help="Genera insights automáticos sobre la salud de CxC usando OpenAI GPT-4o-mini"
-    )
-    
+    # Forzar como deshabilitado
+    habilitar_ia = False
     openai_api_key = None
-    if habilitar_ia:
-        # Intentar obtener la API key de variable de entorno primero
-        api_key_env = os.getenv("OPENAI_API_KEY", "")
-        
-        if api_key_env:
-            openai_api_key = api_key_env
-            st.sidebar.success("✅ API key detectada desde variable de entorno")
-        else:
-            openai_api_key = st.sidebar.text_input(
-                "OpenAI API Key",
-                type="password",
-                help="Ingresa tu API key de OpenAI para habilitar el análisis con IA"
-            )
-            
-            if openai_api_key:
-                # Validar la API key
-                if validar_api_key(openai_api_key):
-                    st.sidebar.success("✅ API key válida")
-                else:
-                    st.sidebar.error("❌ API key inválida")
-                    openai_api_key = None
-        
-        st.sidebar.caption("💡 El análisis con IA genera insights sobre riesgos de cartera y recomendaciones de cobranza")
 
     try:
         xls = pd.ExcelFile(archivo)
@@ -283,59 +266,41 @@ def run(archivo):
             st.write("### 📊 Indicadores Clave de Desempeño (KPIs)")
             
             # Calcular KPIs
-            # DSO (Days Sales Outstanding) - Aproximación: (CxC / Ventas diarias promedio)
-            # Como no tenemos ventas, usamos un estimado de 90 días como benchmark
-            dso_estimado = UmbralesCxC.DSO_ACEPTABLE  # Placeholder - necesitaría datos de ventas reales
-            dso_objetivo = UmbralesCxC.DSO_OBJETIVO
-            dso_status = "🟢" if dso_estimado <= dso_objetivo else "🟡" if dso_estimado <= UmbralesCxC.DSO_ACEPTABLE else "🔴"
+            # NOTA: DSO y Rotación CxC requieren datos de ventas que no están en este módulo
+            # Por ahora se omiten para evitar mostrar datos incorrectos (antes eran constantes hardcodeadas)
             
             # Índice de Morosidad (alineado: % vencida total sobre cartera no pagada)
             indice_morosidad = pct_vencida_total
             morosidad_objetivo = UmbralesCxC.MOROSIDAD_OBJETIVO
             morosidad_status = obtener_semaforo_morosidad(indice_morosidad)
             
-            # Rotación CxC (estimado)
-            rotacion_cxc = UmbralesCxC.ROTACION_CXC_MINIMO  # Placeholder - necesitaría datos de ventas
-            rotacion_objetivo = UmbralesCxC.ROTACION_CXC_OBJETIVO
-            rotacion_status = "🟢" if rotacion_cxc >= rotacion_objetivo else "🟡" if rotacion_cxc >= UmbralesCxC.ROTACION_CXC_MINIMO else "🔴"
-            
             # Índice de Concentración
             concentracion_status = obtener_semaforo_concentracion(pct_concentracion)
             
-            # Tabla de KPIs
+            # Tabla de KPIs (solo los calculables con datos de CxC)
             kpis_data = {
                 'KPI': [
-                    'DSO (Días de Cobro)',
                     'Índice de Morosidad',
-                    'Rotación CxC',
                     'Concentración Top 3',
                     'Riesgo Alto (>90 días)'
                 ],
                 'Valor Actual': [
-                    f"{dso_estimado} días",
                     f"{indice_morosidad:.1f}%",
-                    f"{rotacion_cxc}x/año",
                     f"{pct_concentracion:.1f}%",
                     f"{pct_alto_riesgo:.1f}%"
                 ],
                 'Objetivo': [
-                    f"<{dso_objetivo} días",
                     f"<{morosidad_objetivo}%",
-                    f">{rotacion_objetivo}x",
                     "<30%",
                     "<10%"
                 ],
                 'Estado': [
-                    dso_status,
                     morosidad_status,
-                    rotacion_status,
                     concentracion_status,
                     "🟢" if pct_alto_riesgo <= 10 else "🟡" if pct_alto_riesgo <= 20 else "🔴"
                 ],
                 'Monto/Detalle': [
-                    f"${total_adeudado / (dso_estimado if dso_estimado > 0 else 1):,.2f}/día",
                     f"${vencida:,.2f}",
-                    f"${total_adeudado / (rotacion_cxc if rotacion_cxc > 0 else 1):,.2f}/rotación",
                     f"${top3_deuda:,.2f}",
                     f"${deuda_alto_riesgo:,.2f}"
                 ]
@@ -357,15 +322,16 @@ def run(archivo):
                 }
             )
             
-            # Nota informativa
-            st.info("💡 **Nota:** DSO y Rotación CxC son estimados. Para cálculos precisos, se requieren datos de ventas.")
+            # Nota sobre KPIs que requieren datos externos
+            st.caption("💡 **Nota:** DSO y Rotación CxC requieren datos de ventas para cálculo preciso (módulo de ventas separado)")
         
         st.write("---")
         
         # =====================================================================
-        # FASE 2.5: ANÁLISIS EJECUTIVO CON IA (OPCIONAL)
+        # FASE 2.5: ANÁLISIS EJECUTIVO CON IA (TEMPORALMENTE DESHABILITADO)
         # =====================================================================
-        if habilitar_ia and openai_api_key:
+        # TODO: Reactivar cuando se refine y simplifique
+        if False:  # habilitar_ia and openai_api_key:
             st.header("🤖 Análisis Ejecutivo con IA")
             
             with st.spinner("🔄 Generando análisis ejecutivo con GPT-4o-mini..."):
@@ -1242,7 +1208,7 @@ def run(archivo):
                 
                 # Agregar semáforos
                 df_ef_display['🚦 Score'] = df_ef_display['score'].apply(
-                    lambda x: "🟢" if x >= 80 else "🟢" if x >= 60 else "🟡" if x >= 40 else "🟠" if x >= 20 else "🔴"
+                    lambda x: "🟢" if x >= 80 else "�" if x >= 60 else "🟠" if x >= 40 else "🟠" if x >= 20 else "🔴"
                 )
                 
                 df_ef_display['🚦 Efectividad'] = df_ef_display['efectividad'].apply(
