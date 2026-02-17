@@ -84,8 +84,8 @@ def calcular_dias_overdue(df: pd.DataFrame) -> pd.Series:
     # Método 1: dias_vencido directo (si existe y tiene valores confiables)
     if 'dias_vencido' in df.columns:
         dias = pd.to_numeric(df['dias_vencido'], errors='coerce').fillna(0)
-        # Solo usar si tiene valores significativos (>30 días)
-        if dias.max() > 30:
+        # Solo usar si tiene al menos algún valor no-cero (indica datos reales)
+        if (dias != 0).any():
             return dias
     
     # Método 2: Calcular desde fecha de vencimiento (MÁS CONFIABLE)
