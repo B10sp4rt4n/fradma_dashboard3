@@ -342,14 +342,28 @@ def run(habilitar_ia=False, openai_api_key=None):
         with st.spinner("🔄 Analizando patrones del equipo con IA..."):
             try:
                 # Preparar datos para el análisis
-                num_vendedores = len(resumen_agente)
-                ticket_promedio_general = resumen_agente["total_ventas"].sum() / resumen_agente["operaciones"].sum()
+                # Primero agrupar por agente (sin año) para tener totales por vendedor
+                resumen_por_vendedor = (
+                    resumen_agente.groupby("agente")
+                    .agg(
+                        total_ventas=("total_ventas", "sum"),
+                        operaciones=("operaciones", "sum")
+                    )
+                    .reset_index()
+                )
+                # Calcular ticket promedio por vendedor
+                resumen_por_vendedor["ticket_promedio"] = (
+                    resumen_por_vendedor["total_ventas"] / resumen_por_vendedor["operaciones"]
+                ).fillna(0)
+                
+                num_vendedores = len(resumen_por_vendedor)
+                ticket_promedio_general = resumen_por_vendedor["total_ventas"].sum() / resumen_por_vendedor["operaciones"].sum()
                 
                 # Calcular eficiencia general (simplificado)
-                eficiencia_general = 100 * (resumen_agente["total_ventas"].sum() / (resumen_agente["operaciones"].sum() * ticket_promedio_general))
+                eficiencia_general = 100 * (resumen_por_vendedor["total_ventas"].sum() / (resumen_por_vendedor["operaciones"].sum() * ticket_promedio_general))
                 
                 # Top y bottom performers
-                sorted_vendedores = resumen_agente.sort_values("total_ventas", ascending=False)
+                sorted_vendedores = resumen_por_vendedor.sort_values("total_ventas", ascending=False)
                 vendedor_top = sorted_vendedores.iloc[0]["agente"]
                 ventas_vendedor_top = sorted_vendedores.iloc[0]["total_ventas"]
                 vendedor_bottom = sorted_vendedores.iloc[-1]["agente"]
@@ -357,7 +371,7 @@ def run(habilitar_ia=False, openai_api_key=None):
                 
                 # Concentración top 3
                 top3_ventas = sorted_vendedores.head(3)["total_ventas"].sum()
-                total_ventas = resumen_agente["total_ventas"].sum()
+                total_ventas = resumen_por_vendedor["total_ventas"].sum()
                 concentracion_top3_pct = (top3_ventas / total_ventas * 100) if total_ventas > 0 else 0
                 
                 # Preparar lista de vendedores
