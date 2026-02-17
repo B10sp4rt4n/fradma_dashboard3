@@ -26,6 +26,16 @@ from utils.logger import configurar_logger
 # Configurar logger
 logger = configurar_logger("kpi_cpc", nivel="INFO")
 
+# Mapeo de nivel de riesgo a colores según severidad
+MAPA_COLORES_RIESGO = {
+    'Por vencer': '#4CAF50',      # Verde - Sin riesgo
+    '1-30 días': '#8BC34A',       # Verde claro - Riesgo bajo
+    '31-60 días': '#FFEB3B',      # Amarillo - Precaución
+    '61-90 días': '#FF9800',      # Naranja - Alerta
+    '91-180 días': '#F44336',     # Rojo - Crítico
+    '>180 días': '#B71C1C'        # Rojo oscuro - Crítico severo
+}
+
 def normalizar_columnas(df):
     nuevas_columnas = []
     contador = {}
@@ -880,10 +890,12 @@ def run(archivo):
                 # Pie Chart: Distribución por antigüedad
                 with col_pie2:
                     st.write("**Distribución por Antigüedad**")
+                    # Asignar colores según severidad de cada categoría
+                    colores_pie = [MAPA_COLORES_RIESGO.get(nivel, '#808080') for nivel in riesgo_df['nivel_riesgo']]
                     fig_antiguedad = go.Figure(data=[go.Pie(
                         labels=riesgo_df['nivel_riesgo'].tolist(),
                         values=riesgo_df['saldo_adeudado'].tolist(),
-                        marker=dict(colors=COLORES_ANTIGUEDAD),
+                        marker=dict(colors=colores_pie),
                         hole=ConfigVisualizacion.PIE_HOLE,
                         textinfo='label+percent',
                         textposition='outside'
@@ -909,7 +921,8 @@ def run(archivo):
                             nivel = row['nivel_riesgo']
                             pct = row['porcentaje']
                             monto = row['saldo_adeudado']
-                            color = COLORES_ANTIGUEDAD[i + j]
+                            # Asignar color según severidad del nivel, no según índice
+                            color = MAPA_COLORES_RIESGO.get(nivel, '#808080')  # Gris por defecto
                             
                             with cols_gauge[j]:
                                 # Crear gauge con plotly
@@ -957,7 +970,9 @@ def run(archivo):
                 # Gráfico de barras con colores por categoría
                 st.write("### 📊 Distribución de Deuda por Antigüedad")
                 fig, ax = plt.subplots()
-                bars = ax.bar(riesgo_df['nivel_riesgo'], riesgo_df['saldo_adeudado'], color=COLORES_ANTIGUEDAD)
+                # Asignar colores según severidad de cada categoría
+                colores_barras = [MAPA_COLORES_RIESGO.get(nivel, '#808080') for nivel in riesgo_df['nivel_riesgo']]
+                bars = ax.bar(riesgo_df['nivel_riesgo'], riesgo_df['saldo_adeudado'], color=colores_barras)
                 ax.set_title('Distribución por Antigüedad de Deuda')
                 ax.set_ylabel('Monto Adeudado ($)')
                 ax.yaxis.set_major_formatter('${x:,.2f}')
