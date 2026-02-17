@@ -75,12 +75,18 @@ def generar_resumen_ejecutivo_ytd(
         contexto = f"""
 Analiza los siguientes datos YTD (Year-to-Date) de ventas y genera un análisis ejecutivo profesional:
 
+⚠️ IMPORTANTE - CONTEXTO DE COMPARACIÓN:
+- Estamos comparando PERIODOS EQUIVALENTES (mismo rango de días del año)
+- YTD Actual = Primeros {dias_transcurridos} días del año ACTUAL
+- YTD Anterior = Primeros {dias_transcurridos} días del año ANTERIOR
+- NO estamos comparando contra el año anterior COMPLETO
+
 MÉTRICAS PRINCIPALES:
-- Ventas YTD Actual: ${ventas_ytd_actual:,.2f}
-- Ventas YTD Año Anterior: ${ventas_ytd_anterior:,.2f}
-- Crecimiento: {crecimiento_pct:+.1f}%
-- Días transcurridos: {dias_transcurridos} de 365 ({dias_transcurridos/365*100:.1f}% del año)
-- Proyección Anual: ${proyeccion_anual:,.2f}
+- Ventas YTD Actual ({dias_transcurridos} días): ${ventas_ytd_actual:,.2f}
+- Ventas YTD Año Anterior (mismos {dias_transcurridos} días): ${ventas_ytd_anterior:,.2f}
+- Crecimiento YTD vs mismo período: {crecimiento_pct:+.1f}%
+- Progreso en el año: {dias_transcurridos}/365 días ({dias_transcurridos/365*100:.1f}%)
+- Proyección Anual (a este ritmo): ${proyeccion_anual:,.2f}
 
 LÍNEA DE NEGOCIO TOP:
 - {linea_top}: ${ventas_linea_top:,.2f}

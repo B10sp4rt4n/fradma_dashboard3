@@ -135,13 +135,22 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
         ticket_promedio = total_ventas / total_ops if total_ops > 0 else 0
         
         # Ventas del mes actual vs mes anterior (si hay columna fecha)
-        if "fecha" in df_ventas.columns:
-            mes_actual = df_ventas["fecha"].max().replace(day=1) if not df_ventas.empty else datetime.now().replace(day=1)
-            mes_anterior = (mes_actual - timedelta(days=1)).replace(day=1)
+        # CORREGIDO: Comparar PERIODOS EQUIVALENTES (mismo número de días)
+        if "fecha" in df_ventas.columns and not df_ventas.empty:
+            fecha_max = df_ventas["fecha"].max()
+            mes_actual = fecha_max.replace(day=1)
+            dia_actual_en_mes = fecha_max.day  # Cuántos días del mes actual tenemos
             
+            # Mes anterior: mismo rango de días (ej: si estamos en día 10, comparar días 1-10)
+            mes_anterior = (mes_actual - timedelta(days=1)).replace(day=1)
+            fecha_limite_mes_anterior = mes_anterior.replace(day=min(dia_actual_en_mes, (mes_actual - timedelta(days=1)).day))
+            
+            # Ventas del mes actual (del día 1 hasta fecha_max)
             ventas_mes_actual = df_ventas[df_ventas["fecha"] >= mes_actual]["valor_usd"].sum()
+            
+            # Ventas del mes anterior (del día 1 hasta mismo día que estamos ahora)
             ventas_mes_anterior = df_ventas[
-                (df_ventas["fecha"] >= mes_anterior) & (df_ventas["fecha"] < mes_actual)
+                (df_ventas["fecha"] >= mes_anterior) & (df_ventas["fecha"] <= fecha_limite_mes_anterior)
             ]["valor_usd"].sum()
             
             variacion_ventas = ((ventas_mes_actual - ventas_mes_anterior) / ventas_mes_anterior * 100) if ventas_mes_anterior > 0 else 0
@@ -150,8 +159,8 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
             variacion_ventas = 0
         
         st.metric("💵 Total Ventas", formato_moneda(total_ventas), 
-                 delta=f"{variacion_ventas:+.1f}% vs mes anterior" if "fecha" in df_ventas.columns else None,
-                 help="📐 Suma total de ventas en USD del período seleccionado")
+                 delta=f"{variacion_ventas:+.1f}% vs mismo periodo mes anterior" if "fecha" in df_ventas.columns and not df_ventas.empty else None,
+                 help="📐 Suma total de ventas en USD del período seleccionado. Compara periodos equivalentes (mismo número de días).")
         
         col_v1, col_v2 = st.columns(2)
         col_v1.metric("🛍️ Operaciones", f"{total_ops:,}",

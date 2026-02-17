@@ -605,19 +605,20 @@ def run(df, habilitar_ia=False, openai_api_key=None):
     
     comparar_año = st.sidebar.checkbox("📊 Comparar con año anterior", value=True)
     
-    # Modo de comparación
-    modo_comparacion = "año_completo"
+    # Modo de comparación (DEFAULT: ytd_equiv para evitar comparaciones injustas)
+    modo_comparacion = "ytd_equivalente"
     if comparar_año:
         st.sidebar.markdown("**Tipo de Comparación:**")
         modo_comparacion = st.sidebar.radio(
             "Selecciona el modo",
-            options=["año_completo", "ytd_equivalente"],
+            options=["ytd_equivalente", "año_completo"],
             format_func=lambda x: {
                 "año_completo": "📅 Año Anterior Completo vs YTD Actual",
                 "ytd_equivalente": "📆 YTD Equivalente (mismo período)"
             }[x],
-            help="Año Completo: Compara YTD actual con todo el año anterior | YTD Equivalente: Compara mismo período en ambos años",
-            label_visibility="collapsed"
+            help="YTD Equivalente (recomendado): Compara mismo período en ambos años | Año Completo: Compara YTD actual con todo el año anterior",
+            label_visibility="collapsed",
+            index=0  # ytd_equivalente como opción seleccionada por defecto
         )
     
     año_anterior = None

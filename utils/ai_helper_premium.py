@@ -169,9 +169,14 @@ def generar_insights_ejecutivo_consolidado(
         contexto = f"""
 Analiza la salud integral del negocio y genera insights ESTRATÉGICOS de alto nivel:
 
+⚠️ IMPORTANTE - CONTEXTO DE LA DATA:
+- El "crecimiento" mostrado compara PERIODOS EQUIVALENTES (ej: enero 2026 vs enero 2025)
+- Si el crecimiento parece bajo/negativo, considera que NO es vs el año completo anterior
+- Evita alarmas de "catástrofe" si es simplemente inicio de año vs año completo
+
 VENTAS:
-- Total del período: ${total_ventas_periodo:,.2f}
-- Crecimiento: {crecimiento_ventas_pct:+.1f}%
+- Total del período actual: ${total_ventas_periodo:,.2f}
+- Crecimiento vs mismo período año anterior: {crecimiento_ventas_pct:+.1f}%
 - Línea top en ventas: {top_linea_ventas}
 
 CUENTAS POR COBRAR:
