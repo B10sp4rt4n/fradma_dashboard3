@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from utils.formatos import formato_moneda, formato_porcentaje, formato_compacto
 from utils.logger import configurar_logger
 from utils.ai_helper_premium import generar_insights_ejecutivo_consolidado
+from utils.cxc_helper import calcular_score_salud
 
 # Configurar logger para este módulo
 logger = configurar_logger("reporte_ejecutivo", nivel="INFO")
@@ -279,6 +280,9 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
         # Compatibilidad: algunas secciones/ediciones pueden referirse a `pct_vencida`
         pct_vencida = pct_vencida_total
         pct_alto_riesgo = (alto_riesgo / total_adeudado * 100) if total_adeudado > 0 else 0
+        
+        # Calcular score de salud CxC para análisis posterior
+        score_salud_cxc = calcular_score_salud(pct_vigente, pct_critica)
         
         st.metric("💰 Cartera Total", formato_moneda(total_adeudado),
                  delta=f"{pct_vigente:.1f}% Vigente" if pct_vigente > 0 else "0% Vigente",
@@ -833,7 +837,7 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
         with st.spinner("🔄 Generando diagnóstico integral del negocio con IA..."):
             try:
                 # Preparar datos para el análisis consolidado
-                total_ventas_periodo = ventas_totales
+                total_ventas_periodo = total_ventas
                 
                 # Calcular línea top en ventas
                 if len(df_ventas) > 0 and 'linea_de_negocio' in df_ventas.columns:
@@ -861,7 +865,7 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
                     total_ventas_periodo=total_ventas_periodo,
                     crecimiento_ventas_pct=variacion_ventas,
                     score_salud_cxc=score_salud_cxc,
-                    pct_morosidad=pct_morosidad,
+                    pct_morosidad=pct_vencida_total,
                     top_linea_ventas=top_linea_ventas,
                     top_linea_cxc_critica=top_linea_cxc_critica,
                     casos_urgentes_cxc=casos_urgentes,
