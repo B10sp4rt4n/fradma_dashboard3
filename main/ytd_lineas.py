@@ -753,7 +753,8 @@ def run(df):
         st.metric(
             label="💰 Total YTD",
             value=f"${metricas['total_ytd']:,.0f}",
-            delta=delta_label
+            delta=delta_label,
+            help="📐 Suma de ventas acumuladas desde inicio de año hasta la fecha de corte seleccionada"
         )
     
     with col2:
@@ -768,21 +769,24 @@ def run(df):
         st.metric(
             label=label_crec,
             value=f"{crecimiento_pct:+.1f}%" if año_anterior else "N/A",
-            delta_color="off"
+            delta_color="off",
+            help="📐 Fórmula: ((YTD Actual - YTD Anterior) / YTD Anterior) × 100%"
         )
     
     with col3:
         st.metric(
             label="🏆 Línea #1",
             value=linea_top,
-            delta=f"${ventas_linea_top:,.0f}"
+            delta=f"${ventas_linea_top:,.0f}",
+            help="📐 Línea de negocio con mayor monto de ventas YTD"
         )
     
     with col4:
         st.metric(
             label="📅 Días Transcurridos",
             value=f"{metricas['dias_transcurridos']} días",
-            delta=f"de 365 ({metricas['dias_transcurridos']/365*100:.1f}%)"
+            delta=f"de 365 ({metricas['dias_transcurridos']/365*100:.1f}%)",
+            help="📐 Días entre el 1 de enero y la fecha de corte (o última venta del año histórico)"
         )
     
     st.markdown("---")
@@ -1150,6 +1154,71 @@ def run(df):
             )
         else:
             st.info("💡 No hay información de productos disponible")
+    
+    st.markdown("---")
+    
+    # =====================================================================
+    # PANEL DE DEFINICIONES Y FÓRMULAS
+    # =====================================================================
+    with st.expander("📐 **Definiciones y Fórmulas de KPIs**"):
+        st.markdown("""
+        ### 📊 Métricas Principales
+        
+        **💰 Total YTD (Year-To-Date)**
+        - **Definición**: Suma acumulada de ventas desde el 1 de enero hasta la fecha de corte
+        - **Fórmula**: `Σ Ventas (desde 01/Ene hasta fecha actual)`
+        - **Uso**: Medir desempeño acumulado del año en curso
+        
+        **📈 Crecimiento YTD**
+        - **Definición**: Variación porcentual respecto al mismo período del año anterior
+        - **Fórmula**: `((YTD Actual - YTD Anterior) / YTD Anterior) × 100%`
+        - **Interpretación**: 
+          - ✅ Positivo = Crecimiento en ventas
+          - ❌ Negativo = Decrecimiento
+        
+        **🏆 Línea #1**
+        - **Definición**: Línea de negocio con mayor contribución a ventas YTD
+        - **Cálculo**: `MAX(Σ Ventas por Línea)`
+        - **Importancia**: Identificar drivers principales de ingresos
+        
+        **📅 Días Transcurridos**
+        - **Definición**: Días desde inicio de año hasta fecha de corte
+        - **Fórmula**: `(Fecha Corte - 01/Ene) + 1 día`
+        - **Nota**: Para años históricos usa la última fecha de venta registrada
+        
+        **🎯 Proyección Anual**
+        - **Definición**: Estimación de ventas totales al cierre del año
+        - **Fórmula**: `(Total YTD / Días Transcurridos) × 365 días`
+        - **Supuesto**: Ritmo de ventas constante (promedio diario)
+        
+        **📊 Participación de Mercado (% Share)**
+        - **Definición**: Contribución de cada línea al total de ventas
+        - **Fórmula**: `(Ventas Línea / Total YTD) × 100%`
+        - **Suma**: Siempre = 100%
+        
+        ---
+        
+        ### 🔄 Modos de Comparación
+        
+        **YTD vs YTD** (Recomendado)
+        - Compara mismo período de días en ambos años
+        - Ejemplo: Primeros 48 días de 2025 vs primeros 48 días de 2024
+        - ✅ Comparación justa y balanceada
+        
+        **YTD vs Año Completo**
+        - Compara YTD actual contra año anterior completo (365 días)
+        - ⚠️ Útil para ver progreso hacia meta anual
+        - No recomendado para calcular crecimiento real
+        
+        ---
+        
+        ### 📝 Notas Importantes
+        
+        - **Crecimiento desde $0**: Cuando año anterior = 0, el crecimiento se escala relativamente (cap 999%)
+        - **Años Históricos**: Días transcurridos se calculan hasta la última venta registrada, no hasta hoy
+        - **Colores en Gráficos**: Asignados consistentemente por línea de negocio
+        - **Filtros**: Aplicables por vendedor, cliente o línea de negocio
+        """)
     
     st.markdown("---")
     

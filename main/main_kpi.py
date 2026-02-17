@@ -32,8 +32,10 @@ def run():
     total_operaciones = len(df)
 
     col1, col2 = st.columns(2)
-    col1.metric("Total Ventas USD", f"${total_usd:,.2f}")
-    col2.metric("Operaciones", f"{total_operaciones:,}")
+    col1.metric("Total Ventas USD", f"${total_usd:,.2f}",
+                help="📐 Suma total de ventas en USD de todos los registros en el archivo")
+    col2.metric("Operaciones", f"{total_operaciones:,}",
+                help="📐 Número total de transacciones/facturas registradas")
 
     # === Filtros opcionales ===
     st.subheader("Filtros por Ejecutivo")
@@ -68,8 +70,10 @@ def run():
     operaciones_filtradas = len(df)
 
     colf1, colf2 = st.columns(2)
-    colf1.metric("Ventas USD (filtro)", f"${total_filtrado_usd:,.2f}")
-    colf2.metric("Operaciones (filtro)", f"{operaciones_filtradas:,}")
+    colf1.metric("Ventas USD (filtro)", f"${total_filtrado_usd:,.2f}",
+                 help="📐 Total de ventas después de aplicar filtros de ejecutivo/línea")
+    colf2.metric("Operaciones (filtro)", f"{operaciones_filtradas:,}",
+                 help="📐 Número de transacciones que cumplen con los filtros aplicados")
 
     # Tabla de detalle
     st.subheader("Detalle de ventas")
@@ -322,4 +326,115 @@ def run():
                 tooltip=["anio:N", "agente:N", "ventas_moneda:N", "operaciones:Q"]
             ).properties(title="Ventas por Vendedor en el Tiempo")
 
-        st.altair_chart(chart, width='stretch')
+        st.altair_chart(chart, width='stretch')    
+    st.markdown("---")
+    
+    # =====================================================================
+    # PANEL DE DEFINICIONES Y FÓRMULAS
+    # =====================================================================
+    with st.expander("📐 **Definiciones y Fórmulas de KPIs**"):
+        st.markdown("""
+        ### 📊 Métricas Generales
+        
+        **💰 Total Ventas USD**
+        - **Definición**: Suma de todas las ventas registradas en dólares
+        - **Fórmula**: `Σ valor_usd (todos los registros)`
+        - **Fuente**: Columna `ventas_usd`, `ventas_usd_con_iva` o `valor_usd`
+        
+        **📦 Operaciones**
+        - **Definición**: Número total de transacciones/facturas
+        - **Fórmula**: `COUNT(registros)`
+        - **Nota**: Cada fila = 1 operación
+        
+        **🎯 Ventas USD (filtro)**
+        - **Definición**: Total de ventas después de aplicar filtros de ejecutivo/línea
+        - **Uso**: Analizar desempeño segmentado
+        
+        ---
+        
+        ### ⚡ Métricas de Eficiencia por Vendedor
+        
+        **💵 Ticket Promedio**
+        - **Definición**: Valor promedio de cada transacción
+        - **Fórmula**: `Total Ventas USD / Número de Operaciones`
+        - **Interpretación**: Mayor ticket = Ventas de mayor valor unitario
+        - **Ejemplo**: $100,000 en 10 ops = $10,000 de ticket promedio
+        
+        **📊 Total Ventas**
+        - **Definición**: Suma acumulada de ventas del vendedor
+        - **Fórmula**: `Σ ventas_usd (por agente)`
+        
+        **🔢 Operaciones**
+        - **Definición**: Cantidad de transacciones generadas
+        - **Fórmula**: `COUNT(ventas por agente)`
+        
+        ---
+        
+        ### 🎯 Clasificación de Vendedores
+        
+        Los vendedores se clasifican en 4 cuadrantes según su desempeño:
+        
+        **🏆 Alto Volumen (Alto Ticket)**
+        - **Criterios**: 
+          - Ticket promedio ≥ Mediana general
+          - Total de operaciones ≥ Mediana general
+        - **Perfil**: Vendedores élite - cierran grandes ventas con frecuencia
+        - **Estrategia**: Retener, reconocer, replicar best practices
+        
+        **📈 Alto Volumen (Bajo Ticket)**
+        - **Criterios**:
+          - Ticket promedio < Mediana general
+          - Total de operaciones ≥ Mediana general
+        - **Perfil**: Generadores de volumen - muchas ventas pequeñas
+        - **Oportunidad**: Capacitación en upselling/cross-selling para aumentar ticket
+        
+        **💎 Alto Ticket (Eficiencia)**
+        - **Criterios**:
+          - Ticket promedio ≥ Mediana general
+          - Total de operaciones < Mediana general
+        - **Perfil**: Especialistas - cierran deals grandes ocasionalmente
+        - **Oportunidad**: Aumentar frecuencia/volumen de operaciones
+        - **Nota**: Antes llamado "Alta Eficiencia" (se renombró por claridad)
+        
+        **🔄 En Desarrollo**
+        - **Criterios**:
+          - Ticket promedio < Mediana general
+          - Total de operaciones < Mediana general
+        - **Perfil**: Vendedores junior o con bajo desempeño
+        - **Acción**: Capacitación intensiva, seguimiento cercano, planes de mejora
+        
+        ---
+        
+        ### 📈 Visualizaciones
+        
+        **Pie Chart (Gráfico de Pastel)**
+        - Muestra participación porcentual de cada vendedor en ventas totales
+        - Útil para identificar distribución de contribución
+        
+        **Barras Horizontales**
+        - Compara ventas absolutas entre vendedores
+        - Ordenado de mayor a menor
+        
+        **Ventas por Año**
+        - Evolución temporal de ventas por vendedor
+        - Útil para identificar tendencias y estacionalidad
+        
+        ---
+        
+        ### 🏅 Ranking de Vendedores
+        
+        **Criterio**: Ordenado por Total Ventas USD (descendente)
+        - **Ranking #1**: Vendedor con mayor monto acumulado
+        - **Columnas**:
+          - Total USD: Suma de ventas
+          - Operaciones: Cantidad de transacciones
+        
+        ---
+        
+        ### 📝 Notas Importantes
+        
+        - **Columna de agente**: Se detecta automáticamente como `agente`, `vendedor` o `ejecutivo`
+        - **Filtros**: Aplicables por ejecutivo y línea de producto
+        - **Años**: Se extrae automáticamente de la columna `fecha`
+        - **Mediana vs Promedio**: Se usa mediana para evitar distorsión por outliers
+        """)

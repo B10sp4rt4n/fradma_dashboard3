@@ -260,7 +260,8 @@ def run(archivo):
             
             # Métricas auxiliares
             st.metric("Liquidez (Vigente)", f"{pct_vigente:.1f}%", 
-                     delta=f"{pct_vigente - 70:.1f}pp vs objetivo 70%")
+                     delta=f"{pct_vigente - 70:.1f}pp vs objetivo 70%",
+                     help="📐 Porcentaje de cartera que aún no ha vencido (días restantes > 0). Objetivo: ≥ 70%")
         
         with col_health2:
             st.write("### 📊 Indicadores Clave de Desempeño (KPIs)")
@@ -1508,18 +1509,24 @@ Departamento de Crédito y Cobranza
         col_resumen1, col_resumen2, col_resumen3 = st.columns(3)
         
         with col_resumen1:
-            st.metric("💰 Cartera Total", f"${total_adeudado:,.2f}")
-            st.metric("📊 Calificación", f"{score_salud:.0f}/100")
+            st.metric("💰 Cartera Total", f"${total_adeudado:,.2f}",
+                     help="📐 Suma de todos los saldos adeudados pendientes de pago")
+            st.metric("📊 Calificación", f"{score_salud:.0f}/100",
+                     help="📐 Score ponderado: 40% liquidez + 30% concentración + 30% morosidad")
             st.caption(f"**{score_status}**")
         
         with col_resumen2:
-            st.metric("✅ Vigente", f"{pct_vigente:.1f}%")
-            st.metric("⚠️ Vencida", f"{pct_alto_riesgo:.1f}%")
+            st.metric("✅ Vigente", f"{pct_vigente:.1f}%",
+                     help="📐 Cartera que aún no ha vencido / Cartera total")
+            st.metric("⚠️ Vencida", f"{pct_alto_riesgo:.1f}%",
+                     help="📐 Cartera vencida > 90 días / Cartera total (Alto riesgo)")
             st.caption("Alto riesgo >90 días")
         
         with col_resumen3:
-            st.metric("🎯 Casos Urgentes", urgente_count)
-            st.metric("📈 Morosidad", f"{indice_morosidad:.1f}%")
+            st.metric("🎯 Casos Urgentes", urgente_count,
+                     help="📐 Número de facturas vencidas > 90 días que requieren atención inmediata")
+            st.metric("📈 Morosidad", f"{indice_morosidad:.1f}%",
+                     help="📐 Porcentaje total de cartera vencida (sin importar días). Objetivo: < 15%")
             st.caption(f"${vencida:,.2f}")
         
         st.write("**Observaciones Clave:**")
@@ -1534,6 +1541,129 @@ Departamento de Crédito y Cobranza
         
         if alertas:
             st.write(f"- **{len(alertas)} alertas** activas requieren atención")
+        
+        st.markdown("---")
+        
+        # =====================================================================
+        # PANEL DE DEFINICIONES Y FÓRMULAS CXC
+        # =====================================================================
+        with st.expander("📐 **Definiciones y Fórmulas de KPIs CxC**"):
+            st.markdown("""
+            ### 📊 Métricas de Salud de Cartera
+            
+            **💰 Cartera Total (Total Adeudado)**
+            - **Definición**: Suma de todos los saldos pendientes de cobro
+            - **Fórmula**: `Σ Saldo Adeudado (todas las facturas)`
+            - **Incluye**: Facturas vigentes + vencidas
+            
+            **📊 Calificación de Salud (Score 0-100)**
+            - **Definición**: Indicador compuesto de la salud financiera de la cartera
+            - **Fórmula**: `(40% × Liquidez) + (30% × Concentración) + (30% × Morosidad)`
+            - **Escala**: 
+              - 🟢 80-100 = Excelente
+              - 🟡 60-79 = Buena
+              - 🟠 40-59 = Regular
+              - 🔴 <40 = Crítica
+            
+            **✅ Cartera Vigente (%)**
+            - **Definición**: Porcentaje de deuda que aún no ha vencido
+            - **Fórmula**: `(Saldo con días_restantes > 0 / Total Adeudado) × 100%`
+            - **Objetivo**: ≥ 70%
+            - **Interpretación**: Mayor % = Mejor salud de cobro
+            
+            **⚠️ Cartera Vencida - Alto Riesgo (%)**
+            - **Definición**: Porcentaje de deuda vencida hace más de 90 días
+            - **Fórmula**: `(Saldo con días_vencido > 90 / Total Adeudado) × 100%`
+            - **Meta**: < 10%
+            - **Criticidad**: Alto - requiere acción legal/cobranza intensiva
+            
+            **📈 Índice de Morosidad (%)**
+            - **Definición**: Porcentaje total de cartera vencida (cualquier cantidad de días)
+            - **Fórmula**: `(Saldo total vencido / Total Adeudado) × 100%`
+            - **Objetivo**: < 15%
+            - **Nota**: Incluye vencimientos de 1-30, 31-60, 61-90, >90 días
+            
+            **🎯 Casos Urgentes**
+            - **Definición**: Número de facturas individuales con vencimiento > 90 días
+            - **Fórmula**: `COUNT(Facturas con días_vencido > 90)`
+            - **Acción Requerida**: Gestión inmediata de cobranza o provisión
+            
+            **🏢 Concentración de Riesgo (%)**
+            - **Definición**: Porcentaje de cartera concentrado en el top 3 de deudores
+            - **Fórmula**: `(Σ Saldo Top 3 Clientes / Total Adeudado) × 100%`
+            - **Umbrales**:
+              - 🟢 <30% = Riesgo bajo (diversificado)
+              - 🟡 30-50% = Riesgo moderado
+              - 🔴 >50% = Riesgo alto (concentrado)
+            
+            ---
+            
+            ### 📅 Clasificación por Antigüedad
+            
+            **Vigente (0 días)**
+            - Sin vencimiento, aún dentro del plazo de crédito
+            - **Fórmula días restantes**: `días_de_credito - días_desde_factura`
+            
+            **Vencida 1-30 días**
+            - Vencimiento reciente, gestión preventiva
+            - Riesgo: Bajo
+            
+            **Vencida 31-60 días**
+            - Requiere seguimiento activo
+            - Riesgo: Medio
+            
+            **Vencida 61-90 días**
+            - Requiere escalamiento a gerencia
+            - Riesgo: Alto
+            
+            **Vencida >90 días**
+            - Requiere acción legal o provisión
+            - Riesgo: Crítico
+            
+            ---
+            
+            ### 🎨 Escala de Eficiencia en Ventas (para vendedores)
+            
+            **Score de Eficiencia Individual (%)** 
+            - **Fórmula**: `(30% × Liquidez) + (30% × Morosidad⁻¹) + (40% × Recuperación)`
+            - **Donde**:
+              - Liquidez = % vigente del vendedor
+              - Morosidad⁻¹ = 100% - % morosidad
+              - Recuperación = % cobrado vs total asignado
+            
+            **Clasificación**:
+            - 🟢 80-100% = Alta eficiencia
+            - 🟡 60-79% = Media eficiencia
+            - 🟠 40-59% = Baja eficiencia
+            - 🔴 <40% = Muy baja eficiencia
+            
+            ---
+            
+            ### ⚠️ Métricas NO Disponibles
+            
+            **DSO (Days Sales Outstanding)**
+            - ❌ No calculable sin datos de ventas diarias
+            - Requiere: Ventas a crédito del período
+            - Fórmula teórica: `(CxC Promedio / Ventas Crédito) × Días`
+            
+            **Rotación de CxC**
+            - ❌ No calculable sin datos de ventas
+            - Requiere: Ventas anuales a crédito
+            - Fórmula teórica: `Ventas Crédito Anual / CxC Promedio`
+            
+            **Provisión de Incobrables**
+            - ℹ️ Requiere política contable definida
+            - Estándar: 1-5% de cartera vencida >90 días
+            
+            ---
+            
+            ### 📝 Notas Importantes
+            
+            - **Columna de identificación**: Se usa "Cliente" (columna F) para agrupar deudores
+            - **Cálculo de días**: Basado en columna `dias_restantes` (positivo = vigente) o `dias_vencido` (negativo = overdue)
+            - **Moneda**: Todos los montos en USD (convertidos según TC si aplica)
+            - **Actualización**: Datos actualizados a la fecha de última factura registrada
+            """)
         
         st.info("📌 Este reporte se basa en la columna 'Cliente' (F) para identificar deudores.")
 

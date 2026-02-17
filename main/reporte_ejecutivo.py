@@ -146,11 +146,14 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc):
             variacion_ventas = 0
         
         st.metric("💵 Total Ventas", formato_moneda(total_ventas), 
-                 delta=f"{variacion_ventas:+.1f}% vs mes anterior" if "fecha" in df_ventas.columns else None)
+                 delta=f"{variacion_ventas:+.1f}% vs mes anterior" if "fecha" in df_ventas.columns else None,
+                 help="📐 Suma total de ventas en USD del período seleccionado")
         
         col_v1, col_v2 = st.columns(2)
-        col_v1.metric("🛒 Operaciones", f"{total_ops:,}")
-        col_v2.metric("🎯 Ticket Promedio", formato_moneda(ticket_promedio))
+        col_v1.metric("🛍️ Operaciones", f"{total_ops:,}",
+                      help="📐 Número total de transacciones/facturas")
+        col_v2.metric("🎯 Ticket Promedio", formato_moneda(ticket_promedio),
+                      help="📐 Fórmula: Total Ventas / Número de Operaciones")
     
     with col_cxc:
         st.markdown("#### 🏦 Cuentas por Cobrar")
@@ -275,7 +278,8 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc):
         pct_alto_riesgo = (alto_riesgo / total_adeudado * 100) if total_adeudado > 0 else 0
         
         st.metric("💰 Cartera Total", formato_moneda(total_adeudado),
-                 delta=f"{pct_vigente:.1f}% Vigente" if pct_vigente > 0 else "0% Vigente")
+                 delta=f"{pct_vigente:.1f}% Vigente" if pct_vigente > 0 else "0% Vigente",
+                 help="📐 Suma de todos los saldos pendientes de cobro (vigentes + vencidos)")
         
         col_c1, col_c2 = st.columns(2)
         
@@ -319,16 +323,19 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc):
     # KPI 2: Índice de Liquidez
     indice_liquidez = (vigente + ventas_mes_actual) / (critica + 1) if critica > 0 else 10
     color_liquidez = "🟢" if indice_liquidez >= 3 else "🟡" if indice_liquidez >= 1.5 else "🔴"
-    col2.metric(f"{color_liquidez} Índice Liquidez", f"{indice_liquidez:.1f}x")
+    col2.metric(f"{color_liquidez} Índice Liquidez", f"{indice_liquidez:.1f}x",
+                help="📐 Fórmula: (Cartera Vigente + Ventas Mes) / Cartera Crítica. Meta: ≥ 3x")
     
     # KPI 3: Eficiencia Operativa
     eficiencia_ops = (total_ventas / total_adeudado) if total_adeudado > 0 else 0
     color_eficiencia = "🟢" if eficiencia_ops >= 2 else "🟡" if eficiencia_ops >= 1 else "🔴"
-    col3.metric(f"{color_eficiencia} Ventas/Cartera", f"{eficiencia_ops:.2f}x")
+    col3.metric(f"{color_eficiencia} Ventas/Cartera", f"{eficiencia_ops:.2f}x",
+                help="📐 Fórmula: Total Ventas / Cartera Total. Meta: ≥ 2x (ventas cubren 2x la cartera)")
     
     # KPI 4: Clientes Únicos
     clientes_unicos = df_ventas["cliente"].nunique() if "cliente" in df_ventas.columns else 0
-    col4.metric("👥 Clientes Activos", f"{clientes_unicos:,}")
+    col4.metric("👥 Clientes Activos", f"{clientes_unicos:,}",
+                help="📐 Número de clientes únicos con operaciones en el período")
     
     # =====================================================================
     # SECCIÓN 3: ALERTAS CRÍTICAS
@@ -655,6 +662,162 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc):
         st.markdown("- Revisar políticas de crédito")
         st.markdown("- Optimizar procesos de aprobación")
         st.markdown("- Monitorear KPIs semanalmente")
+    
+    st.markdown("---")
+    
+    # =====================================================================
+    # PANEL DE DEFINICIONES Y FÓRMULAS EJECUTIVAS
+    # =====================================================================
+    with st.expander("📐 **Definiciones y Fórmulas de KPIs Ejecutivos**"):
+        st.markdown("""
+        ### 📊 Resumen Ejecutivo - Métricas Principales
+        
+        **💵 Total Ventas**
+        - **Definición**: Suma total de ingresos en USD del período
+        - **Fórmula**: `Σ valor_usd (todas las transacciones)`
+        - **Delta**: Variación % respecto al mes anterior
+        
+        **🛒 Operaciones**
+        - **Definición**: Cantidad de transacciones procesadas
+        - **Fórmula**: `COUNT(facturas/ventas)`
+        
+        **🎯 Ticket Promedio**
+        - **Definición**: Valor promedio por transacción
+        - **Fórmula**: `Total Ventas / Número de Operaciones`
+        - **Uso**: Medir calidad del ticket de venta
+        
+        **💰 Cartera Total**
+        - **Definición**: Saldos totales pendientes de cobro
+        - **Fórmula**: `Σ saldo_adeudado (vigente + vencido)`
+        - **Delta**: % de cartera vigente
+        
+        **⚠️ Vencida 0-30 días**
+        - Deuda con 1-30 días de atraso
+        - Riesgo: Bajo - Gestión preventiva
+        
+        **🔴 Crítica (>30 días)**
+        - Deuda con más de 30 días de atraso
+        - Riesgo: Alto - Requiere acción inmediata
+        
+        ---
+        
+        ### 🎯 KPIs Consolidados (Semáforos)
+        
+        **🟢 Salud General (Score 0-100)**
+        - **Definición**: Indicador compuesto de desempeño global
+        - **Fórmula**: `(50% × Score Ventas) + (50% × Score Cartera)`
+        - **Donde**:
+          - Score Ventas = min(100, (Ventas Mes / $1M) × 50)
+          - Score Cartera = (70% × % Vigente) + (30% × (100 - 2×% Crítica))
+        - **Escala**:
+          - 🟢 80-100 = Excelente
+          - 🟡 60-79 = Buena
+          - 🟠 40-59 = Regular
+          - 🔴 <40 = Crítica
+        - **Nota**: Diferente al "Score de Salud CxC" que SOLO mide cartera
+        
+        **💧 Índice de Liquidez**
+        - **Definición**: Capacidad de cubrir deuda crítica con recursos disponibles
+        - **Fórmula**: `(Cartera Vigente + Ventas Mes Actual) / Cartera Crítica`
+        - **Meta**: ≥ 3x (recursos disponibles cubren 3 veces la deuda crítica)
+        - **Interpretación**:
+          - 🟢 ≥3x = Liquidez saludable
+          - 🟡 1.5-3x = Liquidez aceptable
+          - 🔴 <1.5x = Riesgo de liquidez
+        
+        **⚙️ Ventas/Cartera (Eficiencia Operativa)**
+        - **Definición**: Relación entre ingresos y cuentas por cobrar
+        - **Fórmula**: `Total Ventas / Cartera Total`
+        - **Meta**: ≥ 2x (ventas son el doble de la cartera pendiente)
+        - **Interpretación**:
+          - 🟢 ≥2x = Eficiencia alta - ventas superan ampliamente cartera
+          - 🟡 1-2x = Eficiencia moderada
+          - 🔴 <1x = Ineficiencia - cartera > ventas (riesgo de flujo)
+        
+        **👥 Clientes Activos**
+        - **Definición**: Número de clientes únicos con operaciones
+        - **Fórmula**: `COUNT(DISTINCT cliente)`
+        - **Uso**: Medir diversificación y alcance de mercado
+        
+        ---
+        
+        ### 🚨 Sistema de Alertas Críticas
+        
+        Las alertas se generan automáticamente según umbrales:
+        
+        **🔴 CRÍTICO**
+        - Morosidad > 30%
+        - Alto riesgo (>90 días) > 15%
+        - Concentración en top cliente > 40%
+        - Ventas cayendo > 20%
+        
+        **🟠 ALERTA**
+        - Morosidad > 20%
+        - Alto riesgo > 10%
+        - Concentración > 30%
+        - Ventas cayendo > 10%
+        
+        **🟡 ADVERTENCIA**
+        - Morosidad > 15%
+        - Concentración > 25%
+        - Ventas estancadas
+        
+        ---
+        
+        ### 📈 Tendencias y Evolución
+        
+        **Tendencia de Ventas (12 meses)**
+        - Muestra evolución mensual de ingresos
+        - Detecta estacionalidad y patrones
+        
+        **Distribución de Cartera por Edad**
+        - Segmenta deuda por antigüedad:
+          - Vigente (0 días)
+          - 1-30 días
+          - 31-60 días
+          - 61-90 días
+          - >90 días (crítico)
+        
+        **Top 10 Clientes por Deuda**
+        - Identifica concentración de riesgo
+        - Permite priorizar gestión de cobranza
+        
+        ---
+        
+        ### 💡 Acciones Recomendadas (por área)
+        
+        **📞 Cobranza**
+        - Si Alto Riesgo > 10%: Contactar clientes >90 días + proceso legal
+        - Si Alto Riesgo ≤ 10%: Seguimiento preventivo + mantener políticas
+        
+        **💼 Ventas**
+        - Si Variación < 0%: Revisar pipeline + capacitar equipo
+        - Si Variación > 0%: Escalar estrategias exitosas + ampliar líneas
+        
+        **📊 Gestión**
+        - Monitoreo semanal de indicadores
+        - Ajuste de políticas según alertas activas
+        
+        ---
+        
+        ### 📊 Diferencias entre Scores
+        
+        | Métrica | Alcance | Componentes | Ubicación |
+        |---------|---------|-------------|-----------|
+        | **Salud General** | Global (ventas + cartera) | 50% ventas + 50% cartera | Reporte Ejecutivo |
+        | **Score de Salud CxC** | Solo cartera | 40% liquidez + 30% concentración + 30% morosidad | Dashboard CxC |
+        | **Calificación** | Solo cartera | Mismo que Score CxC | Resumen CxC |
+        
+        ---
+        
+        ### 📝 Notas Importantes
+        
+        - **Período de análisis**: Por defecto último año completo
+        - **Moneda**: USD (con conversión automática si aplica)
+        - **Actualización**: Basado en última fecha de datos disponibles
+        - **Filtros aplicables**: Vendedor, línea, cliente, rango de fechas
+        - **Exclusiones**: Facturas con estatus "Pagado" se excluyen de cartera
+        """)
     
     st.markdown("---")
     st.caption(f"📅 Reporte generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
