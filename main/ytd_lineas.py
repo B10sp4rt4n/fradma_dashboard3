@@ -786,7 +786,7 @@ def run(df):
             label="📅 Días Transcurridos",
             value=f"{metricas['dias_transcurridos']} días",
             delta=f"de 365 ({metricas['dias_transcurridos']/365*100:.1f}%)",
-            help="📐 Días entre el 1 de enero y la fecha de corte (o última venta del año histórico)"
+            help="📐 Días corridos del año que se han completado. Si analizas 2026: días desde 01/Ene/2026 hasta hoy. Si analizas 2024: días desde 01/Ene/2024 hasta la última venta registrada ese año. Se usa para calcular la proyección anual (estimado de ventas a 365 días)."
         )
     
     st.markdown("---")
@@ -1182,14 +1182,18 @@ def run(df):
         - **Importancia**: Identificar drivers principales de ingresos
         
         **📅 Días Transcurridos**
-        - **Definición**: Días desde inicio de año hasta fecha de corte
+        - **Definición**: Días corridos del año que se han completado
         - **Fórmula**: `(Fecha Corte - 01/Ene) + 1 día`
-        - **Nota**: Para años históricos usa la última fecha de venta registrada
+        - **Ejemplos**:
+          - Si estamos analizando 2026 y hoy es 17/Feb: son 48 días
+          - Si analizas 2024 completo: son los días hasta la última venta de 2024 (ej: 31/Dic = 366 días)
+        - **Uso**: Base para calcular proyección anual (extrapolar ventas a 365 días)
         
         **🎯 Proyección Anual**
         - **Definición**: Estimación de ventas totales al cierre del año
         - **Fórmula**: `(Total YTD / Días Transcurridos) × 365 días`
         - **Supuesto**: Ritmo de ventas constante (promedio diario)
+        - **Ejemplo**: Si en 48 días vendiste $100K, proyección = ($100K ÷ 48) × 365 = $760.4K
         
         **📊 Participación de Mercado (% Share)**
         - **Definición**: Contribución de cada línea al total de ventas
@@ -1215,7 +1219,10 @@ def run(df):
         ### 📝 Notas Importantes
         
         - **Crecimiento desde $0**: Cuando año anterior = 0, el crecimiento se escala relativamente (cap 999%)
-        - **Años Históricos**: Días transcurridos se calculan hasta la última venta registrada, no hasta hoy
+        - **Días del Año Actual vs Histórico**: 
+          - Año actual (ej: 2026): Días desde 01/Ene hasta HOY (fecha real del sistema)
+          - Años pasados (ej: 2024): Días desde 01/Ene hasta la ÚLTIMA VENTA registrada ese año
+          - Ejemplo: Si la última venta de 2024 fue el 31/Dic, días transcurridos = 366
         - **Colores en Gráficos**: Asignados consistentemente por línea de negocio
         - **Filtros**: Aplicables por vendedor, cliente o línea de negocio
         """)
