@@ -17,7 +17,11 @@ def aplicar_filtro_fechas(
     mostrar_widget: bool = True
 ) -> pd.DataFrame:
     """
-    Aplica filtro de rango de fechas al DataFrame (sin dropdown).
+    Aplica filtro de fechas al DataFrame con múltiples modos de comparación.
+    
+    Modos disponibles:
+    - Rango de fechas: Selección directa de fecha inicio y fin
+    - Periodo vs periodo: Comparación entre periodos (mensual, trimestral, anual)
     
     Args:
         df: DataFrame a filtrar
@@ -55,48 +59,279 @@ def aplicar_filtro_fechas(
     
     st.sidebar.write(f"**Rango disponible:** {fecha_min} a {fecha_max}")
     
-    # Selector de rango de fechas simple y directo
-    col1, col2 = st.sidebar.columns(2)
+    # ═══════════════════════════════════════════════════════════
+    # SELECTOR DE MODO DE FILTRADO
+    # ═══════════════════════════════════════════════════════════
     
-    with col1:
-        fecha_inicio = st.sidebar.date_input(
-            "📅 Fecha desde",
-            value=fecha_min,
-            min_value=fecha_min,
-            max_value=fecha_max,
-            key="filtro_fecha_inicio",
-            help="Selecciona la fecha de inicio del rango"
+    modo_filtro = st.sidebar.radio(
+        "🎯 Modo de Filtrado",
+        options=["rango_fechas", "periodo_vs_periodo"],
+        format_func=lambda x: {
+            "rango_fechas": "📅 Rango de Fechas",
+            "periodo_vs_periodo": "📊 Periodo vs Periodo"
+        }[x],
+        key="modo_filtro_fechas",
+        help="Rango: Selecciona fechas específicas | Periodo: Compara meses, trimestres o años",
+        horizontal=True
+    )
+    
+    st.sidebar.markdown("---")
+    
+    # ═══════════════════════════════════════════════════════════
+    # MODO 1: RANGO DE FECHAS (fecha vs fecha)
+    # ═══════════════════════════════════════════════════════════
+    
+    if modo_filtro == "rango_fechas":
+        col1, col2 = st.sidebar.columns(2)
+        
+        with col1:
+            fecha_inicio = st.date_input(
+                "📅 Desde",
+                value=fecha_min,
+                min_value=fecha_min,
+                max_value=fecha_max,
+                key="filtro_fecha_inicio",
+                help="Fecha de inicio del rango"
+            )
+        
+        with col2:
+            fecha_fin = st.date_input(
+                "📅 Hasta",
+                value=fecha_max,
+                min_value=fecha_min,
+                max_value=fecha_max,
+                key="filtro_fecha_fin",
+                help="Fecha final del rango"
+            )
+        
+        # Validar que fecha_inicio <= fecha_fin
+        if fecha_inicio > fecha_fin:
+            st.sidebar.error("⚠️ La fecha inicio debe ser ≤ fecha fin")
+            return df
+        
+        # Aplicar filtro
+        mask = (df_con_fechas[columna_fecha].dt.date >= fecha_inicio) & \
+               (df_con_fechas[columna_fecha].dt.date <= fecha_fin)
+        
+        df_filtrado = df_con_fechas[mask].copy()
+        
+        # Mostrar resumen
+        registros = len(df_filtrado)
+        total = len(df_con_fechas)
+        dias = (fecha_fin - fecha_inicio).days + 1
+        
+        st.sidebar.info(f"📊 {registros:,} registros ({dias} días)")
+    
+    # ═══════════════════════════════════════════════════════════
+    # MODO 2: PERIODO VS PERIODO
+    # ═══════════════════════════════════════════════════════════
+    
+    elif modo_filtro == "periodo_vs_periodo":
+        
+        # Extraer años, meses, trimestres disponibles
+        df_con_fechas['_año'] = df_con_fechas[columna_fecha].dt.year
+        df_con_fechas['_mes'] = df_con_fechas[columna_fecha].dt.month
+        df_con_fechas['_trimestre'] = df_con_fechas[columna_fecha].dt.quarter
+        
+        años_disponibles = sorted(df_con_fechas['_año'].unique())
+        
+        # Selector de granularidad
+        granularidad = st.sidebar.selectbox(
+            "📊 Granularidad",
+            options=["mensual", "trimestral", "anual"],
+            format_func=lambda x: {
+                "mensual": "📆 Mensual",
+                "trimestral": "📈 Trimestral",
+                "anual": "📅 Anual"
+            }[x],
+            key="granularidad_periodo",
+            help="Selecciona la granularidad de los periodos a comparar"
         )
+        
+        st.sidebar.markdown("---")
+        
+        # ────────────────────────────────────────────────────────
+        # GRANULARIDAD MENSUAL
+        # ────────────────────────────────────────────────────────
+        if granularidad == "mensual":
+            meses_nombres = {
+                1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril",
+                5: "Mayo", 6: "Junio", 7: "Julio", 8: "Agosto",
+                9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"
+            }
+            
+            col1, col2 = st.sidebar.columns(2)
+            
+            with col1:
+                st.markdown("**📅 Periodo 1**")
+                año_1 = st.selectbox(
+                    "Año",
+                    options=años_disponibles,
+                    index=len(años_disponibles)-1 if len(años_disponibles) > 0 else 0,
+                    key="periodo1_año",
+                    label_visibility="collapsed"
+                )
+                
+                meses_año_1 = sorted(df_con_fechas[df_con_fechas['_año'] == año_1]['_mes'].unique())
+                mes_1 = st.selectbox(
+                    "Mes",
+                    options=meses_año_1,
+                    format_func=lambda x: meses_nombres[x],
+                    key="periodo1_mes",
+                    label_visibility="collapsed"
+                )
+            
+            with col2:
+                st.markdown("**📅 Periodo 2**")
+                año_2 = st.selectbox(
+                    "Año",
+                    options=años_disponibles,
+                    index=max(0, len(años_disponibles)-2) if len(años_disponibles) > 1 else 0,
+                    key="periodo2_año",
+                    label_visibility="collapsed"
+                )
+                
+                meses_año_2 = sorted(df_con_fechas[df_con_fechas['_año'] == año_2]['_mes'].unique())
+                mes_2 = st.selectbox(
+                    "Mes",
+                    options=meses_año_2,
+                    format_func=lambda x: meses_nombres[x],
+                    key="periodo2_mes",
+                    label_visibility="collapsed"
+                )
+            
+            # Filtrar por ambos periodos
+            mask = (
+                ((df_con_fechas['_año'] == año_1) & (df_con_fechas['_mes'] == mes_1)) |
+                ((df_con_fechas['_año'] == año_2) & (df_con_fechas['_mes'] == mes_2))
+            )
+            
+            df_filtrado = df_con_fechas[mask].copy()
+            
+            # Resumen
+            p1_count = len(df_con_fechas[(df_con_fechas['_año'] == año_1) & (df_con_fechas['_mes'] == mes_1)])
+            p2_count = len(df_con_fechas[(df_con_fechas['_año'] == año_2) & (df_con_fechas['_mes'] == mes_2)])
+            
+            st.sidebar.success(
+                f"✅ Comparando:\n"
+                f"• {meses_nombres[mes_1]} {año_1}: {p1_count:,} reg.\n"
+                f"• {meses_nombres[mes_2]} {año_2}: {p2_count:,} reg."
+            )
+        
+        # ────────────────────────────────────────────────────────
+        # GRANULARIDAD TRIMESTRAL
+        # ────────────────────────────────────────────────────────
+        elif granularidad == "trimestral":
+            trimestres_nombres = {
+                1: "Q1 (Ene-Mar)",
+                2: "Q2 (Abr-Jun)",
+                3: "Q3 (Jul-Sep)",
+                4: "Q4 (Oct-Dic)"
+            }
+            
+            col1, col2 = st.sidebar.columns(2)
+            
+            with col1:
+                st.markdown("**📅 Periodo 1**")
+                año_1 = st.selectbox(
+                    "Año",
+                    options=años_disponibles,
+                    index=len(años_disponibles)-1 if len(años_disponibles) > 0 else 0,
+                    key="periodo1_año_trim",
+                    label_visibility="collapsed"
+                )
+                
+                trimestres_año_1 = sorted(df_con_fechas[df_con_fechas['_año'] == año_1]['_trimestre'].unique())
+                trim_1 = st.selectbox(
+                    "Trimestre",
+                    options=trimestres_año_1,
+                    format_func=lambda x: trimestres_nombres[x],
+                    key="periodo1_trim",
+                    label_visibility="collapsed"
+                )
+            
+            with col2:
+                st.markdown("**📅 Periodo 2**")
+                año_2 = st.selectbox(
+                    "Año",
+                    options=años_disponibles,
+                    index=max(0, len(años_disponibles)-2) if len(años_disponibles) > 1 else 0,
+                    key="periodo2_año_trim",
+                    label_visibility="collapsed"
+                )
+                
+                trimestres_año_2 = sorted(df_con_fechas[df_con_fechas['_año'] == año_2]['_trimestre'].unique())
+                trim_2 = st.selectbox(
+                    "Trimestre",
+                    options=trimestres_año_2,
+                    format_func=lambda x: trimestres_nombres[x],
+                    key="periodo2_trim",
+                    label_visibility="collapsed"
+                )
+            
+            # Filtrar por ambos trimestres
+            mask = (
+                ((df_con_fechas['_año'] == año_1) & (df_con_fechas['_trimestre'] == trim_1)) |
+                ((df_con_fechas['_año'] == año_2) & (df_con_fechas['_trimestre'] == trim_2))
+            )
+            
+            df_filtrado = df_con_fechas[mask].copy()
+            
+            # Resumen
+            p1_count = len(df_con_fechas[(df_con_fechas['_año'] == año_1) & (df_con_fechas['_trimestre'] == trim_1)])
+            p2_count = len(df_con_fechas[(df_con_fechas['_año'] == año_2) & (df_con_fechas['_trimestre'] == trim_2)])
+            
+            st.sidebar.success(
+                f"✅ Comparando:\n"
+                f"• {trimestres_nombres[trim_1]} {año_1}: {p1_count:,} reg.\n"
+                f"• {trimestres_nombres[trim_2]} {año_2}: {p2_count:,} reg."
+            )
+        
+        # ────────────────────────────────────────────────────────
+        # GRANULARIDAD ANUAL
+        # ────────────────────────────────────────────────────────
+        elif granularidad == "anual":
+            col1, col2 = st.sidebar.columns(2)
+            
+            with col1:
+                st.markdown("**📅 Año 1**")
+                año_1 = st.selectbox(
+                    "Selecciona año 1",
+                    options=años_disponibles,
+                    index=len(años_disponibles)-1 if len(años_disponibles) > 0 else 0,
+                    key="periodo1_año_anual",
+                    label_visibility="collapsed"
+                )
+            
+            with col2:
+                st.markdown("**📅 Año 2**")
+                año_2 = st.selectbox(
+                    "Selecciona año 2",
+                    options=años_disponibles,
+                    index=max(0, len(años_disponibles)-2) if len(años_disponibles) > 1 else 0,
+                    key="periodo2_año_anual",
+                    label_visibility="collapsed"
+                )
+            
+            # Filtrar por ambos años
+            mask = (df_con_fechas['_año'] == año_1) | (df_con_fechas['_año'] == año_2)
+            df_filtrado = df_con_fechas[mask].copy()
+            
+            # Resumen
+            p1_count = len(df_con_fechas[df_con_fechas['_año'] == año_1])
+            p2_count = len(df_con_fechas[df_con_fechas['_año'] == año_2])
+            
+            st.sidebar.success(
+                f"✅ Comparando:\n"
+                f"• Año {año_1}: {p1_count:,} registros\n"
+                f"• Año {año_2}: {p2_count:,} registros"
+            )
+        
+        # Limpiar columnas temporales
+        df_filtrado = df_filtrado.drop(columns=['_año', '_mes', '_trimestre'], errors='ignore')
     
-    with col2:
-        fecha_fin = st.sidebar.date_input(
-            "📅 Fecha hasta",
-            value=fecha_max,
-            min_value=fecha_min,
-            max_value=fecha_max,
-            key="filtro_fecha_fin",
-            help="Selecciona la fecha final del rango"
-        )
-    
-    # Validar que fecha_inicio <= fecha_fin
-    if fecha_inicio > fecha_fin:
-        st.sidebar.error("⚠️ La fecha de inicio debe ser anterior o igual a la fecha final")
-        return df
-    
-    # Aplicar filtro
-    mask = (df_con_fechas[columna_fecha].dt.date >= fecha_inicio) & \
-           (df_con_fechas[columna_fecha].dt.date <= fecha_fin)
-    
-    df_filtrado = df_con_fechas[mask].copy()
-    
-    # Mostrar información del filtro
-    registros_filtrados = len(df_filtrado)
-    registros_totales = len(df_con_fechas)
-    
-    if registros_filtrados < registros_totales:
-        st.sidebar.success(f"📊 Filtrando {registros_filtrados:,} de {registros_totales:,} registros")
     else:
-        st.sidebar.info(f"📊 Mostrando todos los {registros_totales:,} registros")
+        df_filtrado = df_con_fechas
     
     return df_filtrado
 
