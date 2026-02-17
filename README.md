@@ -1,9 +1,10 @@
 # Fradma Dashboard
 
 [![Tests](https://github.com/B10sp4rt4n/fradma_dashboard3/actions/workflows/ci.yml/badge.svg)](https://github.com/B10sp4rt4n/fradma_dashboard3/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/badge/coverage-91%25-brightgreen)](./htmlcov/index.html)
+[![Coverage](https://img.shields.io/badge/coverage-48%25-orange)](./htmlcov/index.html)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)](https://www.python.org/)
-[![Code Quality](https://img.shields.io/badge/score-94%2F100-brightgreen)](./.github-analysis.md)
+[![Tests Passing](https://img.shields.io/badge/tests-84%20passing-brightgreen)](#)
+[![Code Style](https://img.shields.io/badge/code%20style-clean-blue)](#)
 
 Plataforma de análisis comercial para FRADMA. Esta aplicación construida en Streamlit permite visualizar KPIs de ventas, comparar años históricos y evaluar el desempeño por línea de producto de manera interactiva.
 
