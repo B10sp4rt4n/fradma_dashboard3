@@ -5,6 +5,7 @@ Centraliza la lógica de limpieza y normalización de DataFrames.
 
 import pandas as pd
 from typing import Tuple, Optional
+from unidecode import unidecode
 from .logger import configurar_logger
 from .constantes import (
     COLUMNAS_SALDO_CANDIDATAS,
@@ -13,6 +14,48 @@ from .constantes import (
 )
 
 logger = configurar_logger("data_normalizer", nivel="INFO")
+
+
+def normalizar_columnas(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Normaliza nombres de columnas de un DataFrame.
+    
+    Convierte columnas a lowercase, reemplaza espacios por guiones bajos,
+    elimina acentos y maneja duplicados agregando sufijos numéricos.
+    
+    Args:
+        df: DataFrame con columnas a normalizar
+        
+    Returns:
+        DataFrame con columnas normalizadas
+        
+    Example:
+        df = normalizar_columnas(df)
+        # "Saldo Adeudado" → "saldo_adeudado"
+        # "Cliente", "Cliente" → "cliente", "cliente_2"
+    """
+    df = df.copy()
+    nuevas_columnas = []
+    contador = {}
+    
+    for col in df.columns:
+        # Normalizar: lowercase, strip, reemplazar espacios, eliminar acentos
+        col_str = str(col).lower().strip().replace(" ", "_")
+        col_str = unidecode(col_str)
+        
+        # Manejar duplicados
+        if col_str in contador:
+            contador[col_str] += 1
+            col_str = f"{col_str}_{contador[col_str]}"
+        else:
+            contador[col_str] = 1
+            
+        nuevas_columnas.append(col_str)
+    
+    df.columns = nuevas_columnas
+    logger.debug(f"Columnas normalizadas: {len(nuevas_columnas)} columnas procesadas")
+    
+    return df
 
 
 def normalizar_columna_saldo(df: pd.DataFrame, col_destino: str = 'saldo_adeudado') -> pd.DataFrame:

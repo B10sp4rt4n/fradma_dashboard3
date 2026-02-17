@@ -20,6 +20,7 @@ from utils.cxc_helper import (
     calcular_score_salud, clasificar_score_salud, clasificar_antiguedad,
     obtener_semaforo_morosidad, obtener_semaforo_riesgo, obtener_semaforo_concentracion
 )
+from utils.data_normalizer import normalizar_columnas
 from utils.ai_helper import generar_resumen_ejecutivo_cxc, validar_api_key
 from utils.logger import configurar_logger
 
@@ -35,23 +36,6 @@ MAPA_COLORES_RIESGO = {
     '91-180 días': '#F44336',     # Rojo - Crítico
     '>180 días': '#B71C1C'        # Rojo oscuro - Crítico severo
 }
-
-def normalizar_columnas(df):
-    nuevas_columnas = []
-    contador = {}
-    for col in df.columns:
-        col_str = str(col).lower().strip().replace(" ", "_")
-        col_str = unidecode(col_str)
-        
-        if col_str in contador:
-            contador[col_str] += 1
-            col_str = f"{col_str}_{contador[col_str]}"
-        else:
-            contador[col_str] = 1
-            
-        nuevas_columnas.append(col_str)
-    df.columns = nuevas_columnas
-    return df
 
 def run(archivo, habilitar_ia=False, openai_api_key=None):
     """
