@@ -388,7 +388,7 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
     # Combina desempeño de ventas + salud de cartera
     # (Diferente al "Score de Salud" de CxC que solo mide cartera)
     score_ventas = min(100, (ventas_mes_actual / 1_000_000) * 50) if "fecha" in df_ventas.columns else 50
-    score_cartera = pct_vigente * 0.7 + max(0, 100 - pct_critica * 2) * 0.3
+    score_cartera = calcular_score_salud(pct_vigente, pct_critica)  # Usar función de referencia en lugar de duplicar fórmula
     score_general = (score_ventas + score_cartera) / 2
     
     color_score = "🟢" if score_general >= 80 else "🟡" if score_general >= 60 else "🟠" if score_general >= 40 else "🔴"
@@ -783,7 +783,7 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
         - **Fórmula**: `(50% × Score Ventas) + (50% × Score Cartera)`
         - **Donde**:
           - Score Ventas = min(100, (Ventas Mes / $1M) × 50)
-          - Score Cartera = (70% × % Vigente) + (30% × (100 - 2×% Crítica))
+          - Score Cartera = calcular_score_salud(% Vigente, % Crítica)
         - **Escala**:
           - 🟢 80-100 = Excelente
           - 🟡 60-79 = Buena
