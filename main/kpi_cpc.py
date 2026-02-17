@@ -1533,16 +1533,16 @@ Departamento de Crédito y Cobranza
         with col_resumen2:
             st.metric("✅ Vigente", f"{pct_vigente:.1f}%",
                      help="📐 Cartera que aún no ha vencido / Cartera total")
-            st.metric("⚠️ Vencida", f"{pct_alto_riesgo:.1f}%",
-                     help="📐 Cartera vencida > 90 días / Cartera total (Alto riesgo)")
-            st.caption("Alto riesgo >90 días")
+            st.metric("⚠️ Vencida", f"{pct_vencida_total:.1f}%",
+                     help="📐 Cartera total vencida (con atraso, sin importar días) / Cartera total")
+            st.caption(f"${vencida:,.2f} en atraso")
         
         with col_resumen3:
             st.metric("🎯 Casos Urgentes", urgente_count,
                      help="📐 Número de facturas vencidas > 90 días que requieren atención inmediata")
-            st.metric("📈 Morosidad", f"{indice_morosidad:.1f}%",
-                     help="📐 Porcentaje total de cartera vencida (sin importar días). Objetivo: < 15%")
-            st.caption(f"${vencida:,.2f}")
+            st.metric("� Alto Riesgo >90d", f"{pct_alto_riesgo:.1f}%",
+                     help="📐 Cartera con más de 90 días vencida / Cartera total (subconjunto crítico de vencida)")
+            st.caption(f"${deuda_alto_riesgo:,.2f}")
         
         st.write("**Observaciones Clave:**")
         st.write(f"- Fradma tiene **${total_adeudado:,.2f}** en cuentas por cobrar")
