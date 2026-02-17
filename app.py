@@ -313,6 +313,95 @@ def detectar_y_cargar_archivo(archivo_bytes, archivo_nombre, hoja_seleccionada=N
     return df
 
 # =====================================================================
+# FUNCIÓN: VALIDAR COLUMNAS REQUERIDAS
+# =====================================================================
+
+def validar_columnas_requeridas(df):
+    """
+    Valida columnas del DataFrame contra las requeridas por cada módulo.
+    Retorna un diccionario con el checklist de validación.
+    NO MODIFICA el DataFrame ni rompe la lógica existente.
+    """
+    columnas_df = set(df.columns)
+    
+    # Definición de columnas por módulo (según código actual)
+    modulos = {
+        "YTD por Líneas": {
+            "obligatorias": ["fecha", "linea_de_negocio"],
+            "variantes_obligatorias": {
+                "ventas_usd": ["ventas_usd", "ventas_usd_con_iva", "ventas_usd_sin_iva", "importe", "valor_usd", "monto_usd", "total_usd", "valor", "venta"]
+            },
+            "recomendadas": ["vendedor", "agente", "ejecutivo", "cliente"],
+            "opcionales": ["producto"]
+        },
+        "Dashboard CxC": {
+            "obligatorias": ["cliente", "fecha"],
+            "variantes_obligatorias": {
+                "saldo_adeudado": ["saldo_adeudado", "saldo", "saldo_adeudo", "adeudo", "importe", "monto", "total", "saldo_usd"]
+            },
+            "recomendadas": ["factura", "dias_de_credito", "estatus", "vendedor"],
+            "opcionales": ["linea_de_negocio", "dias_restantes", "dias_vencido", "fecha_de_pago"]
+        },
+        "KPIs Generales": {
+            "obligatorias": ["fecha"],
+            "variantes_obligatorias": {
+                "valor_usd": ["valor_usd", "ventas_usd", "ventas_usd_con_iva", "importe"]
+            },
+            "recomendadas": ["agente", "vendedor", "ejecutivo"],
+            "opcionales": ["linea_producto", "linea_de_negocio"]
+        },
+        "Reporte Ejecutivo": {
+            "obligatorias": ["fecha"],
+            "variantes_obligatorias": {
+                "valor_usd": ["valor_usd", "ventas_usd", "ventas_usd_con_iva"],
+                "saldo_adeudado": ["saldo_adeudado", "saldo", "adeudo"]
+            },
+            "recomendadas": ["cliente"],
+            "opcionales": ["vendedor", "dias_vencido"]
+        }
+    }
+    
+    resultados = {}
+    
+    for modulo, cols in modulos.items():
+        checklist = []
+        
+        # Validar obligatorias
+        for col in cols.get("obligatorias", []):
+            if col in columnas_df:
+                checklist.append({"col": col, "status": "✅", "tipo": "Obligatoria", "mensaje": "Encontrada"})
+            else:
+                checklist.append({"col": col, "status": "❌", "tipo": "Obligatoria", "mensaje": "NO ENCONTRADA - El módulo puede fallar"})
+        
+        # Validar obligatorias con variantes
+        for col_principal, variantes in cols.get("variantes_obligatorias", {}).items():
+            encontrada = next((v for v in variantes if v in columnas_df), None)
+            if encontrada:
+                if encontrada == col_principal:
+                    checklist.append({"col": col_principal, "status": "✅", "tipo": "Obligatoria", "mensaje": "Encontrada"})
+                else:
+                    checklist.append({"col": col_principal, "status": "⚠️", "tipo": "Obligatoria", "mensaje": f"Encontrada como '{encontrada}'"})
+            else:
+                checklist.append({"col": col_principal, "status": "❌", "tipo": "Obligatoria", "mensaje": f"NO ENCONTRADA - Buscar: {', '.join(variantes[:3])}"})
+        
+        # Validar recomendadas
+        for col in cols.get("recomendadas", []):
+            if col in columnas_df:
+                checklist.append({"col": col, "status": "✅", "tipo": "Recomendada", "mensaje": "Encontrada"})
+            else:
+                # No mostrar recomendadas faltantes para no saturar
+                pass
+        
+        # Validar opcionales encontradas (no mostrar las que faltan)
+        for col in cols.get("opcionales", []):
+            if col in columnas_df:
+                checklist.append({"col": col, "status": "✅", "tipo": "Opcional", "mensaje": "Disponible"})
+        
+        resultados[modulo] = checklist
+    
+    return resultados
+
+# =====================================================================
 # SIDEBAR: CARGA DE ARCHIVO Y FILTROS GLOBALES
 # =====================================================================
 
@@ -417,6 +506,61 @@ if archivo:
 
         st.session_state["df"] = df
         st.session_state["archivo_path"] = archivo
+        
+        # ================================================================
+        # CHECKLIST DE VALIDACIÓN DE COLUMNAS
+        # ================================================================
+        validacion = validar_columnas_requeridas(df)
+        
+        # Contar problemas
+        total_errores = sum(1 for modulo in validacion.values() for item in modulo if item["status"] == "❌")
+        total_advertencias = sum(1 for modulo in validacion.values() for item in modulo if item["status"] == "⚠️")
+        
+        # Mostrar resumen en sidebar
+        if total_errores > 0:
+            st.sidebar.error(f"🚨 {total_errores} columna(s) crítica(s) faltante(s)")
+        elif total_advertencias > 0:
+            st.sidebar.warning(f"⚠️ {total_advertencias} columna(s) con variantes detectadas")
+        else:
+            st.sidebar.success("✅ Todas las columnas críticas encontradas")
+        
+        # Panel expandible con detalle de validación
+        with st.sidebar.expander("📋 Validación de Columnas Requeridas"):
+            st.markdown("**Referencia:** Ver [docs/COLUMNAS_REQUERIDAS.md](docs/COLUMNAS_REQUERIDAS.md)")
+            st.markdown("---")
+            
+            for modulo, checklist in validacion.items():
+                if not checklist:  # Saltar si está vacío
+                    continue
+                
+                # Contar por tipo de status en este módulo
+                errores_modulo = sum(1 for item in checklist if item["status"] == "❌")
+                advertencias_modulo = sum(1 for item in checklist if item["status"] == "⚠️")
+                ok_modulo = sum(1 for item in checklist if item["status"] == "✅")
+                
+                # Color del header según problemas
+                if errores_modulo > 0:
+                    st.markdown(f"### 🔴 {modulo}")
+                elif advertencias_modulo > 0:
+                    st.markdown(f"### 🟡 {modulo}")
+                else:
+                    st.markdown(f"### 🟢 {modulo}")
+                
+                st.caption(f"✅ {ok_modulo} | ⚠️ {advertencias_modulo} | ❌ {errores_modulo}")
+                
+                # Mostrar solo problemas o todo si en modo debug
+                items_a_mostrar = checklist if modo_debug else [item for item in checklist if item["status"] != "✅"]
+                
+                if items_a_mostrar:
+                    for item in items_a_mostrar:
+                        st.markdown(f"{item['status']} **{item['col']}** ({item['tipo']}): {item['mensaje']}")
+                elif not modo_debug:
+                    st.success("Todas las columnas críticas presentes")
+                
+                st.markdown("---")
+            
+            # Link a documentación
+            st.info("💡 **Tip:** Consulta la guía completa en `docs/COLUMNAS_REQUERIDAS.md` para mapear desde CRMs/ERPs")
 
         if "año" in df.columns:
             años_disponibles = sorted(df["año"].dropna().unique())
