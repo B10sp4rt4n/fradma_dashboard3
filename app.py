@@ -1,10 +1,15 @@
 import streamlit as st
 import pandas as pd
 import os
+from dotenv import load_dotenv
 from unidecode import unidecode
+
+# Cargar variables de entorno desde .env (si existe)
+load_dotenv()
 from main import main_kpi, main_comparativo, heatmap_ventas
 from main import kpi_cpc, reporte_ejecutivo, ytd_lineas, reporte_consolidado
 from utils.data_cleaner import limpiar_columnas_texto, detectar_duplicados_similares
+from utils.data_normalizer import normalizar_columnas
 from utils.logger import configurar_logger, log_dataframe_info, log_execution_time
 from utils.filters import (
     aplicar_filtro_fechas, 
@@ -148,16 +153,6 @@ with col_title:
     st.caption("Sistema Integrado de Análisis de Ventas y CxC")
 
 st.markdown("---")
-
-# 🛠️ FUNCIÓN: Normalización de encabezados
-def normalizar_columnas(df):
-    nuevas_columnas = []
-    for col in df.columns:
-        col_str = str(col).lower().strip().replace(" ", "_")
-        col_str = unidecode(col_str)
-        nuevas_columnas.append(col_str)
-    df.columns = nuevas_columnas
-    return df
 
 # 🛠️ FUNCIÓN: Obtener hojas disponibles de un Excel
 def obtener_hojas_excel(archivo_bytes):
@@ -804,8 +799,9 @@ if "openai_api_key" not in st.session_state:
 if "passkey_valido" not in st.session_state:
     st.session_state["passkey_valido"] = False
 
-# Passkey definido (puede ser cambiado o guardado en variables de entorno)
-PASSKEY_PREMIUM = "fradma2026"
+# Passkey desde variable de entorno con fallback a valor por defecto (desarrollo)
+# PRODUCCIÓN: Definir PASSKEY_PREMIUM en .env o variable de entorno del servidor
+PASSKEY_PREMIUM = os.getenv("PASSKEY_PREMIUM", "fradma2026")
 
 # Widget para ingresar passkey
 passkey_input = st.sidebar.text_input(

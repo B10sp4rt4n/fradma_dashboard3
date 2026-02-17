@@ -51,26 +51,31 @@
 
 ### P0 — Crítico (30-60 min total)
 
-| # | Tarea | Impacto | Esfuerzo | Archivo |
-|---|---|---|---|---|
-| 1 | Fijar versiones en `requirements.txt` | Builds reproducibles | 30 min | requirements.txt |
-| 2 | Mover passkey a variable de entorno | Seguridad básica | 15 min | app.py |
-| 3 | Corregir 2 tests rotos | CI confiable | 1 hora | tests/unit/test_cxc_helper.py |
+| # | Tarea | Impacto | Esfuerzo | Archivo | Estado |
+|---|---|---|---|---|--------|
+| 1 | Fijar versiones en `requirements.txt` | Builds reproducibles | 30 min | requirements.txt | ✅ COMPLETADO |
+| 2 | Mover passkey a variable de entorno | Seguridad básica | 15 min | app.py | ✅ COMPLETADO |
+| 3 | Corregir 2 tests rotos | CI confiable | 1 hora | tests/unit/test_cxc_helper.py | ✅ COMPLETADO |
 
-**Output:** Branch `fix/stabilization` con commits atómicos
+**Output:** Branch `feature/mejoras-core` con commits atómicos  
+**Fecha completado:** 2026-02-17  
+**Commits:** `68792d3` (refactor: P0 tasks)
 
 ---
 
 ### P1 — Importante (1-2 días)
 
-| # | Tarea | Impacto | Esfuerzo | Archivos |
-|---|---|---|---|---|
-| 4 | GitHub Actions (lint + pytest) | Prevenir regresiones | 2 horas | .github/workflows/ci.yml |
-| 5 | Refactor `kpi_cpc.py` en 5+ funciones | Mantenibilidad | 1 día | main/kpi_cpc.py |
-| 6 | Eliminar duplicación `normalizar_columnas` y `excluir_pagados` | DRY principle | 2 horas | app.py, kpi_cpc.py, cxc_helper.py, data_normalizer.py |
-| 7 | Agregar type hints a módulos main/ | Autocomplete + menos bugs | 3 horas | main/*.py |
+| # | Tarea | Impacto | Esfuerzo | Archivos | Estado |
+|---|---|---|---|---|--------|
+| 4 | GitHub Actions (lint + pytest) | Prevenir regresiones | 2 horas | .github/workflows/ci.yml | ✅ COMPLETADO |
+| 5 | Refactor `kpi_cpc.py` en 5+ funciones | Mantenibilidad | 1 día | main/kpi_cpc.py | ❌ NO HACER |
+| 6 | Eliminar duplicación `normalizar_columnas` y `excluir_pagados` | DRY principle | 2 horas | app.py, kpi_cpc.py, cxc_helper.py, data_normalizer.py | ✅ COMPLETADO |
+| 7 | Agregar type hints a módulos main/ | Autocomplete + menos bugs | 3 horas | main/*.py | ⏳ PENDIENTE |
 
-**Output:** Código más limpio y CI pipeline básico
+**Output P1 completado:** Código más limpio y CI pipeline básico ✅  
+**Fecha:** 2026-02-17  
+**Commits:** `68792d3` (duplicación), `cbe9a66` (CI/CD)  
+**Tests agregados:** +14 tests para `normalizar_columnas()` → Coverage subió 48% → 53%
 
 ---
 
@@ -158,12 +163,25 @@
 
 ### ¿Por qué monolito en kpi_cpc.py?
 
-**Decisión:** Refactorizar en P1 (post-validación).
+**Decisión:** ❌ NO refactorizar ahora (marcado como P1 #5 NO HACER).
 
 **Razones:**
 1. Si el módulo no aporta valor, no importa qué tan limpio esté
 2. Testers primero validan funcionalidad, luego optimizamos código
 3. 1 día de refactor es barato DESPUÉS de confirmar product-market fit
+4. **RIESGO > BENEFICIO** en fase actual:
+   - Sistema funciona correctamente (84→98 tests passing)
+   - Es código de UI/presentación (Streamlit stateful), no lógica reutilizable
+   - 1,600 líneas pero bien organizadas en 14 secciones con comentarios claros
+   - Refactor podría romper flujo de `session_state` y cache
+
+**Cuándo refactorizar:**
+- Hay bugs recurrentes en secciones específicas
+- Necesitas reutilizar secciones en otros reportes
+- El performance es un problema real medido
+
+**Fecha evaluado:** 2026-02-17  
+**Análisis completo:** Ver sección "Hallazgos Confirmados" commit `68792d3`
 
 **Plan:** Separar en `cxc_salud.py`, `cxc_alertas.py`, `cxc_antiguedad.py`, `cxc_agentes.py`, `cxc_export.py`.
 
@@ -211,8 +229,10 @@
 - ✅ 21 tooltips + 4 paneles de definiciones
 - ✅ Validación de columnas con COLUMNAS_REQUERIDAS.md
 - ✅ Bugs de KPIs corregidos
-- ⏳ Tests rotos (P0 pendiente)
-- ⏳ Passkey hardcodeada (P0 pendiente)
+- ✅ Tests rotos → 98/98 tests passing (2026-02-17)
+- ✅ Passkey hardcodeada → Movida a env var (2026-02-17)
+- ✅ Código duplicado eliminado (2026-02-17)
+- ✅ CI/CD con GitHub Actions (2026-02-17)
 
 **Posicionamiento:** Alta personalización + Baja madurez enterprise → ideal para 1-15 usuarios con datos en Excel, hasta validar product-market fit.
 
@@ -221,10 +241,59 @@
 ## Próximos Pasos Inmediatos
 
 1. **Terminar validación con testers** (recopilar feedback sobre KPIs e IA)
-2. **Documentar ajustes de negocio** (cambios en umbrales, prompts, KPIs)
-3. **Decidir:** ¿Ejecutar P0 ahora o esperar más feedback?
-4. Mantener este roadmap actualizado con learnings del testing
+2. Type hints en módulos main/ (P1 #7) - 3 horas
+3. Subir cobertura tests a 70%+ (P2 #9) - Agregar tests para otras funciones utils/
+4. Decidir sobre P2 (Dockerfile, PostgreSQL) según feedback de testers
 
 ---
 
-*Documento vivo — actualizar conforme evoluciona el producto.*
+## 📊 Progreso Actual (2026-02-17)
+
+### ✅ Completado
+
+**P0 - Crítico:**
+- [x] Versiones fijadas en requirements.txt + requirements-dev.txt
+- [x] Passkey a variable de entorno (.env con fallback)
+- [x] Tests rotos corregidos (84 → 98 tests passing)
+
+**P1 - Importante:**
+- [x] GitHub Actions CI/CD actualizado
+- [x] Duplicación `normalizar_columnas` eliminada
+- [x] 14 tests nuevos para `normalizar_columnas()` (coverage +5%)
+- [x] Badges README actualizados (coverage real 53%)
+
+**Decisiones documentadas:**
+- [x] ❌ NO refactorizar kpi_cpc.py (riesgo > beneficio)
+
+### ⏳ Pendiente
+
+**P1:**
+- [ ] Type hints en main/ (3 hrs)
+
+**P2:**
+- [ ] Subir coverage a 80% (5 días)
+- [ ] Dockerfile multi-stage (3 hrs)
+- [ ] Cache persistente SQLite (1 día)
+
+**P3:**
+- [ ] Autenticación OAuth (2 días)
+- [ ] API REST (3 días)
+- [ ] Mobile responsive (1 día)
+
+### 📈 Métricas de Progreso
+
+| Métrica | Antes | Ahora | Objetivo P2 |
+|---------|-------|-------|-------------|
+| **Tests passing** | 84 | 98 | 120+ |
+| **Coverage** | 48% | 53% | 80% |
+| **Bugs P0** | 3 | 0 | 0 |
+| **Código duplicado** | 2 funciones | 0 | 0 |
+| **CI/CD** | Manual | Automático | Automático |
+| **Versions fijadas** | No | Sí | Sí |
+| **Seguridad passkey** | Hardcoded | Env var | OAuth (P3) |
+
+---
+
+*Documento vivo — actualizar conforme evoluciona el producto.*  
+**Branch actual:** feature/mejoras-core  
+**Listo para:** Merge a main

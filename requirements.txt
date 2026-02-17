@@ -1,10 +1,39 @@
-streamlit
-pandas
-numpy
-matplotlib
-seaborn
-xlsxwriter
-openpyxl
-unidecode
-plotly
-openai
+# ===================================================================
+# FRADMA DASHBOARD - DEPENDENCIAS CON VERSIONES FIJADAS
+# ===================================================================
+# Generado: 2026-02-17
+# Propósito: Asegurar builds reproducibles y evitar breaking changes
+# ===================================================================
+
+# Framework principal
+streamlit==1.52.1
+
+# Análisis de datos
+pandas==2.3.3
+numpy==2.3.5
+
+# Visualización
+matplotlib==3.10.8
+seaborn==0.13.2
+plotly==6.5.0
+
+# Manipulación de archivos Excel
+openpyxl==3.1.5
+xlsxwriter==3.2.9
+
+# Utilidades
+Unidecode==1.4.0
+
+# IA Premium (OpenAI)
+openai==2.17.0
+
+# Variables de entorno (seguridad)
+python-dotenv==1.0.1
+
+# ===================================================================
+# NOTAS:
+# - Para actualizar: pip install --upgrade <paquete>
+# - Para añadir nuevo: agregarlo aquí con versión fija
+# - Rebuild con: pip install -r requirements.txt --force-reinstall
+# ===================================================================
+
