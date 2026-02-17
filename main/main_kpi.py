@@ -2,8 +2,12 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 import plotly.express as px
+from utils.ai_helper_premium import generar_insights_kpi_vendedores
+from utils.logger import configurar_logger
 
-def run():
+logger = configurar_logger("main_kpi", nivel="INFO")
+
+def run(habilitar_ia=False, openai_api_key=None):
     st.title("📈 KPIs Generales")
 
     if "df" not in st.session_state:
@@ -32,8 +36,10 @@ def run():
     total_operaciones = len(df)
 
     col1, col2 = st.columns(2)
-    col1.metric("Total Ventas USD", f"${total_usd:,.2f}")
-    col2.metric("Operaciones", f"{total_operaciones:,}")
+    col1.metric("Total Ventas USD", f"${total_usd:,.2f}",
+                help="📐 Suma total de ventas en USD de todos los registros en el archivo")
+    col2.metric("Operaciones", f"{total_operaciones:,}",
+                help="📐 Número total de transacciones/facturas registradas")
 
     # === Filtros opcionales ===
     st.subheader("Filtros por Ejecutivo")
@@ -68,8 +74,10 @@ def run():
     operaciones_filtradas = len(df)
 
     colf1, colf2 = st.columns(2)
-    colf1.metric("Ventas USD (filtro)", f"${total_filtrado_usd:,.2f}")
-    colf2.metric("Operaciones (filtro)", f"{operaciones_filtradas:,}")
+    colf1.metric("Ventas USD (filtro)", f"${total_filtrado_usd:,.2f}",
+                 help="📐 Total de ventas después de aplicar filtros de ejecutivo/línea")
+    colf2.metric("Operaciones (filtro)", f"{operaciones_filtradas:,}",
+                 help="📐 Número de transacciones que cumplen con los filtros aplicados")
 
     # Tabla de detalle
     st.subheader("Detalle de ventas")
@@ -108,11 +116,8 @@ def run():
             total_ventas = agente_data["valor_usd"].sum()
             operaciones_count = len(agente_data)
             
-            # Ticket promedio
+            # Ticket promedio (ventas por operación)
             ticket_promedio = total_ventas / operaciones_count if operaciones_count > 0 else 0
-            
-            # Eficiencia (ventas por operación)
-            eficiencia = total_ventas / operaciones_count if operaciones_count > 0 else 0
             
             # Clientes únicos (si existe columna cliente)
             if 'cliente' in agente_data.columns:
@@ -127,7 +132,6 @@ def run():
                 'total_ventas': total_ventas,
                 'operaciones': operaciones_count,
                 'ticket_promedio': ticket_promedio,
-                'eficiencia': eficiencia,
                 'clientes_unicos': clientes_unicos,
                 'ventas_por_cliente': ventas_por_cliente
             })
@@ -135,17 +139,17 @@ def run():
         df_eficiencia_ventas = pd.DataFrame(vendedores_eficiencia)
         
         # Clasificar vendedores
-        # Alto volumen = muchas operaciones, Alta eficiencia = alto ticket promedio
+        # Alto volumen = muchas operaciones, Alto ticket = mayor valor por operación
         mediana_ops = df_eficiencia_ventas['operaciones'].median()
         mediana_ticket = df_eficiencia_ventas['ticket_promedio'].median()
         
         def clasificar_vendedor(row):
             if row['operaciones'] > mediana_ops and row['ticket_promedio'] > mediana_ticket:
-                return "🌟 Elite (Alto Volumen + Alta Eficiencia)"
+                return "🌟 Elite (Alto Volumen + Alto Ticket)"
             elif row['operaciones'] > mediana_ops:
                 return "📊 Alto Volumen"
             elif row['ticket_promedio'] > mediana_ticket:
-                return "💎 Alta Eficiencia"
+                return "💎 Alto Ticket (Eficiencia)"
             else:
                 return "🔄 En Desarrollo"
         
@@ -326,4 +330,224 @@ def run():
                 tooltip=["anio:N", "agente:N", "ventas_moneda:N", "operaciones:Q"]
             ).properties(title="Ventas por Vendedor en el Tiempo")
 
-        st.altair_chart(chart, width='stretch')
+        st.altair_chart(chart, width='stretch')    
+    st.markdown("---")
+    
+    # =====================================================================
+    # ANÁLISIS PREMIUM CON IA - INSIGHTS ESTRATÉGICOS DE EQUIPO DE VENTAS
+    # =====================================================================
+    if habilitar_ia and openai_api_key:
+        st.header("🤖 Insights Estratégicos Premium - Equipo de Ventas")
+        
+        with st.spinner("🔄 Analizando patrones del equipo con IA..."):
+            try:
+                # Preparar datos para el análisis
+                # Primero agrupar por agente (sin año) para tener totales por vendedor
+                resumen_por_vendedor = (
+                    resumen_agente.groupby("agente")
+                    .agg(
+                        total_ventas=("total_ventas", "sum"),
+                        operaciones=("operaciones", "sum")
+                    )
+                    .reset_index()
+                )
+                # Calcular ticket promedio por vendedor
+                resumen_por_vendedor["ticket_promedio"] = (
+                    resumen_por_vendedor["total_ventas"] / resumen_por_vendedor["operaciones"]
+                ).fillna(0)
+                
+                num_vendedores = len(resumen_por_vendedor)
+                ticket_promedio_general = resumen_por_vendedor["total_ventas"].sum() / resumen_por_vendedor["operaciones"].sum()
+                
+                # Calcular eficiencia general (simplificado)
+                eficiencia_general = 100 * (resumen_por_vendedor["total_ventas"].sum() / (resumen_por_vendedor["operaciones"].sum() * ticket_promedio_general))
+                
+                # Top y bottom performers
+                sorted_vendedores = resumen_por_vendedor.sort_values("total_ventas", ascending=False)
+                vendedor_top = sorted_vendedores.iloc[0]["agente"]
+                ventas_vendedor_top = sorted_vendedores.iloc[0]["total_ventas"]
+                vendedor_bottom = sorted_vendedores.iloc[-1]["agente"]
+                ventas_vendedor_bottom = sorted_vendedores.iloc[-1]["total_ventas"]
+                
+                # Concentración top 3
+                top3_ventas = sorted_vendedores.head(3)["total_ventas"].sum()
+                total_ventas = resumen_por_vendedor["total_ventas"].sum()
+                concentracion_top3_pct = (top3_ventas / total_ventas * 100) if total_ventas > 0 else 0
+                
+                # Preparar lista de vendedores
+                datos_vendedores = []
+                for _, row in sorted_vendedores.head(10).iterrows():
+                    datos_vendedores.append({
+                        'nombre': row['agente'],
+                        'ventas': row['total_ventas'],
+                        'ticket_avg': row['ticket_promedio']
+                    })
+                
+                # Generar insights con IA
+                insights = generar_insights_kpi_vendedores(
+                    num_vendedores=num_vendedores,
+                    ticket_promedio_general=ticket_promedio_general,
+                    eficiencia_general=eficiencia_general,
+                    vendedor_top=vendedor_top,
+                    ventas_vendedor_top=ventas_vendedor_top,
+                    vendedor_bottom=vendedor_bottom,
+                    ventas_vendedor_bottom=ventas_vendedor_bottom,
+                    concentracion_top3_pct=concentracion_top3_pct,
+                    api_key=openai_api_key,
+                    datos_vendedores=datos_vendedores
+                )
+                
+                if insights:
+                    # Insight principal
+                    st.info(f"💡 **{insights.get('insight_clave', 'No disponible')}**")
+                    
+                    # Columnas para organizar insights
+                    col_izq, col_der = st.columns(2)
+                    
+                    with col_izq:
+                        st.markdown("### 👥 Recomendaciones de Equipo")
+                        recomendaciones = insights.get('recomendaciones_equipos', [])
+                        if recomendaciones:
+                            for rec in recomendaciones:
+                                st.markdown(f"- {rec}")
+                        else:
+                            st.caption("No disponible")
+                        
+                        st.markdown("")
+                        
+                        st.markdown("### 🎯 Oportunidades de Mejora")
+                        oportunidades = insights.get('oportunidades_mejora', [])
+                        if oportunidades:
+                            for opp in oportunidades:
+                                st.markdown(f"- {opp}")
+                        else:
+                            st.caption("No disponible")
+                    
+                    with col_der:
+                        st.markdown("### ⚠️ Alertas Estratégicas")
+                        alertas = insights.get('alertas_estrategicas', [])
+                        if alertas:
+                            for alerta in alertas:
+                                st.markdown(f"- {alerta}")
+                        else:
+                            st.caption("No hay alertas críticas")
+                    
+                    st.caption("🤖 Análisis generado por OpenAI GPT-4o-mini")
+                else:
+                    st.warning("⚠️ No se pudo generar el análisis de IA")
+                    
+            except Exception as e:
+                st.error(f"❌ Error al generar insights de IA: {str(e)}")
+                logger.error(f"Error en análisis de IA vendedores: {e}", exc_info=True)
+        
+        st.markdown("---")
+    
+    # =====================================================================
+    # PANEL DE DEFINICIONES Y FÓRMULAS
+    # =====================================================================
+    with st.expander("📐 **Definiciones y Fórmulas de KPIs**"):
+        st.markdown("""
+        ### 📊 Métricas Generales
+        
+        **💰 Total Ventas USD**
+        - **Definición**: Suma de todas las ventas registradas en dólares
+        - **Fórmula**: `Σ valor_usd (todos los registros)`
+        - **Fuente**: Columna `ventas_usd`, `ventas_usd_con_iva` o `valor_usd`
+        
+        **📦 Operaciones**
+        - **Definición**: Número total de transacciones/facturas
+        - **Fórmula**: `COUNT(registros)`
+        - **Nota**: Cada fila = 1 operación
+        
+        **🎯 Ventas USD (filtro)**
+        - **Definición**: Total de ventas después de aplicar filtros de ejecutivo/línea
+        - **Uso**: Analizar desempeño segmentado
+        
+        ---
+        
+        ### ⚡ Métricas de Eficiencia por Vendedor
+        
+        **💵 Ticket Promedio**
+        - **Definición**: Valor promedio de cada transacción
+        - **Fórmula**: `Total Ventas USD / Número de Operaciones`
+        - **Interpretación**: Mayor ticket = Ventas de mayor valor unitario
+        - **Ejemplo**: $100,000 en 10 ops = $10,000 de ticket promedio
+        
+        **📊 Total Ventas**
+        - **Definición**: Suma acumulada de ventas del vendedor
+        - **Fórmula**: `Σ ventas_usd (por agente)`
+        
+        **🔢 Operaciones**
+        - **Definición**: Cantidad de transacciones generadas
+        - **Fórmula**: `COUNT(ventas por agente)`
+        
+        ---
+        
+        ### 🎯 Clasificación de Vendedores
+        
+        Los vendedores se clasifican en 4 cuadrantes según su desempeño:
+        
+        **🏆 Alto Volumen (Alto Ticket)**
+        - **Criterios**: 
+          - Ticket promedio ≥ Mediana general
+          - Total de operaciones ≥ Mediana general
+        - **Perfil**: Vendedores élite - cierran grandes ventas con frecuencia
+        - **Estrategia**: Retener, reconocer, replicar best practices
+        
+        **📈 Alto Volumen (Bajo Ticket)**
+        - **Criterios**:
+          - Ticket promedio < Mediana general
+          - Total de operaciones ≥ Mediana general
+        - **Perfil**: Generadores de volumen - muchas ventas pequeñas
+        - **Oportunidad**: Capacitación en upselling/cross-selling para aumentar ticket
+        
+        **💎 Alto Ticket (Eficiencia)**
+        - **Criterios**:
+          - Ticket promedio ≥ Mediana general
+          - Total de operaciones < Mediana general
+        - **Perfil**: Especialistas - cierran deals grandes ocasionalmente
+        - **Oportunidad**: Aumentar frecuencia/volumen de operaciones
+        - **Nota**: Antes llamado "Alta Eficiencia" (se renombró por claridad)
+        
+        **🔄 En Desarrollo**
+        - **Criterios**:
+          - Ticket promedio < Mediana general
+          - Total de operaciones < Mediana general
+        - **Perfil**: Vendedores junior o con bajo desempeño
+        - **Acción**: Capacitación intensiva, seguimiento cercano, planes de mejora
+        
+        ---
+        
+        ### 📈 Visualizaciones
+        
+        **Pie Chart (Gráfico de Pastel)**
+        - Muestra participación porcentual de cada vendedor en ventas totales
+        - Útil para identificar distribución de contribución
+        
+        **Barras Horizontales**
+        - Compara ventas absolutas entre vendedores
+        - Ordenado de mayor a menor
+        
+        **Ventas por Año**
+        - Evolución temporal de ventas por vendedor
+        - Útil para identificar tendencias y estacionalidad
+        
+        ---
+        
+        ### 🏅 Ranking de Vendedores
+        
+        **Criterio**: Ordenado por Total Ventas USD (descendente)
+        - **Ranking #1**: Vendedor con mayor monto acumulado
+        - **Columnas**:
+          - Total USD: Suma de ventas
+          - Operaciones: Cantidad de transacciones
+        
+        ---
+        
+        ### 📝 Notas Importantes
+        
+        - **Columna de agente**: Se detecta automáticamente como `agente`, `vendedor` o `ejecutivo`
+        - **Filtros**: Aplicables por ejecutivo y línea de producto
+        - **Años**: Se extrae automáticamente de la columna `fecha`
+        - **Mediana vs Promedio**: Se usa mediana para evitar distorsión por outliers
+        """)

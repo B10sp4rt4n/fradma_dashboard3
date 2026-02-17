@@ -95,7 +95,20 @@ def calcular_ytd(df, año, fecha_corte=None):
 def calcular_metricas_ytd(df_ytd):
     """Calcula métricas agregadas YTD."""
     total_ytd = df_ytd['ventas_usd'].sum()
-    dias_transcurridos = (datetime.now() - datetime(datetime.now().year, 1, 1)).days + 1
+    
+    # Obtener el año de los datos (no usar año actual si estamos analizando histórico)
+    if len(df_ytd) > 0:
+        año_datos = df_ytd['fecha'].max().year
+        inicio_año = datetime(año_datos, 1, 1)
+        # Si es año actual, usar fecha actual; si es histórico, usar 31 dic
+        if año_datos == datetime.now().year:
+            fecha_fin = datetime.now()
+        else:
+            fecha_fin = datetime(año_datos, 12, 31)
+        dias_transcurridos = (fecha_fin - inicio_año).days + 1
+    else:
+        dias_transcurridos = 1
+    
     promedio_diario = total_ytd / dias_transcurridos if dias_transcurridos > 0 else 0
     proyeccion_anual = promedio_diario * 365
     
@@ -265,7 +278,9 @@ def crear_grafico_barras_comparativo(df, año_actual, año_anterior, usar_año_c
             if actual == 0:
                 return 0.0  # Sin ventas en ambos períodos
             else:
-                return 100.0  # Nueva línea o crecimiento desde cero
+                # Nueva línea o crecimiento desde cero - retornar valor muy alto pero calculable
+                # para mantener proporciones (999% cap para no romper escalas visuales)
+                return min(999.0, (actual / 1000) * 100)  # Escala relativa, cap en 999%
         else:
             return ((actual - anterior) / anterior) * 100
     
@@ -479,12 +494,14 @@ def exportar_excel_ytd(df_ytd, año, comparativo_df=None):
     output.seek(0)
     return output
 
-def run(df):
+def run(df, habilitar_ia=False, openai_api_key=None):
     """
     Función principal del módulo YTD por Líneas.
     
     Args:
         df: DataFrame con datos de ventas (requiere: fecha, linea_de_negocio, ventas_usd)
+        habilitar_ia: Booleano para activar análisis con IA (default: False)
+        openai_api_key: API key de OpenAI para análisis premium (default: None)
     """
     st.title("📊 Reporte YTD por Línea de Negocio")
     st.markdown("---")
@@ -631,41 +648,45 @@ def run(df):
     )
     
     # =====================================================================
-    # CONFIGURACIÓN DE ANÁLISIS CON IA
+    # CONFIGURACIÓN DE ANÁLISIS CON IA - TEMPORALMENTE DESHABILITADO
     # =====================================================================
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("🤖 Análisis con IA")
+    # TODO: Reactivar cuando se simplifique la integración de IA
+    # st.sidebar.markdown("---")
+    # st.sidebar.subheader("🤖 Análisis con IA")
+    # 
+    # habilitar_ia = st.sidebar.checkbox(
+    #     "Habilitar Análisis Ejecutivo con IA",
+    #     value=False,
+    #     help="Genera insights automáticos usando OpenAI GPT-4o-mini"
+    # )
+    # 
+    # openai_api_key = None
+    # if habilitar_ia:
+    #     # Intentar obtener la API key de variable de entorno primero
+    #     api_key_env = os.getenv("OPENAI_API_KEY", "")
+    #     
+    #     if api_key_env:
+    #         openai_api_key = api_key_env
+    #         st.sidebar.success("✅ API key detectada desde variable de entorno")
+    #     else:
+    #         openai_api_key = st.sidebar.text_input(
+    #             "OpenAI API Key",
+    #             type="password",
+    #             help="Ingresa tu API key de OpenAI para habilitar el análisis con IA"
+    #         )
+    #         
+    #         if openai_api_key:
+    #             # Validar la API key
+    #             if validar_api_key(openai_api_key):
+    #                 st.sidebar.success("✅ API key válida")
+    #             else:
+    #                 st.sidebar.error("❌ API key inválida")
+    #                 openai_api_key = None
+    #     
+    #     st.sidebar.caption("💡 Los análisis con IA son generados por GPT-4o-mini y pueden tardar unos segundos")
     
-    habilitar_ia = st.sidebar.checkbox(
-        "Habilitar Análisis Ejecutivo con IA",
-        value=False,
-        help="Genera insights automáticos usando OpenAI GPT-4o-mini"
-    )
-    
-    openai_api_key = None
-    if habilitar_ia:
-        # Intentar obtener la API key de variable de entorno primero
-        api_key_env = os.getenv("OPENAI_API_KEY", "")
-        
-        if api_key_env:
-            openai_api_key = api_key_env
-            st.sidebar.success("✅ API key detectada desde variable de entorno")
-        else:
-            openai_api_key = st.sidebar.text_input(
-                "OpenAI API Key",
-                type="password",
-                help="Ingresa tu API key de OpenAI para habilitar el análisis con IA"
-            )
-            
-            if openai_api_key:
-                # Validar la API key
-                if validar_api_key(openai_api_key):
-                    st.sidebar.success("✅ API key válida")
-                else:
-                    st.sidebar.error("❌ API key inválida")
-                    openai_api_key = None
-        
-        st.sidebar.caption("💡 Los análisis con IA son generados por GPT-4o-mini y pueden tardar unos segundos")
+    # IA controlada desde el passkey premium en app.py (se recibe como parámetro)
+    # habilitar_ia y openai_api_key vienen de los parámetros de la función
     
     # Aplicar filtros
     df_filtrado = df[df['linea_de_negocio'].isin(seleccion_lineas)].copy()
@@ -733,7 +754,8 @@ def run(df):
         st.metric(
             label="💰 Total YTD",
             value=f"${metricas['total_ytd']:,.0f}",
-            delta=delta_label
+            delta=delta_label,
+            help="📐 Suma de ventas acumuladas desde inicio de año hasta la fecha de corte seleccionada"
         )
     
     with col2:
@@ -748,30 +770,33 @@ def run(df):
         st.metric(
             label=label_crec,
             value=f"{crecimiento_pct:+.1f}%" if año_anterior else "N/A",
-            delta_color="off"
+            delta_color="off",
+            help="📐 Fórmula: ((YTD Actual - YTD Anterior) / YTD Anterior) × 100%"
         )
     
     with col3:
         st.metric(
             label="🏆 Línea #1",
             value=linea_top,
-            delta=f"${ventas_linea_top:,.0f}"
+            delta=f"${ventas_linea_top:,.0f}",
+            help="📐 Línea de negocio con mayor monto de ventas YTD"
         )
     
     with col4:
         st.metric(
             label="📅 Días Transcurridos",
             value=f"{metricas['dias_transcurridos']} días",
-            delta=f"de 365 ({metricas['dias_transcurridos']/365*100:.1f}%)"
+            delta=f"de 365 ({metricas['dias_transcurridos']/365*100:.1f}%)",
+            help="📐 Días corridos del año que se han completado. Si analizas 2026: días desde 01/Ene/2026 hasta hoy. Si analizas 2024: días desde 01/Ene/2024 hasta la última venta registrada ese año. Se usa para calcular la proyección anual (estimado de ventas a 365 días)."
         )
     
     st.markdown("---")
     
     # =====================================================================
-    # SECCIÓN 2.5: ANÁLISIS EJECUTIVO CON IA (OPCIONAL)
+    # SECCIÓN 2.5: ANÁLISIS EJECUTIVO CON IA - FUNCIÓN PREMIUM
     # =====================================================================
     if habilitar_ia and openai_api_key:
-        st.header("🤖 Análisis Ejecutivo con IA")
+        st.header("🤖 Análisis Ejecutivo con IA Premium")
         
         with st.spinner("🔄 Generando análisis ejecutivo con GPT-4o-mini..."):
             try:
@@ -1129,6 +1154,78 @@ def run(df):
             )
         else:
             st.info("💡 No hay información de productos disponible")
+    
+    st.markdown("---")
+    
+    # =====================================================================
+    # PANEL DE DEFINICIONES Y FÓRMULAS
+    # =====================================================================
+    with st.expander("📐 **Definiciones y Fórmulas de KPIs**"):
+        st.markdown("""
+        ### 📊 Métricas Principales
+        
+        **💰 Total YTD (Year-To-Date)**
+        - **Definición**: Suma acumulada de ventas desde el 1 de enero hasta la fecha de corte
+        - **Fórmula**: `Σ Ventas (desde 01/Ene hasta fecha actual)`
+        - **Uso**: Medir desempeño acumulado del año en curso
+        
+        **📈 Crecimiento YTD**
+        - **Definición**: Variación porcentual respecto al mismo período del año anterior
+        - **Fórmula**: `((YTD Actual - YTD Anterior) / YTD Anterior) × 100%`
+        - **Interpretación**: 
+          - ✅ Positivo = Crecimiento en ventas
+          - ❌ Negativo = Decrecimiento
+        
+        **🏆 Línea #1**
+        - **Definición**: Línea de negocio con mayor contribución a ventas YTD
+        - **Cálculo**: `MAX(Σ Ventas por Línea)`
+        - **Importancia**: Identificar drivers principales de ingresos
+        
+        **📅 Días Transcurridos**
+        - **Definición**: Días corridos del año que se han completado
+        - **Fórmula**: `(Fecha Corte - 01/Ene) + 1 día`
+        - **Ejemplos**:
+          - Si estamos analizando 2026 y hoy es 17/Feb: son 48 días
+          - Si analizas 2024 completo: son los días hasta la última venta de 2024 (ej: 31/Dic = 366 días)
+        - **Uso**: Base para calcular proyección anual (extrapolar ventas a 365 días)
+        
+        **🎯 Proyección Anual**
+        - **Definición**: Estimación de ventas totales al cierre del año
+        - **Fórmula**: `(Total YTD / Días Transcurridos) × 365 días`
+        - **Supuesto**: Ritmo de ventas constante (promedio diario)
+        - **Ejemplo**: Si en 48 días vendiste $100K, proyección = ($100K ÷ 48) × 365 = $760.4K
+        
+        **📊 Participación de Mercado (% Share)**
+        - **Definición**: Contribución de cada línea al total de ventas
+        - **Fórmula**: `(Ventas Línea / Total YTD) × 100%`
+        - **Suma**: Siempre = 100%
+        
+        ---
+        
+        ### 🔄 Modos de Comparación
+        
+        **YTD vs YTD** (Recomendado)
+        - Compara mismo período de días en ambos años
+        - Ejemplo: Primeros 48 días de 2025 vs primeros 48 días de 2024
+        - ✅ Comparación justa y balanceada
+        
+        **YTD vs Año Completo**
+        - Compara YTD actual contra año anterior completo (365 días)
+        - ⚠️ Útil para ver progreso hacia meta anual
+        - No recomendado para calcular crecimiento real
+        
+        ---
+        
+        ### 📝 Notas Importantes
+        
+        - **Crecimiento desde $0**: Cuando año anterior = 0, el crecimiento se escala relativamente (cap 999%)
+        - **Días del Año Actual vs Histórico**: 
+          - Año actual (ej: 2026): Días desde 01/Ene hasta HOY (fecha real del sistema)
+          - Años pasados (ej: 2024): Días desde 01/Ene hasta la ÚLTIMA VENTA registrada ese año
+          - Ejemplo: Si la última venta de 2024 fue el 31/Dic, días transcurridos = 366
+        - **Colores en Gráficos**: Asignados consistentemente por línea de negocio
+        - **Filtros**: Aplicables por vendedor, cliente o línea de negocio
+        """)
     
     st.markdown("---")
     

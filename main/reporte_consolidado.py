@@ -178,10 +178,15 @@ def _preparar_datos_iniciales(df_ventas, df_cxc):
     return df_ventas, df_cxc
 
 
-def _obtener_configuracion_ui():
+def _obtener_configuracion_ui(habilitar_ia=False, openai_api_key=None):
     """
-    Obtiene configuración de periodicidad e IA desde sidebar.
+    Obtiene configuración de periodicidad desde sidebar.
+    Los parámetros de IA vienen del passkey premium global.
     
+    Args:
+        habilitar_ia: Estado de IA desde passkey premium
+        openai_api_key: API key desde passkey premium
+        
     Returns:
         Dict con configuración {'tipo_periodo', 'habilitar_ia', 'api_key'}
     """
@@ -203,40 +208,8 @@ def _obtener_configuracion_ui():
         key="consolidado_periodicidad"
     )
     
-    # Configuración de IA
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("🤖 Análisis con IA")
-    
-    habilitar_ia = st.sidebar.checkbox(
-        "Habilitar Análisis Consolidado con IA",
-        value=False,
-        help="Genera insights ejecutivos integrales sobre ventas y CxC",
-        key="consolidado_habilitar_ia"
-    )
-    
-    openai_api_key = None
-    if habilitar_ia:
-        api_key_env = os.getenv("OPENAI_API_KEY", "")
-        
-        if api_key_env:
-            openai_api_key = api_key_env
-            st.sidebar.success("✅ API key detectada desde variable de entorno")
-        else:
-            openai_api_key = st.sidebar.text_input(
-                "OpenAI API Key",
-                type="password",
-                help="Ingresa tu API key de OpenAI",
-                key="consolidado_api_key"
-            )
-            
-            if openai_api_key:
-                if validar_api_key(openai_api_key):
-                    st.sidebar.success("✅ API key válida")
-                else:
-                    st.sidebar.error("❌ API key inválida")
-                    openai_api_key = None
-        
-        st.sidebar.caption("💡 El análisis con IA conecta ventas con liquidez y salud financiera")
+    # IA controlada desde el passkey premium global (no checkbox local)
+
     
     return {
         'tipo_periodo': tipo_periodo,
@@ -556,13 +529,15 @@ def _renderizar_tabla_detalle(df_ventas_agrupado, periodos_count, config):
     )
 
 
-def run(df_ventas, df_cxc=None):
+def run(df_ventas, df_cxc=None, habilitar_ia=False, openai_api_key=None):
     """
     Función principal del Reporte Consolidado.
     
     Args:
         df_ventas: DataFrame con datos de ventas
         df_cxc: DataFrame opcional con datos de CxC
+        habilitar_ia: Booleano para activar análisis con IA (default: False)
+        openai_api_key: API key de OpenAI para análisis premium (default: None)
     """
     st.title("📊 Reporte Consolidado - Dashboard Ejecutivo")
     st.markdown("---")
@@ -596,7 +571,7 @@ def run(df_ventas, df_cxc=None):
     # =====================================================================
     # PASO 3: OBTENER CONFIGURACIÓN DE UI
     # =====================================================================
-    config = _obtener_configuracion_ui()
+    config = _obtener_configuracion_ui(habilitar_ia, openai_api_key)
     
     # =====================================================================
     # PASO 4: CALCULAR MÉTRICAS

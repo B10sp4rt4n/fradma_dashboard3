@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import os
 from unidecode import unidecode
 from main import main_kpi, main_comparativo, heatmap_ventas
 from main import kpi_cpc, reporte_ejecutivo, ytd_lineas, reporte_consolidado
@@ -313,6 +314,95 @@ def detectar_y_cargar_archivo(archivo_bytes, archivo_nombre, hoja_seleccionada=N
     return df
 
 # =====================================================================
+# FUNCIÓN: VALIDAR COLUMNAS REQUERIDAS
+# =====================================================================
+
+def validar_columnas_requeridas(df):
+    """
+    Valida columnas del DataFrame contra las requeridas por cada módulo.
+    Retorna un diccionario con el checklist de validación.
+    NO MODIFICA el DataFrame ni rompe la lógica existente.
+    """
+    columnas_df = set(df.columns)
+    
+    # Definición de columnas por módulo (según código actual)
+    modulos = {
+        "YTD por Líneas": {
+            "obligatorias": ["fecha", "linea_de_negocio"],
+            "variantes_obligatorias": {
+                "ventas_usd": ["ventas_usd", "ventas_usd_con_iva", "ventas_usd_sin_iva", "importe", "valor_usd", "monto_usd", "total_usd", "valor", "venta"]
+            },
+            "recomendadas": ["vendedor", "agente", "ejecutivo", "cliente"],
+            "opcionales": ["producto"]
+        },
+        "Dashboard CxC": {
+            "obligatorias": ["cliente", "fecha"],
+            "variantes_obligatorias": {
+                "saldo_adeudado": ["saldo_adeudado", "saldo", "saldo_adeudo", "adeudo", "importe", "monto", "total", "saldo_usd"]
+            },
+            "recomendadas": ["factura", "dias_de_credito", "estatus", "vendedor"],
+            "opcionales": ["linea_de_negocio", "dias_restantes", "dias_vencido", "fecha_de_pago"]
+        },
+        "KPIs Generales": {
+            "obligatorias": ["fecha"],
+            "variantes_obligatorias": {
+                "valor_usd": ["valor_usd", "ventas_usd", "ventas_usd_con_iva", "importe"]
+            },
+            "recomendadas": ["agente", "vendedor", "ejecutivo"],
+            "opcionales": ["linea_producto", "linea_de_negocio"]
+        },
+        "Reporte Ejecutivo": {
+            "obligatorias": ["fecha"],
+            "variantes_obligatorias": {
+                "valor_usd": ["valor_usd", "ventas_usd", "ventas_usd_con_iva"],
+                "saldo_adeudado": ["saldo_adeudado", "saldo", "adeudo"]
+            },
+            "recomendadas": ["cliente"],
+            "opcionales": ["vendedor", "dias_vencido"]
+        }
+    }
+    
+    resultados = {}
+    
+    for modulo, cols in modulos.items():
+        checklist = []
+        
+        # Validar obligatorias
+        for col in cols.get("obligatorias", []):
+            if col in columnas_df:
+                checklist.append({"col": col, "status": "✅", "tipo": "Obligatoria", "mensaje": "Encontrada"})
+            else:
+                checklist.append({"col": col, "status": "❌", "tipo": "Obligatoria", "mensaje": "NO ENCONTRADA - El módulo puede fallar"})
+        
+        # Validar obligatorias con variantes
+        for col_principal, variantes in cols.get("variantes_obligatorias", {}).items():
+            encontrada = next((v for v in variantes if v in columnas_df), None)
+            if encontrada:
+                if encontrada == col_principal:
+                    checklist.append({"col": col_principal, "status": "✅", "tipo": "Obligatoria", "mensaje": "Encontrada"})
+                else:
+                    checklist.append({"col": col_principal, "status": "⚠️", "tipo": "Obligatoria", "mensaje": f"Encontrada como '{encontrada}'"})
+            else:
+                checklist.append({"col": col_principal, "status": "❌", "tipo": "Obligatoria", "mensaje": f"NO ENCONTRADA - Buscar: {', '.join(variantes[:3])}"})
+        
+        # Validar recomendadas
+        for col in cols.get("recomendadas", []):
+            if col in columnas_df:
+                checklist.append({"col": col, "status": "✅", "tipo": "Recomendada", "mensaje": "Encontrada"})
+            else:
+                # No mostrar recomendadas faltantes para no saturar
+                pass
+        
+        # Validar opcionales encontradas (no mostrar las que faltan)
+        for col in cols.get("opcionales", []):
+            if col in columnas_df:
+                checklist.append({"col": col, "status": "✅", "tipo": "Opcional", "mensaje": "Disponible"})
+        
+        resultados[modulo] = checklist
+    
+    return resultados
+
+# =====================================================================
 # SIDEBAR: CARGA DE ARCHIVO Y FILTROS GLOBALES
 # =====================================================================
 
@@ -417,6 +507,61 @@ if archivo:
 
         st.session_state["df"] = df
         st.session_state["archivo_path"] = archivo
+        
+        # ================================================================
+        # CHECKLIST DE VALIDACIÓN DE COLUMNAS
+        # ================================================================
+        validacion = validar_columnas_requeridas(df)
+        
+        # Contar problemas
+        total_errores = sum(1 for modulo in validacion.values() for item in modulo if item["status"] == "❌")
+        total_advertencias = sum(1 for modulo in validacion.values() for item in modulo if item["status"] == "⚠️")
+        
+        # Mostrar resumen en sidebar
+        if total_errores > 0:
+            st.sidebar.error(f"🚨 {total_errores} columna(s) crítica(s) faltante(s)")
+        elif total_advertencias > 0:
+            st.sidebar.warning(f"⚠️ {total_advertencias} columna(s) con variantes detectadas")
+        else:
+            st.sidebar.success("✅ Todas las columnas críticas encontradas")
+        
+        # Panel expandible con detalle de validación
+        with st.sidebar.expander("📋 Validación de Columnas Requeridas"):
+            st.markdown("**Referencia:** Ver [docs/COLUMNAS_REQUERIDAS.md](docs/COLUMNAS_REQUERIDAS.md)")
+            st.markdown("---")
+            
+            for modulo, checklist in validacion.items():
+                if not checklist:  # Saltar si está vacío
+                    continue
+                
+                # Contar por tipo de status en este módulo
+                errores_modulo = sum(1 for item in checklist if item["status"] == "❌")
+                advertencias_modulo = sum(1 for item in checklist if item["status"] == "⚠️")
+                ok_modulo = sum(1 for item in checklist if item["status"] == "✅")
+                
+                # Color del header según problemas
+                if errores_modulo > 0:
+                    st.markdown(f"### 🔴 {modulo}")
+                elif advertencias_modulo > 0:
+                    st.markdown(f"### 🟡 {modulo}")
+                else:
+                    st.markdown(f"### 🟢 {modulo}")
+                
+                st.caption(f"✅ {ok_modulo} | ⚠️ {advertencias_modulo} | ❌ {errores_modulo}")
+                
+                # Mostrar solo problemas o todo si en modo debug
+                items_a_mostrar = checklist if modo_debug else [item for item in checklist if item["status"] != "✅"]
+                
+                if items_a_mostrar:
+                    for item in items_a_mostrar:
+                        st.markdown(f"{item['status']} **{item['col']}** ({item['tipo']}): {item['mensaje']}")
+                elif not modo_debug:
+                    st.success("Todas las columnas críticas presentes")
+                
+                st.markdown("---")
+            
+            # Link a documentación
+            st.info("💡 **Tip:** Consulta la guía completa en `docs/COLUMNAS_REQUERIDAS.md` para mapear desde CRMs/ERPs")
 
         if "año" in df.columns:
             años_disponibles = sorted(df["año"].dropna().unique())
@@ -644,6 +789,82 @@ if "df" in st.session_state and "archivo_excel" in st.session_state:
 # NAVEGACIÓN MEJORADA CON TABS Y TOOLTIPS
 # =====================================================================
 
+# =====================================================================
+# SISTEMA DE PASSKEY PREMIUM - ANÁLISIS CON IA
+# =====================================================================
+
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 🤖 Análisis Premium con IA")
+
+# Inicializar estado de IA en session_state
+if "ia_premium_activada" not in st.session_state:
+    st.session_state["ia_premium_activada"] = False
+if "openai_api_key" not in st.session_state:
+    st.session_state["openai_api_key"] = None
+if "passkey_valido" not in st.session_state:
+    st.session_state["passkey_valido"] = False
+
+# Passkey definido (puede ser cambiado o guardado en variables de entorno)
+PASSKEY_PREMIUM = "fradma2026"
+
+# Widget para ingresar passkey
+passkey_input = st.sidebar.text_input(
+    "🔑 Passkey Premium",
+    type="password",
+    placeholder="Ingresa tu passkey",
+    help="Activa funciones premium de análisis con IA"
+)
+
+if passkey_input == PASSKEY_PREMIUM:
+    if not st.session_state["passkey_valido"]:
+        st.session_state["passkey_valido"] = True
+        st.sidebar.success("✅ Passkey válido!")
+    
+    # Solicitar API key de OpenAI
+    st.sidebar.markdown("**Configuración de IA**")
+    
+    # Intentar obtener la API key de variable de entorno primero
+    api_key_env = os.getenv("OPENAI_API_KEY", "")
+    
+    if api_key_env:
+        st.session_state["openai_api_key"] = api_key_env
+        st.sidebar.success("🔑 API key detectada desde variable de entorno")
+        st.session_state["ia_premium_activada"] = True
+    else:
+        openai_api_key = st.sidebar.text_input(
+            "OpenAI API Key",
+            type="password",
+            placeholder="sk-...",
+            help="Ingresa tu API key de OpenAI para habilitar análisis con IA"
+        )
+        
+        if openai_api_key:
+            # Validar la API key
+            from utils.ai_helper import validar_api_key
+            
+            if validar_api_key(openai_api_key):
+                st.session_state["openai_api_key"] = openai_api_key
+                st.session_state["ia_premium_activada"] = True
+                st.sidebar.success("✅ API key válida")
+            else:
+                st.sidebar.error("❌ API key inválida")
+                st.session_state["ia_premium_activada"] = False
+        else:
+            st.session_state["ia_premium_activada"] = False
+    
+    if st.session_state["ia_premium_activada"]:
+        st.sidebar.info("💡 Recomendaciones de IA habilitadas en todos los módulos")
+    
+else:
+    st.session_state["passkey_valido"] = False
+    st.session_state["ia_premium_activada"] = False
+    st.session_state["openai_api_key"] = None
+    
+    if passkey_input:
+        st.sidebar.error("❌ Passkey incorrecto")
+    else:
+        st.sidebar.caption("🔐 Ingresa el passkey para acceder a funciones premium")
+
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🧭 Navegación")
 
@@ -767,7 +988,10 @@ if menu == "🎯 Reporte Ejecutivo":
                     # Si no hay hoja específica, crear DataFrame vacío
                     df_cxc = pd.DataFrame(columns=['cliente', 'saldo_adeudado', 'dias_vencido'])
                 
-                reporte_ejecutivo.mostrar_reporte_ejecutivo(df_ventas, df_cxc)
+                # Pasar parámetros de IA premium al módulo
+                ia_habilitada = st.session_state.get("ia_premium_activada", False)
+                api_key = st.session_state.get("openai_api_key", None)
+                reporte_ejecutivo.mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=ia_habilitada, openai_api_key=api_key)
             except KeyError as e:
                 st.error(f"❌ Columna requerida no encontrada: {e}")
                 st.info("💡 Verifica que el archivo contenga las columnas: fecha, ventas, cliente, saldo")
@@ -785,7 +1009,10 @@ if menu == "🎯 Reporte Ejecutivo":
         st.info("📂 Usa el menú lateral para cargar tu archivo de datos.")
 
 elif menu == "📈 KPIs Generales":
-    main_kpi.run()
+    # Pasar parámetros de IA premium al módulo
+    ia_habilitada = st.session_state.get("ia_premium_activada", False)
+    api_key = st.session_state.get("openai_api_key", None)
+    main_kpi.run(habilitar_ia=ia_habilitada, openai_api_key=api_key)
 
 elif menu == "📊 Comparativo Año vs Año":
     if "df" in st.session_state:
@@ -796,7 +1023,10 @@ elif menu == "📊 Comparativo Año vs Año":
 
 elif menu == "📉 YTD por Línea de Negocio":
     if "df" in st.session_state:
-        ytd_lineas.run(st.session_state["df"])
+        # Pasar parámetros de IA premium al módulo
+        ia_habilitada = st.session_state.get("ia_premium_activada", False)
+        api_key = st.session_state.get("openai_api_key", None)
+        ytd_lineas.run(st.session_state["df"], habilitar_ia=ia_habilitada, openai_api_key=api_key)
     else:
         st.warning("⚠️ Primero sube un archivo para visualizar el reporte YTD.")
         st.info("📂 Este reporte requiere datos de ventas con: fecha, linea_de_negocio, ventas_usd")
@@ -809,7 +1039,10 @@ elif menu == "🔥 Heatmap Ventas":
 
 elif menu == "💳 KPI Cartera CxC":
     if "archivo_excel" in st.session_state:
-        kpi_cpc.run(st.session_state["archivo_excel"])
+        # Pasar parámetros de IA premium al módulo
+        ia_habilitada = st.session_state.get("ia_premium_activada", False)
+        api_key = st.session_state.get("openai_api_key", None)
+        kpi_cpc.run(st.session_state["archivo_excel"], habilitar_ia=ia_habilitada, openai_api_key=api_key)
     else:
         st.warning("⚠️ Primero sube un archivo para visualizar CXC.")
 
@@ -844,11 +1077,17 @@ elif menu == "📊 Reporte Consolidado":
                 else:
                     df_cxc = pd.DataFrame()
                 
-                reporte_consolidado.run(df_ventas, df_cxc)
+                # Pasar parámetros de IA premium al módulo
+                ia_habilitada = st.session_state.get("ia_premium_activada", False)
+                api_key = st.session_state.get("openai_api_key", None)
+                reporte_consolidado.run(df_ventas, df_cxc, habilitar_ia=ia_habilitada, openai_api_key=api_key)
             except Exception as e:
                 st.error(f"❌ Error al generar el reporte consolidado: {str(e)}")
                 logger.exception(f"Error en reporte consolidado: {e}")
     elif "df" in st.session_state:
-        reporte_consolidado.run(st.session_state["df"], None)
+        # Pasar parámetros de IA premium al módulo
+        ia_habilitada = st.session_state.get("ia_premium_activada", False)
+        api_key = st.session_state.get("openai_api_key", None)
+        reporte_consolidado.run(st.session_state["df"], None, habilitar_ia=ia_habilitada, openai_api_key=api_key)
     else:
         st.warning("⚠️ Primero sube un archivo para visualizar el Reporte Consolidado.")

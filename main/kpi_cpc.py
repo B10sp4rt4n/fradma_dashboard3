@@ -26,6 +26,16 @@ from utils.logger import configurar_logger
 # Configurar logger
 logger = configurar_logger("kpi_cpc", nivel="INFO")
 
+# Mapeo de nivel de riesgo a colores según severidad
+MAPA_COLORES_RIESGO = {
+    'Por vencer': '#4CAF50',      # Verde - Sin riesgo
+    '1-30 días': '#8BC34A',       # Verde claro - Riesgo bajo
+    '31-60 días': '#FFEB3B',      # Amarillo - Precaución
+    '61-90 días': '#FF9800',      # Naranja - Alerta
+    '91-180 días': '#F44336',     # Rojo - Crítico
+    '>180 días': '#B71C1C'        # Rojo oscuro - Crítico severo
+}
+
 def normalizar_columnas(df):
     nuevas_columnas = []
     contador = {}
@@ -43,47 +53,24 @@ def normalizar_columnas(df):
     df.columns = nuevas_columnas
     return df
 
-def run(archivo):
+def run(archivo, habilitar_ia=False, openai_api_key=None):
+    """
+    Función principal del módulo KPI CxC (Cuentas por Cobrar).
+    
+    Args:
+        archivo: Ruta o buffer del archivo Excel con datos CxC
+        habilitar_ia: Booleano para activar análisis con IA (default: False)
+        openai_api_key: API key de OpenAI para análisis premium (default: None)
+    """
     if not archivo.name.endswith(('.xls', '.xlsx')):
         st.error("❌ Solo se aceptan archivos Excel para el reporte de deudas.")
         return
 
     # =====================================================================
-    # CONFIGURACIÓN DE ANÁLISIS CON IA
+    # CONFIGURACIÓN DE ANÁLISIS CON IA - FUNCIÓN PREMIUM
     # =====================================================================
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("🤖 Análisis con IA")
-    
-    habilitar_ia = st.sidebar.checkbox(
-        "Habilitar Análisis Ejecutivo con IA",
-        value=False,
-        help="Genera insights automáticos sobre la salud de CxC usando OpenAI GPT-4o-mini"
-    )
-    
-    openai_api_key = None
-    if habilitar_ia:
-        # Intentar obtener la API key de variable de entorno primero
-        api_key_env = os.getenv("OPENAI_API_KEY", "")
-        
-        if api_key_env:
-            openai_api_key = api_key_env
-            st.sidebar.success("✅ API key detectada desde variable de entorno")
-        else:
-            openai_api_key = st.sidebar.text_input(
-                "OpenAI API Key",
-                type="password",
-                help="Ingresa tu API key de OpenAI para habilitar el análisis con IA"
-            )
-            
-            if openai_api_key:
-                # Validar la API key
-                if validar_api_key(openai_api_key):
-                    st.sidebar.success("✅ API key válida")
-                else:
-                    st.sidebar.error("❌ API key inválida")
-                    openai_api_key = None
-        
-        st.sidebar.caption("💡 El análisis con IA genera insights sobre riesgos de cartera y recomendaciones de cobranza")
+    # La IA se habilita desde el passkey premium en el sidebar principal
+    # habilitar_ia y openai_api_key vienen de los parámetros de la función
 
     try:
         xls = pd.ExcelFile(archivo)
@@ -277,65 +264,48 @@ def run(archivo):
             
             # Métricas auxiliares
             st.metric("Liquidez (Vigente)", f"{pct_vigente:.1f}%", 
-                     delta=f"{pct_vigente - 70:.1f}pp vs objetivo 70%")
+                     delta=f"{pct_vigente - 70:.1f}pp vs objetivo 70%",
+                     help="📐 Porcentaje de cartera que aún no ha vencido (días restantes > 0). Objetivo: ≥ 70%")
         
         with col_health2:
             st.write("### 📊 Indicadores Clave de Desempeño (KPIs)")
             
             # Calcular KPIs
-            # DSO (Days Sales Outstanding) - Aproximación: (CxC / Ventas diarias promedio)
-            # Como no tenemos ventas, usamos un estimado de 90 días como benchmark
-            dso_estimado = UmbralesCxC.DSO_ACEPTABLE  # Placeholder - necesitaría datos de ventas reales
-            dso_objetivo = UmbralesCxC.DSO_OBJETIVO
-            dso_status = "🟢" if dso_estimado <= dso_objetivo else "🟡" if dso_estimado <= UmbralesCxC.DSO_ACEPTABLE else "🔴"
+            # NOTA: DSO y Rotación CxC requieren datos de ventas que no están en este módulo
+            # Por ahora se omiten para evitar mostrar datos incorrectos (antes eran constantes hardcodeadas)
             
             # Índice de Morosidad (alineado: % vencida total sobre cartera no pagada)
             indice_morosidad = pct_vencida_total
             morosidad_objetivo = UmbralesCxC.MOROSIDAD_OBJETIVO
             morosidad_status = obtener_semaforo_morosidad(indice_morosidad)
             
-            # Rotación CxC (estimado)
-            rotacion_cxc = UmbralesCxC.ROTACION_CXC_MINIMO  # Placeholder - necesitaría datos de ventas
-            rotacion_objetivo = UmbralesCxC.ROTACION_CXC_OBJETIVO
-            rotacion_status = "🟢" if rotacion_cxc >= rotacion_objetivo else "🟡" if rotacion_cxc >= UmbralesCxC.ROTACION_CXC_MINIMO else "🔴"
-            
             # Índice de Concentración
             concentracion_status = obtener_semaforo_concentracion(pct_concentracion)
             
-            # Tabla de KPIs
+            # Tabla de KPIs (solo los calculables con datos de CxC)
             kpis_data = {
                 'KPI': [
-                    'DSO (Días de Cobro)',
                     'Índice de Morosidad',
-                    'Rotación CxC',
                     'Concentración Top 3',
                     'Riesgo Alto (>90 días)'
                 ],
                 'Valor Actual': [
-                    f"{dso_estimado} días",
                     f"{indice_morosidad:.1f}%",
-                    f"{rotacion_cxc}x/año",
                     f"{pct_concentracion:.1f}%",
                     f"{pct_alto_riesgo:.1f}%"
                 ],
                 'Objetivo': [
-                    f"<{dso_objetivo} días",
                     f"<{morosidad_objetivo}%",
-                    f">{rotacion_objetivo}x",
                     "<30%",
                     "<10%"
                 ],
                 'Estado': [
-                    dso_status,
                     morosidad_status,
-                    rotacion_status,
                     concentracion_status,
                     "🟢" if pct_alto_riesgo <= 10 else "🟡" if pct_alto_riesgo <= 20 else "🔴"
                 ],
                 'Monto/Detalle': [
-                    f"${total_adeudado / (dso_estimado if dso_estimado > 0 else 1):,.2f}/día",
                     f"${vencida:,.2f}",
-                    f"${total_adeudado / (rotacion_cxc if rotacion_cxc > 0 else 1):,.2f}/rotación",
                     f"${top3_deuda:,.2f}",
                     f"${deuda_alto_riesgo:,.2f}"
                 ]
@@ -357,16 +327,16 @@ def run(archivo):
                 }
             )
             
-            # Nota informativa
-            st.info("💡 **Nota:** DSO y Rotación CxC son estimados. Para cálculos precisos, se requieren datos de ventas.")
+            # Nota sobre KPIs que requieren datos externos
+            st.caption("💡 **Nota:** DSO y Rotación CxC requieren datos de ventas para cálculo preciso (módulo de ventas separado)")
         
         st.write("---")
         
         # =====================================================================
-        # FASE 2.5: ANÁLISIS EJECUTIVO CON IA (OPCIONAL)
+        # FASE 2.5: ANÁLISIS EJECUTIVO CON IA - FUNCIÓN PREMIUM
         # =====================================================================
         if habilitar_ia and openai_api_key:
-            st.header("🤖 Análisis Ejecutivo con IA")
+            st.header("🤖 Análisis Ejecutivo con IA Premium")
             
             with st.spinner("🔄 Generando análisis ejecutivo con GPT-4o-mini..."):
                 try:
@@ -913,10 +883,12 @@ def run(archivo):
                 # Pie Chart: Distribución por antigüedad
                 with col_pie2:
                     st.write("**Distribución por Antigüedad**")
+                    # Asignar colores según severidad de cada categoría
+                    colores_pie = [MAPA_COLORES_RIESGO.get(nivel, '#808080') for nivel in riesgo_df['nivel_riesgo']]
                     fig_antiguedad = go.Figure(data=[go.Pie(
                         labels=riesgo_df['nivel_riesgo'].tolist(),
                         values=riesgo_df['saldo_adeudado'].tolist(),
-                        marker=dict(colors=COLORES_ANTIGUEDAD),
+                        marker=dict(colors=colores_pie),
                         hole=ConfigVisualizacion.PIE_HOLE,
                         textinfo='label+percent',
                         textposition='outside'
@@ -942,7 +914,8 @@ def run(archivo):
                             nivel = row['nivel_riesgo']
                             pct = row['porcentaje']
                             monto = row['saldo_adeudado']
-                            color = COLORES_ANTIGUEDAD[i + j]
+                            # Asignar color según severidad del nivel, no según índice
+                            color = MAPA_COLORES_RIESGO.get(nivel, '#808080')  # Gris por defecto
                             
                             with cols_gauge[j]:
                                 # Crear gauge con plotly
@@ -990,7 +963,9 @@ def run(archivo):
                 # Gráfico de barras con colores por categoría
                 st.write("### 📊 Distribución de Deuda por Antigüedad")
                 fig, ax = plt.subplots()
-                bars = ax.bar(riesgo_df['nivel_riesgo'], riesgo_df['saldo_adeudado'], color=COLORES_ANTIGUEDAD)
+                # Asignar colores según severidad de cada categoría
+                colores_barras = [MAPA_COLORES_RIESGO.get(nivel, '#808080') for nivel in riesgo_df['nivel_riesgo']]
+                bars = ax.bar(riesgo_df['nivel_riesgo'], riesgo_df['saldo_adeudado'], color=colores_barras)
                 ax.set_title('Distribución por Antigüedad de Deuda')
                 ax.set_ylabel('Monto Adeudado ($)')
                 ax.yaxis.set_major_formatter('${x:,.2f}')
@@ -1242,7 +1217,7 @@ def run(archivo):
                 
                 # Agregar semáforos
                 df_ef_display['🚦 Score'] = df_ef_display['score'].apply(
-                    lambda x: "🟢" if x >= 80 else "🟢" if x >= 60 else "🟡" if x >= 40 else "🟠" if x >= 20 else "🔴"
+                    lambda x: "🟢" if x >= 80 else "�" if x >= 60 else "🟠" if x >= 40 else "🟠" if x >= 20 else "🔴"
                 )
                 
                 df_ef_display['🚦 Efectividad'] = df_ef_display['efectividad'].apply(
@@ -1542,19 +1517,25 @@ Departamento de Crédito y Cobranza
         col_resumen1, col_resumen2, col_resumen3 = st.columns(3)
         
         with col_resumen1:
-            st.metric("💰 Cartera Total", f"${total_adeudado:,.2f}")
-            st.metric("📊 Calificación", f"{score_salud:.0f}/100")
+            st.metric("💰 Cartera Total", f"${total_adeudado:,.2f}",
+                     help="📐 Suma de todos los saldos adeudados pendientes de pago")
+            st.metric("📊 Calificación", f"{score_salud:.0f}/100",
+                     help="📐 Score ponderado: 40% liquidez + 30% concentración + 30% morosidad")
             st.caption(f"**{score_status}**")
         
         with col_resumen2:
-            st.metric("✅ Vigente", f"{pct_vigente:.1f}%")
-            st.metric("⚠️ Vencida", f"{pct_alto_riesgo:.1f}%")
-            st.caption("Alto riesgo >90 días")
+            st.metric("✅ Vigente", f"{pct_vigente:.1f}%",
+                     help="📐 Cartera que aún no ha vencido / Cartera total")
+            st.metric("⚠️ Vencida", f"{pct_vencida_total:.1f}%",
+                     help="📐 Cartera total vencida (con atraso, sin importar días) / Cartera total")
+            st.caption(f"${vencida:,.2f} en atraso")
         
         with col_resumen3:
-            st.metric("🎯 Casos Urgentes", urgente_count)
-            st.metric("📈 Morosidad", f"{indice_morosidad:.1f}%")
-            st.caption(f"${vencida:,.2f}")
+            st.metric("🎯 Casos Urgentes", urgente_count,
+                     help="📐 Número de facturas vencidas > 90 días que requieren atención inmediata")
+            st.metric("� Alto Riesgo >90d", f"{pct_alto_riesgo:.1f}%",
+                     help="📐 Cartera con más de 90 días vencida / Cartera total (subconjunto crítico de vencida)")
+            st.caption(f"${deuda_alto_riesgo:,.2f}")
         
         st.write("**Observaciones Clave:**")
         st.write(f"- Fradma tiene **${total_adeudado:,.2f}** en cuentas por cobrar")
@@ -1568,6 +1549,129 @@ Departamento de Crédito y Cobranza
         
         if alertas:
             st.write(f"- **{len(alertas)} alertas** activas requieren atención")
+        
+        st.markdown("---")
+        
+        # =====================================================================
+        # PANEL DE DEFINICIONES Y FÓRMULAS CXC
+        # =====================================================================
+        with st.expander("📐 **Definiciones y Fórmulas de KPIs CxC**"):
+            st.markdown("""
+            ### 📊 Métricas de Salud de Cartera
+            
+            **💰 Cartera Total (Total Adeudado)**
+            - **Definición**: Suma de todos los saldos pendientes de cobro
+            - **Fórmula**: `Σ Saldo Adeudado (todas las facturas)`
+            - **Incluye**: Facturas vigentes + vencidas
+            
+            **📊 Calificación de Salud (Score 0-100)**
+            - **Definición**: Indicador compuesto de la salud financiera de la cartera
+            - **Fórmula**: `(40% × Liquidez) + (30% × Concentración) + (30% × Morosidad)`
+            - **Escala**: 
+              - 🟢 80-100 = Excelente
+              - 🟡 60-79 = Buena
+              - 🟠 40-59 = Regular
+              - 🔴 <40 = Crítica
+            
+            **✅ Cartera Vigente (%)**
+            - **Definición**: Porcentaje de deuda que aún no ha vencido
+            - **Fórmula**: `(Saldo con días_restantes > 0 / Total Adeudado) × 100%`
+            - **Objetivo**: ≥ 70%
+            - **Interpretación**: Mayor % = Mejor salud de cobro
+            
+            **⚠️ Cartera Vencida - Alto Riesgo (%)**
+            - **Definición**: Porcentaje de deuda vencida hace más de 90 días
+            - **Fórmula**: `(Saldo con días_vencido > 90 / Total Adeudado) × 100%`
+            - **Meta**: < 10%
+            - **Criticidad**: Alto - requiere acción legal/cobranza intensiva
+            
+            **📈 Índice de Morosidad (%)**
+            - **Definición**: Porcentaje total de cartera vencida (cualquier cantidad de días)
+            - **Fórmula**: `(Saldo total vencido / Total Adeudado) × 100%`
+            - **Objetivo**: < 15%
+            - **Nota**: Incluye vencimientos de 1-30, 31-60, 61-90, >90 días
+            
+            **🎯 Casos Urgentes**
+            - **Definición**: Número de facturas individuales con vencimiento > 90 días
+            - **Fórmula**: `COUNT(Facturas con días_vencido > 90)`
+            - **Acción Requerida**: Gestión inmediata de cobranza o provisión
+            
+            **🏢 Concentración de Riesgo (%)**
+            - **Definición**: Porcentaje de cartera concentrado en el top 3 de deudores
+            - **Fórmula**: `(Σ Saldo Top 3 Clientes / Total Adeudado) × 100%`
+            - **Umbrales**:
+              - 🟢 <30% = Riesgo bajo (diversificado)
+              - 🟡 30-50% = Riesgo moderado
+              - 🔴 >50% = Riesgo alto (concentrado)
+            
+            ---
+            
+            ### 📅 Clasificación por Antigüedad
+            
+            **Vigente (0 días)**
+            - Sin vencimiento, aún dentro del plazo de crédito
+            - **Fórmula días restantes**: `días_de_credito - días_desde_factura`
+            
+            **Vencida 1-30 días**
+            - Vencimiento reciente, gestión preventiva
+            - Riesgo: Bajo
+            
+            **Vencida 31-60 días**
+            - Requiere seguimiento activo
+            - Riesgo: Medio
+            
+            **Vencida 61-90 días**
+            - Requiere escalamiento a gerencia
+            - Riesgo: Alto
+            
+            **Vencida >90 días**
+            - Requiere acción legal o provisión
+            - Riesgo: Crítico
+            
+            ---
+            
+            ### 🎨 Escala de Eficiencia en Ventas (para vendedores)
+            
+            **Score de Eficiencia Individual (%)** 
+            - **Fórmula**: `(30% × Liquidez) + (30% × Morosidad⁻¹) + (40% × Recuperación)`
+            - **Donde**:
+              - Liquidez = % vigente del vendedor
+              - Morosidad⁻¹ = 100% - % morosidad
+              - Recuperación = % cobrado vs total asignado
+            
+            **Clasificación**:
+            - 🟢 80-100% = Alta eficiencia
+            - 🟡 60-79% = Media eficiencia
+            - 🟠 40-59% = Baja eficiencia
+            - 🔴 <40% = Muy baja eficiencia
+            
+            ---
+            
+            ### ⚠️ Métricas NO Disponibles
+            
+            **DSO (Days Sales Outstanding)**
+            - ❌ No calculable sin datos de ventas diarias
+            - Requiere: Ventas a crédito del período
+            - Fórmula teórica: `(CxC Promedio / Ventas Crédito) × Días`
+            
+            **Rotación de CxC**
+            - ❌ No calculable sin datos de ventas
+            - Requiere: Ventas anuales a crédito
+            - Fórmula teórica: `Ventas Crédito Anual / CxC Promedio`
+            
+            **Provisión de Incobrables**
+            - ℹ️ Requiere política contable definida
+            - Estándar: 1-5% de cartera vencida >90 días
+            
+            ---
+            
+            ### 📝 Notas Importantes
+            
+            - **Columna de identificación**: Se usa "Cliente" (columna F) para agrupar deudores
+            - **Cálculo de días**: Basado en columna `dias_restantes` (positivo = vigente) o `dias_vencido` (negativo = overdue)
+            - **Moneda**: Todos los montos en USD (convertidos según TC si aplica)
+            - **Actualización**: Datos actualizados a la fecha de última factura registrada
+            """)
         
         st.info("📌 Este reporte se basa en la columna 'Cliente' (F) para identificar deudores.")
 
