@@ -788,6 +788,82 @@ if "df" in st.session_state and "archivo_excel" in st.session_state:
 # NAVEGACIÓN MEJORADA CON TABS Y TOOLTIPS
 # =====================================================================
 
+# =====================================================================
+# SISTEMA DE PASSKEY PREMIUM - ANÁLISIS CON IA
+# =====================================================================
+
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 🤖 Análisis Premium con IA")
+
+# Inicializar estado de IA en session_state
+if "ia_premium_activada" not in st.session_state:
+    st.session_state["ia_premium_activada"] = False
+if "openai_api_key" not in st.session_state:
+    st.session_state["openai_api_key"] = None
+if "passkey_valido" not in st.session_state:
+    st.session_state["passkey_valido"] = False
+
+# Passkey definido (puede ser cambiado o guardado en variables de entorno)
+PASSKEY_PREMIUM = "fradma2026"
+
+# Widget para ingresar passkey
+passkey_input = st.sidebar.text_input(
+    "🔑 Passkey Premium",
+    type="password",
+    placeholder="Ingresa tu passkey",
+    help="Activa funciones premium de análisis con IA"
+)
+
+if passkey_input == PASSKEY_PREMIUM:
+    if not st.session_state["passkey_valido"]:
+        st.session_state["passkey_valido"] = True
+        st.sidebar.success("✅ Passkey válido!")
+    
+    # Solicitar API key de OpenAI
+    st.sidebar.markdown("**Configuración de IA**")
+    
+    # Intentar obtener la API key de variable de entorno primero
+    api_key_env = os.getenv("OPENAI_API_KEY", "")
+    
+    if api_key_env:
+        st.session_state["openai_api_key"] = api_key_env
+        st.sidebar.success("🔑 API key detectada desde variable de entorno")
+        st.session_state["ia_premium_activada"] = True
+    else:
+        openai_api_key = st.sidebar.text_input(
+            "OpenAI API Key",
+            type="password",
+            placeholder="sk-...",
+            help="Ingresa tu API key de OpenAI para habilitar análisis con IA"
+        )
+        
+        if openai_api_key:
+            # Validar la API key
+            from utils.ai_helper import validar_api_key
+            
+            if validar_api_key(openai_api_key):
+                st.session_state["openai_api_key"] = openai_api_key
+                st.session_state["ia_premium_activada"] = True
+                st.sidebar.success("✅ API key válida")
+            else:
+                st.sidebar.error("❌ API key inválida")
+                st.session_state["ia_premium_activada"] = False
+        else:
+            st.session_state["ia_premium_activada"] = False
+    
+    if st.session_state["ia_premium_activada"]:
+        st.sidebar.info("💡 Recomendaciones de IA habilitadas en todos los módulos")
+    
+else:
+    st.session_state["passkey_valido"] = False
+    st.session_state["ia_premium_activada"] = False
+    st.session_state["openai_api_key"] = None
+    
+    if passkey_input:
+        st.sidebar.error("❌ Passkey incorrecto")
+    else:
+        st.sidebar.caption("🔐 Ingresa el passkey para acceder a funciones premium")
+
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🧭 Navegación")
 
@@ -940,7 +1016,10 @@ elif menu == "📊 Comparativo Año vs Año":
 
 elif menu == "📉 YTD por Línea de Negocio":
     if "df" in st.session_state:
-        ytd_lineas.run(st.session_state["df"])
+        # Pasar parámetros de IA premium al módulo
+        ia_habilitada = st.session_state.get("ia_premium_activada", False)
+        api_key = st.session_state.get("openai_api_key", None)
+        ytd_lineas.run(st.session_state["df"], habilitar_ia=ia_habilitada, openai_api_key=api_key)
     else:
         st.warning("⚠️ Primero sube un archivo para visualizar el reporte YTD.")
         st.info("📂 Este reporte requiere datos de ventas con: fecha, linea_de_negocio, ventas_usd")
@@ -953,7 +1032,10 @@ elif menu == "🔥 Heatmap Ventas":
 
 elif menu == "💳 KPI Cartera CxC":
     if "archivo_excel" in st.session_state:
-        kpi_cpc.run(st.session_state["archivo_excel"])
+        # Pasar parámetros de IA premium al módulo
+        ia_habilitada = st.session_state.get("ia_premium_activada", False)
+        api_key = st.session_state.get("openai_api_key", None)
+        kpi_cpc.run(st.session_state["archivo_excel"], habilitar_ia=ia_habilitada, openai_api_key=api_key)
     else:
         st.warning("⚠️ Primero sube un archivo para visualizar CXC.")
 

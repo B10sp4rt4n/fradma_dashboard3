@@ -494,12 +494,14 @@ def exportar_excel_ytd(df_ytd, año, comparativo_df=None):
     output.seek(0)
     return output
 
-def run(df):
+def run(df, habilitar_ia=False, openai_api_key=None):
     """
     Función principal del módulo YTD por Líneas.
     
     Args:
         df: DataFrame con datos de ventas (requiere: fecha, linea_de_negocio, ventas_usd)
+        habilitar_ia: Booleano para activar análisis con IA (default: False)
+        openai_api_key: API key de OpenAI para análisis premium (default: None)
     """
     st.title("📊 Reporte YTD por Línea de Negocio")
     st.markdown("---")
@@ -683,9 +685,8 @@ def run(df):
     #     
     #     st.sidebar.caption("💡 Los análisis con IA son generados por GPT-4o-mini y pueden tardar unos segundos")
     
-    # Forzar como deshabilitada mientras se optimiza
-    habilitar_ia = False
-    openai_api_key = None
+    # IA controlada desde el passkey premium en app.py (se recibe como parámetro)
+    # habilitar_ia y openai_api_key vienen de los parámetros de la función
     
     # Aplicar filtros
     df_filtrado = df[df['linea_de_negocio'].isin(seleccion_lineas)].copy()
@@ -792,11 +793,10 @@ def run(df):
     st.markdown("---")
     
     # =====================================================================
-    # SECCIÓN 2.5: ANÁLISIS EJECUTIVO CON IA (TEMPORALMENTE DESHABILITADO)
+    # SECCIÓN 2.5: ANÁLISIS EJECUTIVO CON IA - FUNCIÓN PREMIUM
     # =====================================================================
-    # TODO: Reactivar cuando se refine la integración
-    if False:  # habilitar_ia and openai_api_key:
-        st.header("🤖 Análisis Ejecutivo con IA")
+    if habilitar_ia and openai_api_key:
+        st.header("🤖 Análisis Ejecutivo con IA Premium")
         
         with st.spinner("🔄 Generando análisis ejecutivo con GPT-4o-mini..."):
             try:

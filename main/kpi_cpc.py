@@ -53,30 +53,24 @@ def normalizar_columnas(df):
     df.columns = nuevas_columnas
     return df
 
-def run(archivo):
+def run(archivo, habilitar_ia=False, openai_api_key=None):
+    """
+    Función principal del módulo KPI CxC (Cuentas por Cobrar).
+    
+    Args:
+        archivo: Ruta o buffer del archivo Excel con datos CxC
+        habilitar_ia: Booleano para activar análisis con IA (default: False)
+        openai_api_key: API key de OpenAI para análisis premium (default: None)
+    """
     if not archivo.name.endswith(('.xls', '.xlsx')):
         st.error("❌ Solo se aceptan archivos Excel para el reporte de deudas.")
         return
 
     # =====================================================================
-    # CONFIGURACIÓN DE ANÁLISIS CON IA - TEMPORALMENTE DESHABILITADO
+    # CONFIGURACIÓN DE ANÁLISIS CON IA - FUNCIÓN PREMIUM
     # =====================================================================
-    # TODO: Reactivar cuando se simplifique y optimice
-    # st.sidebar.markdown("---")
-    # st.sidebar.subheader("🤖 Análisis con IA")
-    # 
-    # habilitar_ia = st.sidebar.checkbox(
-    #     "Habilitar Análisis Ejecutivo con IA",
-    #     value=False,
-    #     help="Genera insights automáticos sobre la salud de CxC usando OpenAI GPT-4o-mini"
-    # )
-    # 
-    # openai_api_key = None
-    # ...
-    
-    # Forzar como deshabilitado
-    habilitar_ia = False
-    openai_api_key = None
+    # La IA se habilita desde el passkey premium en el sidebar principal
+    # habilitar_ia y openai_api_key vienen de los parámetros de la función
 
     try:
         xls = pd.ExcelFile(archivo)
@@ -339,11 +333,10 @@ def run(archivo):
         st.write("---")
         
         # =====================================================================
-        # FASE 2.5: ANÁLISIS EJECUTIVO CON IA (TEMPORALMENTE DESHABILITADO)
+        # FASE 2.5: ANÁLISIS EJECUTIVO CON IA - FUNCIÓN PREMIUM
         # =====================================================================
-        # TODO: Reactivar cuando se refine y simplifique
-        if False:  # habilitar_ia and openai_api_key:
-            st.header("🤖 Análisis Ejecutivo con IA")
+        if habilitar_ia and openai_api_key:
+            st.header("🤖 Análisis Ejecutivo con IA Premium")
             
             with st.spinner("🔄 Generando análisis ejecutivo con GPT-4o-mini..."):
                 try:
