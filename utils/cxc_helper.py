@@ -259,17 +259,42 @@ def calcular_metricas_basicas(df_np: pd.DataFrame, columna_saldo: str = 'saldo_a
     pct_critica = (critica / total_adeudado * 100) if total_adeudado > 0 else 0
     pct_alto_riesgo = (alto_riesgo / total_adeudado * 100) if total_adeudado > 0 else 0
     
+    # Calcular score de salud y su clasificación
+    score_salud = calcular_score_salud(pct_vigente, pct_critica)
+    clasificacion_salud, _ = clasificar_score_salud(score_salud)
+    
+    # Calcular por rangos adicionales (vencida 31-60, 61-90)
+    vencida_31_60 = df_np[
+        (df_np['dias_overdue'] > 30) & 
+        (df_np['dias_overdue'] <= 60)
+    ][columna_saldo].sum()
+    vencida_61_90 = df_np[
+        (df_np['dias_overdue'] > 60) & 
+        (df_np['dias_overdue'] <= 90)
+    ][columna_saldo].sum()
+    
+    pct_vencida_0_30 = (vencida_0_30 / total_adeudado * 100) if total_adeudado > 0 else 0
+    pct_vencida_31_60 = (vencida_31_60 / total_adeudado * 100) if total_adeudado > 0 else 0
+    pct_vencida_61_90 = (vencida_61_90 / total_adeudado * 100) if total_adeudado > 0 else 0
+    
     return {
         'total_adeudado': total_adeudado,
         'vigente': vigente,
         'vencida': vencida,
         'vencida_0_30': vencida_0_30,
+        'vencida_31_60': vencida_31_60,
+        'vencida_61_90': vencida_61_90,
         'critica': critica,
         'alto_riesgo': alto_riesgo,
         'pct_vigente': pct_vigente,
         'pct_vencida': pct_vencida,
+        'pct_vencida_0_30': pct_vencida_0_30,
+        'pct_vencida_31_60': pct_vencida_31_60,
+        'pct_vencida_61_90': pct_vencida_61_90,
         'pct_critica': pct_critica,
-        'pct_alto_riesgo': pct_alto_riesgo
+        'pct_alto_riesgo': pct_alto_riesgo,
+        'score_salud': score_salud,
+        'clasificacion_salud': clasificacion_salud
     }
 
 

@@ -650,9 +650,9 @@ def crear_reporte_html(
         clasificacion = metricas.get('clasificacion_salud', 'N/A')
         html_parts.append(f"""
                 <div class="section">
-                    <h2 class="section-title">&#127919; Score de Salud Financiera</h2>
+                    <h2 class="section-title">&#127919; Score de Salud General</h2>
                     <div class="score-container">
-                        <div class="score-label">Puntuación General</div>
+                        <div class="score-label">Puntuaci&oacute;n de Cartera</div>
                         <div class="score-value">{score:.0f}<span style="font-size: 32px; opacity: 0.7;">/100</span></div>
                         <div class="score-classification">{clasificacion}</div>
                     </div>
