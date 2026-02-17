@@ -608,18 +608,32 @@ def run(df, habilitar_ia=False, openai_api_key=None):
     # Modo de comparación (DEFAULT: ytd_equiv para evitar comparaciones injustas)
     modo_comparacion = "ytd_equivalente"
     if comparar_año:
-        st.sidebar.markdown("**Tipo de Comparación:**")
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("**🎯 Tipo de Comparación:**")
         modo_comparacion = st.sidebar.radio(
             "Selecciona el modo",
             options=["ytd_equivalente", "año_completo"],
             format_func=lambda x: {
-                "año_completo": "📅 Año Anterior Completo vs YTD Actual",
-                "ytd_equivalente": "📆 YTD Equivalente (mismo período)"
+                "año_completo": "📅 Año Anterior Completo",
+                "ytd_equivalente": "📆 YTD Equivalente ✓"
             }[x],
-            help="YTD Equivalente (recomendado): Compara mismo período en ambos años | Año Completo: Compara YTD actual con todo el año anterior",
+            help=(
+                "📆 YTD Equivalente (recomendado): Compara el MISMO periodo en ambos años "
+                "(ej: enero-febrero 2026 vs enero-febrero 2025)\n\n"
+                "📅 Año Completo: Compara YTD actual contra TODO el año anterior completo "
+                "(útil solo para análisis de fin de año)"
+            ),
             label_visibility="collapsed",
             index=0  # ytd_equivalente como opción seleccionada por defecto
         )
+        
+        # Mostrar advertencia si selecciona año completo
+        if modo_comparacion == "año_completo":
+            st.sidebar.warning(
+                "⚠️ Comparando YTD actual vs año anterior **completo**. "
+                "Si estás en inicio de año, verás crecimientos negativos normales."
+            )
+        st.sidebar.markdown("---")
     
     año_anterior = None
     if comparar_año and (año_actual - 1) in años_disponibles:
@@ -703,6 +717,62 @@ def run(df, habilitar_ia=False, openai_api_key=None):
     # SECCIÓN 2: KPIs PRINCIPALES
     # =====================================================================
     st.header("📈 Indicadores Clave")
+    
+    # Mostrar contexto de comparación de periodos
+    if año_anterior:
+        fecha_inicio_actual = datetime(año_actual, 1, 1)
+        fecha_fin_actual = df_ytd_actual['fecha'].max() if len(df_ytd_actual) > 0 else datetime.now()
+        dias_ytd_actual = (fecha_fin_actual - fecha_inicio_actual).days + 1
+        
+        with st.expander("ℹ️ Contexto de Comparación YTD", expanded=False):
+            col_info1, col_info2 = st.columns(2)
+            
+            with col_info1:
+                st.markdown(f"**📅 YTD {año_actual} (Actual):**")
+                st.info(
+                    f"Del **{fecha_inicio_actual.strftime('%d/%m/%Y')}** "
+                    f"al **{fecha_fin_actual.strftime('%d/%m/%Y')}**\n\n"
+                    f"({dias_ytd_actual} días transcurridos)"
+                )
+            
+            with col_info2:
+                if modo_comparacion == "año_completo":
+                    fecha_inicio_anterior = datetime(año_anterior, 1, 1)
+                    fecha_fin_anterior = datetime(año_anterior, 12, 31)
+                    dias_anterior = 365
+                    st.markdown(f"**📅 Año {año_anterior} (Completo):**")
+                    st.warning(
+                        f"Del **{fecha_inicio_anterior.strftime('%d/%m/%Y')}** "
+                        f"al **{fecha_fin_anterior.strftime('%d/%m/%Y')}**\n\n"
+                        f"({dias_anterior} días - **año completo**)"
+                    )
+                else:  # ytd_equivalente
+                    fecha_inicio_anterior = datetime(año_anterior, 1, 1)
+                    # Misma fecha del calendario
+                    try:
+                        fecha_fin_anterior = datetime(año_anterior, fecha_fin_actual.month, fecha_fin_actual.day)
+                    except ValueError:
+                        fecha_fin_anterior = datetime(año_anterior, fecha_fin_actual.month, 28)
+                    dias_anterior = (fecha_fin_anterior - fecha_inicio_anterior).days + 1
+                    st.markdown(f"**📅 YTD {año_anterior} (Equivalente):**")
+                    st.success(
+                        f"Del **{fecha_inicio_anterior.strftime('%d/%m/%Y')}** "
+                        f"al **{fecha_fin_anterior.strftime('%d/%m/%Y')}**\n\n"
+                        f"({dias_anterior} días - **mismo periodo**)"
+                    )
+            
+            if modo_comparacion == "año_completo":
+                st.markdown(
+                    "⚠️ **Modo: Año Completo** - Comparando YTD actual contra TODO el año anterior. "
+                    "Esta comparación puede generar crecimientos negativos/bajos si estamos en inicio de año. "
+                    "Se recomienda usar **YTD Equivalente** para comparaciones justas."
+                )
+            else:
+                st.markdown(
+                    "✅ **Modo: YTD Equivalente** - Comparando periodos equivalentes "
+                    f"({dias_ytd_actual} días en ambos años). Esta es la comparación más justa "
+                    "para medir crecimiento real."
+                )
     
     metricas = calcular_metricas_ytd(df_ytd_actual)
     

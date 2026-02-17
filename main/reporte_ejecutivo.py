@@ -119,6 +119,51 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
     st.markdown("### Vista Consolidada del Negocio - Dashboard para Dirección")
     
     # =====================================================================
+    # INFO: CONTEXTO DE PERIODOS COMPARADOS
+    # =====================================================================
+    
+    # Detectar rango de fechas de los datos
+    if "fecha" in df_ventas.columns and not df_ventas.empty:
+        fecha_min_datos = df_ventas["fecha"].min()
+        fecha_max_datos = df_ventas["fecha"].max()
+        
+        # Calcular periodos de comparación
+        mes_actual_inicio = fecha_max_datos.replace(day=1)
+        dia_actual_en_mes = fecha_max_datos.day
+        mes_anterior_inicio = (mes_actual_inicio - timedelta(days=1)).replace(day=1)
+        fecha_limite_mes_anterior = mes_anterior_inicio.replace(
+            day=min(dia_actual_en_mes, (mes_actual_inicio - timedelta(days=1)).day)
+        )
+        
+        # Mostrar contexto de comparación
+        with st.expander("ℹ️ Contexto de Comparación de Periodos", expanded=False):
+            col_info1, col_info2 = st.columns(2)
+            
+            with col_info1:
+                st.markdown("**📅 Periodo Actual:**")
+                st.info(
+                    f"Del **{mes_actual_inicio.strftime('%d/%m/%Y')}** "
+                    f"al **{fecha_max_datos.strftime('%d/%m/%Y')}**\n\n"
+                    f"({dia_actual_en_mes} días del mes)"
+                )
+            
+            with col_info2:
+                st.markdown("**📆 Periodo de Comparación:**")
+                st.info(
+                    f"Del **{mes_anterior_inicio.strftime('%d/%m/%Y')}** "
+                    f"al **{fecha_limite_mes_anterior.strftime('%d/%m/%Y')}**\n\n"
+                    f"({dia_actual_en_mes} días del mes anterior)"
+                )
+            
+            st.markdown(
+                "**🎯 Lógica de Comparación:**\n\n"
+                "Las métricas de crecimiento comparan **periodos equivalentes** "
+                "(mismo número de días) para evitar distorsiones. Por ejemplo, si estamos "
+                "en el día 10 del mes actual, comparamos contra los primeros 10 días del mes anterior, "
+                "no contra el mes anterior completo."
+            )
+    
+    # =====================================================================
     # SECCIÓN 1: RESUMEN FINANCIERO (2 columnas grandes)
     # =====================================================================
     
@@ -158,9 +203,23 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
             ventas_mes_actual = total_ventas
             variacion_ventas = 0
         
-        st.metric("💵 Total Ventas", formato_moneda(total_ventas), 
-                 delta=f"{variacion_ventas:+.1f}% vs mismo periodo mes anterior" if "fecha" in df_ventas.columns and not df_ventas.empty else None,
-                 help="📐 Suma total de ventas en USD del período seleccionado. Compara periodos equivalentes (mismo número de días).")
+        # Construir label dinámico para el delta
+        if "fecha" in df_ventas.columns and not df_ventas.empty:
+            mes_actual_nombre = fecha_max.strftime("%B %Y")
+            mes_anterior_nombre = mes_anterior.strftime("%B %Y")
+            delta_label = f"{variacion_ventas:+.1f}% vs {mes_anterior_nombre} (días 1-{dia_actual_en_mes})"
+        else:
+            delta_label = None
+        
+        st.metric(
+            "💵 Total Ventas", 
+            formato_moneda(total_ventas), 
+            delta=delta_label,
+            help=f"📐 Suma total de ventas en USD del período seleccionado.\n\n"
+                 f"Compara periodos equivalentes:\n"
+                 f"• {mes_actual_nombre if 'fecha' in df_ventas.columns and not df_ventas.empty else 'Actual'} (días 1-{dia_actual_en_mes if 'fecha' in df_ventas.columns and not df_ventas.empty else 'N/A'})\n"
+                 f"• vs {mes_anterior_nombre if 'fecha' in df_ventas.columns and not df_ventas.empty else 'Anterior'} (días 1-{dia_actual_en_mes if 'fecha' in df_ventas.columns and not df_ventas.empty else 'N/A'})"
+        )
         
         col_v1, col_v2 = st.columns(2)
         col_v1.metric("🛍️ Operaciones", f"{total_ops:,}",
