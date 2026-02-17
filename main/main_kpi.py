@@ -2,8 +2,12 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 import plotly.express as px
+from utils.ai_helper_premium import generar_insights_kpi_vendedores
+from utils.logger import configurar_logger
 
-def run():
+logger = configurar_logger("main_kpi", nivel="INFO")
+
+def run(habilitar_ia=False, openai_api_key=None):
     st.title("📈 KPIs Generales")
 
     if "df" not in st.session_state:
@@ -328,6 +332,101 @@ def run():
 
         st.altair_chart(chart, width='stretch')    
     st.markdown("---")
+    
+    # =====================================================================
+    # ANÁLISIS PREMIUM CON IA - INSIGHTS ESTRATÉGICOS DE EQUIPO DE VENTAS
+    # =====================================================================
+    if habilitar_ia and openai_api_key:
+        st.header("🤖 Insights Estratégicos Premium - Equipo de Ventas")
+        
+        with st.spinner("🔄 Analizando patrones del equipo con IA..."):
+            try:
+                # Preparar datos para el análisis
+                num_vendedores = len(resumen_agente)
+                ticket_promedio_general = resumen_agente["total_ventas"].sum() / resumen_agente["operaciones"].sum()
+                
+                # Calcular eficiencia general (simplificado)
+                eficiencia_general = 100 * (resumen_agente["total_ventas"].sum() / (resumen_agente["operaciones"].sum() * ticket_promedio_general))
+                
+                # Top y bottom performers
+                sorted_vendedores = resumen_agente.sort_values("total_ventas", ascending=False)
+                vendedor_top = sorted_vendedores.iloc[0]["agente"]
+                ventas_vendedor_top = sorted_vendedores.iloc[0]["total_ventas"]
+                vendedor_bottom = sorted_vendedores.iloc[-1]["agente"]
+                ventas_vendedor_bottom = sorted_vendedores.iloc[-1]["total_ventas"]
+                
+                # Concentración top 3
+                top3_ventas = sorted_vendedores.head(3)["total_ventas"].sum()
+                total_ventas = resumen_agente["total_ventas"].sum()
+                concentracion_top3_pct = (top3_ventas / total_ventas * 100) if total_ventas > 0 else 0
+                
+                # Preparar lista de vendedores
+                datos_vendedores = []
+                for _, row in sorted_vendedores.head(10).iterrows():
+                    datos_vendedores.append({
+                        'nombre': row['agente'],
+                        'ventas': row['total_ventas'],
+                        'ticket_avg': row['ticket_promedio']
+                    })
+                
+                # Generar insights con IA
+                insights = generar_insights_kpi_vendedores(
+                    num_vendedores=num_vendedores,
+                    ticket_promedio_general=ticket_promedio_general,
+                    eficiencia_general=eficiencia_general,
+                    vendedor_top=vendedor_top,
+                    ventas_vendedor_top=ventas_vendedor_top,
+                    vendedor_bottom=vendedor_bottom,
+                    ventas_vendedor_bottom=ventas_vendedor_bottom,
+                    concentracion_top3_pct=concentracion_top3_pct,
+                    api_key=openai_api_key,
+                    datos_vendedores=datos_vendedores
+                )
+                
+                if insights:
+                    # Insight principal
+                    st.info(f"💡 **{insights.get('insight_clave', 'No disponible')}**")
+                    
+                    # Columnas para organizar insights
+                    col_izq, col_der = st.columns(2)
+                    
+                    with col_izq:
+                        st.markdown("### 👥 Recomendaciones de Equipo")
+                        recomendaciones = insights.get('recomendaciones_equipos', [])
+                        if recomendaciones:
+                            for rec in recomendaciones:
+                                st.markdown(f"- {rec}")
+                        else:
+                            st.caption("No disponible")
+                        
+                        st.markdown("")
+                        
+                        st.markdown("### 🎯 Oportunidades de Mejora")
+                        oportunidades = insights.get('oportunidades_mejora', [])
+                        if oportunidades:
+                            for opp in oportunidades:
+                                st.markdown(f"- {opp}")
+                        else:
+                            st.caption("No disponible")
+                    
+                    with col_der:
+                        st.markdown("### ⚠️ Alertas Estratégicas")
+                        alertas = insights.get('alertas_estrategicas', [])
+                        if alertas:
+                            for alerta in alertas:
+                                st.markdown(f"- {alerta}")
+                        else:
+                            st.caption("No hay alertas críticas")
+                    
+                    st.caption("🤖 Análisis generado por OpenAI GPT-4o-mini")
+                else:
+                    st.warning("⚠️ No se pudo generar el análisis de IA")
+                    
+            except Exception as e:
+                st.error(f"❌ Error al generar insights de IA: {str(e)}")
+                logger.error(f"Error en análisis de IA vendedores: {e}", exc_info=True)
+        
+        st.markdown("---")
     
     # =====================================================================
     # PANEL DE DEFINICIONES Y FÓRMULAS

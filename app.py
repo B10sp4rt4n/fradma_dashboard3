@@ -988,7 +988,10 @@ if menu == "🎯 Reporte Ejecutivo":
                     # Si no hay hoja específica, crear DataFrame vacío
                     df_cxc = pd.DataFrame(columns=['cliente', 'saldo_adeudado', 'dias_vencido'])
                 
-                reporte_ejecutivo.mostrar_reporte_ejecutivo(df_ventas, df_cxc)
+                # Pasar parámetros de IA premium al módulo
+                ia_habilitada = st.session_state.get("ia_premium_activada", False)
+                api_key = st.session_state.get("openai_api_key", None)
+                reporte_ejecutivo.mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=ia_habilitada, openai_api_key=api_key)
             except KeyError as e:
                 st.error(f"❌ Columna requerida no encontrada: {e}")
                 st.info("💡 Verifica que el archivo contenga las columnas: fecha, ventas, cliente, saldo")
@@ -1006,7 +1009,10 @@ if menu == "🎯 Reporte Ejecutivo":
         st.info("📂 Usa el menú lateral para cargar tu archivo de datos.")
 
 elif menu == "📈 KPIs Generales":
-    main_kpi.run()
+    # Pasar parámetros de IA premium al módulo
+    ia_habilitada = st.session_state.get("ia_premium_activada", False)
+    api_key = st.session_state.get("openai_api_key", None)
+    main_kpi.run(habilitar_ia=ia_habilitada, openai_api_key=api_key)
 
 elif menu == "📊 Comparativo Año vs Año":
     if "df" in st.session_state:
@@ -1071,11 +1077,17 @@ elif menu == "📊 Reporte Consolidado":
                 else:
                     df_cxc = pd.DataFrame()
                 
-                reporte_consolidado.run(df_ventas, df_cxc)
+                # Pasar parámetros de IA premium al módulo
+                ia_habilitada = st.session_state.get("ia_premium_activada", False)
+                api_key = st.session_state.get("openai_api_key", None)
+                reporte_consolidado.run(df_ventas, df_cxc, habilitar_ia=ia_habilitada, openai_api_key=api_key)
             except Exception as e:
                 st.error(f"❌ Error al generar el reporte consolidado: {str(e)}")
                 logger.exception(f"Error en reporte consolidado: {e}")
     elif "df" in st.session_state:
-        reporte_consolidado.run(st.session_state["df"], None)
+        # Pasar parámetros de IA premium al módulo
+        ia_habilitada = st.session_state.get("ia_premium_activada", False)
+        api_key = st.session_state.get("openai_api_key", None)
+        reporte_consolidado.run(st.session_state["df"], None, habilitar_ia=ia_habilitada, openai_api_key=api_key)
     else:
         st.warning("⚠️ Primero sube un archivo para visualizar el Reporte Consolidado.")

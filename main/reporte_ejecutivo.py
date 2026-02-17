@@ -10,18 +10,21 @@ import plotly.express as px
 from datetime import datetime, timedelta
 from utils.formatos import formato_moneda, formato_porcentaje, formato_compacto
 from utils.logger import configurar_logger
+from utils.ai_helper_premium import generar_insights_ejecutivo_consolidado
 
 # Configurar logger para este módulo
 logger = configurar_logger("reporte_ejecutivo", nivel="INFO")
 
 
-def mostrar_reporte_ejecutivo(df_ventas, df_cxc):
+def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_key=None):
     """
     Muestra el reporte ejecutivo consolidado con métricas clave de negocio.
     
     Args:
         df_ventas: DataFrame con datos de ventas
         df_cxc: DataFrame con datos de cuentas por cobrar
+        habilitar_ia: Booleano para activar análisis con IA (default: False)
+        openai_api_key: API key de OpenAI para análisis premium (default: None)
     """
 
     # Trabajar sobre copias locales para evitar efectos colaterales
@@ -820,4 +823,91 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc):
         """)
     
     st.markdown("---")
+    
+    # =====================================================================
+    # ANÁLISIS PREMIUM CON IA - INSIGHTS EJECUTIVOS CONSOLIDADOS
+    # =====================================================================
+    if habilitar_ia and openai_api_key:
+        st.header("🤖 Análisis Ejecutivo Premium - Visión CFO")
+        
+        with st.spinner("🔄 Generando diagnóstico integral del negocio con IA..."):
+            try:
+                # Preparar datos para el análisis consolidado
+                total_ventas_periodo = ventas_totales
+                
+                # Calcular línea top en ventas
+                if len(df_ventas) > 0 and 'linea_de_negocio' in df_ventas.columns:
+                    ventas_por_linea = df_ventas.groupby('linea_de_negocio')['valor_usd'].sum()
+                    top_linea_ventas = ventas_por_linea.idxmax() if len(ventas_por_linea) > 0 else "N/A"
+                else:
+                    top_linea_ventas = "N/A"
+                
+                # Calcular línea con mayor cartera crítica
+                if len(df_cxc) > 0 and 'linea_de_negocio' in df_cxc.columns and 'dias_vencido' in df_cxc.columns:
+                    df_cxc_critica = df_cxc[df_cxc['dias_vencido'] > 90]
+                    if len(df_cxc_critica) > 0:
+                        cxc_por_linea = df_cxc_critica.groupby('linea_de_negocio')['saldo_adeudado'].sum()
+                        top_linea_cxc_critica = cxc_por_linea.idxmax() if len(cxc_por_linea) > 0 else "N/A"
+                    else:
+                        top_linea_cxc_critica = "N/A"
+                else:
+                    top_linea_cxc_critica = "N/A"
+                
+                # Casos urgentes
+                casos_urgentes = df_cxc[df_cxc.get('dias_vencido', 0) > 90].shape[0] if 'dias_vencido' in df_cxc.columns else 0
+                
+                # Generar insights consolidados con IA
+                insights = generar_insights_ejecutivo_consolidado(
+                    total_ventas_periodo=total_ventas_periodo,
+                    crecimiento_ventas_pct=variacion_ventas,
+                    score_salud_cxc=score_salud_cxc,
+                    pct_morosidad=pct_morosidad,
+                    top_linea_ventas=top_linea_ventas,
+                    top_linea_cxc_critica=top_linea_cxc_critica,
+                    casos_urgentes_cxc=casos_urgentes,
+                    api_key=openai_api_key
+                )
+                
+                if insights:
+                    # Diagnóstico integral
+                    st.markdown("### 🔍 Diagnóstico Integral")
+                    st.info(insights.get('diagnostico_integral', 'No disponible'))
+                    
+                    # Columnas para organizar insights
+                    col_izq, col_der = st.columns(2)
+                    
+                    with col_izq:
+                        st.markdown("### 🚨 Riesgos Ocultos")
+                        riesgos = insights.get('riesgos_ocultos', [])
+                        if riesgos:
+                            for riesgo in riesgos:
+                                st.markdown(f"- {riesgo}")
+                        else:
+                            st.caption("No se detectaron riesgos adicionales")
+                        
+                        st.markdown("")
+                        
+                        st.markdown("### 🔮 Escenario Proyectado")
+                        escenario = insights.get('escenario_proyectado', 'No disponible')
+                        st.markdown(f"_{escenario}_")
+                    
+                    with col_der:
+                        st.markdown("### 📋 Decisiones Críticas")
+                        decisiones = insights.get('decisiones_criticas', [])
+                        if decisiones:
+                            for decision in decisiones:
+                                st.markdown(f"- {decision}")
+                        else:
+                            st.caption("No disponible")
+                    
+                    st.caption("🤖 Análisis generado por OpenAI GPT-4o-mini")
+                else:
+                    st.warning("⚠️ No se pudo generar el análisis de IA")
+                    
+            except Exception as e:
+                st.error(f"❌ Error al generar insights ejecutivos de IA: {str(e)}")
+                logger.error(f"Error en análisis de IA ejecutivo: {e}", exc_info=True)
+        
+        st.markdown("---")
+    
     st.caption(f"📅 Reporte generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
