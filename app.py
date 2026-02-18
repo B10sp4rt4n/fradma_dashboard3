@@ -8,6 +8,7 @@ from unidecode import unidecode
 load_dotenv()
 from main import main_kpi, main_comparativo, heatmap_ventas
 from main import kpi_cpc, reporte_ejecutivo, ytd_lineas, reporte_consolidado
+from main import vendedores_cxc
 from utils.data_cleaner import limpiar_columnas_texto, detectar_duplicados_similares
 from utils.data_normalizer import normalizar_columnas
 from utils.logger import configurar_logger, log_dataframe_info, log_execution_time
@@ -935,7 +936,8 @@ menu = st.sidebar.radio(
         "📊 Comparativo Año vs Año",
         "📉 YTD por Línea de Negocio",
         "🔥 Heatmap Ventas",
-        "💳 KPI Cartera CxC"
+        "💳 KPI Cartera CxC",
+        "👥 Vendedores + CxC"
     ],
     help="Selecciona el módulo de análisis que deseas visualizar"
 )
@@ -1007,6 +1009,15 @@ with st.sidebar.expander("ℹ️ Acerca de esta vista"):
         - Priorización de cobros
         - Eficiencia de agentes
         - Reportes y cartas de cobranza
+        """)
+    elif menu == "👥 Vendedores + CxC":
+        st.markdown("""
+        **Cruce ventas × cartera por vendedor**
+
+        - Ratio deuda vencida / ventas
+        - Score de calidad de cartera
+        - Ranking mixto volumen + calidad
+        - Alertas automáticas por vendedor
         """)
 
 # =====================================================================
@@ -1103,6 +1114,9 @@ elif menu == "💳 KPI Cartera CxC":
         kpi_cpc.run(st.session_state["archivo_excel"], habilitar_ia=ia_habilitada, openai_api_key=api_key)
     else:
         st.warning("⚠️ Primero sube un archivo para visualizar CXC.")
+
+elif menu == "👥 Vendedores + CxC":
+    vendedores_cxc.run()
 
 elif menu == "📊 Reporte Consolidado":
     if "df" in st.session_state and "archivo_excel" in st.session_state:
