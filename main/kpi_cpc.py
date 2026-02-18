@@ -842,128 +842,237 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
             st.success("✅ No hay alertas críticas. La cartera está bajo control.")
         
         st.write("---")
-        
+
         # =====================================================================
-        # PRIORIDADES DE COBRANZA
+        # PRIORIDADES DE COBRANZA — Dashboard Proactivo
         # =====================================================================
-        st.header("📋 Prioridades de Cobranza")
-        
-        # Calcular score de prioridad para cada deudor
+        st.header("📋 Dashboard de Cobranza Proactiva")
+
+        from utils.export_helper import crear_excel_cobranza_semanal
+
+        # ── Calcular score de prioridad enriquecido ──────────────────────────
+        # Score 0-100 basado en 4 factores:
+        #   monto relativo (30%) · días máx vencido (35%) · # documentos (15%)
+        #   · % de cartera en alto riesgo del cliente (20%)
+        total_cartera = df_np['saldo_adeudado'].sum() if not df_np.empty else 1
+
         deudor_prioridad = []
-        
         for deudor in df_np['deudor'].unique():
-            deudor_data = df_np[df_np['deudor'] == deudor]
-            monto_total = deudor_data['saldo_adeudado'].sum()
-            
-            # Calcular días promedio vencido
-            if 'dias_overdue' in deudor_data.columns:
-                dias_prom = deudor_data['dias_overdue'].mean()
-                dias_max = deudor_data['dias_overdue'].max()
+            dd = df_np[df_np['deudor'] == deudor]
+            monto_total = dd['saldo_adeudado'].sum()
+            dias_max    = dd['dias_overdue'].max()   if 'dias_overdue' in dd.columns else 0
+            dias_prom   = dd['dias_overdue'].mean()  if 'dias_overdue' in dd.columns else 0
+            num_docs    = len(dd)
+
+            monto_alto_riesgo = dd[dd['dias_overdue'] > 90]['saldo_adeudado'].sum() \
+                                if 'dias_overdue' in dd.columns else 0
+            pct_riesgo = (monto_alto_riesgo / monto_total * 100) if monto_total > 0 else 0
+
+            # Normalizar cada factor sobre el máximo de la cartera
+            max_monto = df_np.groupby('deudor')['saldo_adeudado'].sum().max()
+            score_monto  = min(monto_total / max(max_monto, 1) * 100, 100) * 0.30
+            score_dias   = min(dias_max / 180 * 100, 100)                  * 0.35
+            score_docs   = min(num_docs / 20 * 100, 100)                   * 0.15
+            score_riesgo = min(pct_riesgo, 100)                            * 0.20
+            score_total  = score_monto + score_dias + score_docs + score_riesgo
+
+            if score_total >= 65:
+                nivel, nivel_num = "🔴 URGENTE", 1
+            elif score_total >= 40:
+                nivel, nivel_num = "🟠 ALTA",    2
+            elif score_total >= 20:
+                nivel, nivel_num = "🟡 MEDIA",   3
             else:
-                dias_prom = 0
-                dias_max = 0
-            
-            # Score de prioridad (0-100)
-            # Factores: monto (40%), días vencido (40%), cantidad documentos (20%)
-            score_monto = min((monto_total / 100000) * 100, 100) * 0.4
-            score_dias = min((dias_max / 180) * 100, 100) * 0.4
-            score_docs = min((len(deudor_data) / 10) * 100, 100) * 0.2
-            
-            score_prioridad = score_monto + score_dias + score_docs
-            
-            # Clasificar nivel
-            if score_prioridad >= 75:
-                nivel = "🔴 URGENTE"
-                nivel_num = 1
-            elif score_prioridad >= 50:
-                nivel = "🟠 ALTA"
-                nivel_num = 2
-            elif score_prioridad >= 25:
-                nivel = "🟡 MEDIA"
-                nivel_num = 3
+                nivel, nivel_num = "🟢 BAJA",    4
+
+            # Acción recomendada automática
+            if nivel_num == 1:
+                accion = "⚡ Contacto inmediato — evaluar plan de pagos / suspender crédito"
+            elif nivel_num == 2:
+                accion = "📞 Llamar en 48 h — comprometer fecha de pago"
+            elif nivel_num == 3:
+                accion = "📧 Enviar estado de cuenta + recordatorio por correo"
             else:
-                nivel = "🟢 BAJA"
-                nivel_num = 4
-            
+                accion = "🔔 Monitoreo semanal de rutina"
+
             deudor_prioridad.append({
-                'deudor': deudor,
-                'monto': monto_total,
-                'dias_max': dias_max,
-                'documentos': len(deudor_data),
-                'score': score_prioridad,
-                'nivel': nivel,
-                'nivel_num': nivel_num
+                'deudor':     deudor,
+                'monto':      monto_total,
+                'dias_max':   dias_max,
+                'dias_prom':  round(dias_prom, 1),
+                'documentos': num_docs,
+                'pct_riesgo': round(pct_riesgo, 1),
+                'score':      round(score_total, 1),
+                'nivel':      nivel,
+                'nivel_num':  nivel_num,
+                'accion':     accion,
             })
-        
-        # Crear DataFrame y ordenar
-        df_prioridades = pd.DataFrame(deudor_prioridad)
-        df_prioridades = df_prioridades.sort_values(['nivel_num', 'score'], ascending=[True, False])
-        
-        # Mostrar top 10 prioridades
-        st.write("### 🎯 Top 10 Acciones Inmediatas")
-        
-        df_top_prioridades = df_prioridades.head(10)[['nivel', 'deudor', 'monto', 'dias_max', 'documentos', 'score']].copy()
-        df_top_prioridades['monto'] = df_top_prioridades['monto'].apply(lambda x: f"${x:,.2f}")
-        df_top_prioridades['dias_max'] = df_top_prioridades['dias_max'].apply(lambda x: f"{int(x)} días")
-        df_top_prioridades['score'] = df_top_prioridades['score'].apply(lambda x: f"{x:.1f}/100")
-        
-        df_top_prioridades.columns = ['Prioridad', 'Cliente', 'Monto Adeudado', 'Días Máx.', 'Docs.', 'Score']
-        
-        st.dataframe(
-            df_top_prioridades,
-            width='stretch',
-            hide_index=True
-        )
-        
-        # Resumen de acciones por nivel
+
+        df_prioridades = pd.DataFrame(deudor_prioridad).sort_values(
+            ['nivel_num', 'score'], ascending=[True, False]
+        ).reset_index(drop=True)
+
+        # ── Métricas por nivel ───────────────────────────────────────────────
         col_acc1, col_acc2, col_acc3, col_acc4 = st.columns(4)
-        
-        urgente_count = len(df_prioridades[df_prioridades['nivel_num'] == 1])
-        alta_count = len(df_prioridades[df_prioridades['nivel_num'] == 2])
-        media_count = len(df_prioridades[df_prioridades['nivel_num'] == 3])
-        baja_count = len(df_prioridades[df_prioridades['nivel_num'] == 4])
-        
-        col_acc1.metric("🔴 Urgente", urgente_count, 
-                       delta=f"${df_prioridades[df_prioridades['nivel_num'] == 1]['monto'].sum():,.2f}")
-        col_acc2.metric("🟠 Alta", alta_count,
-                       delta=f"${df_prioridades[df_prioridades['nivel_num'] == 2]['monto'].sum():,.2f}")
-        col_acc3.metric("🟡 Media", media_count,
-                       delta=f"${df_prioridades[df_prioridades['nivel_num'] == 3]['monto'].sum():,.2f}")
-        col_acc4.metric("🟢 Baja", baja_count,
-                       delta=f"${df_prioridades[df_prioridades['nivel_num'] == 4]['monto'].sum():,.2f}")
-        
-        # Recomendaciones
-        st.write("### 💡 Recomendaciones de Acción")
-        st.markdown("""
-        **Para casos URGENTES (🔴):**
-        - Contacto inmediato con cliente
-        - Evaluación de plan de pagos o reestructuración
-        - Considerar suspensión de crédito hasta regularización
-        
-        **Para casos de prioridad ALTA (🟠):**
-        - Seguimiento telefónico en próximos 3 días
-        - Enviar estado de cuenta actualizado
-        - Establecer compromiso de pago con fecha específica
-        
-        **Para casos de prioridad MEDIA (🟡):**
-        - Recordatorio por correo electrónico
-        - Monitoreo semanal
-        
-        **Para casos de prioridad BAJA (🟢):**
-        - Seguimiento de rutina
-        - Mantener comunicación regular
-        """)
-        
+        for col_ui, niv_num, emoji, label in [
+            (col_acc1, 1, "🔴", "Urgente"),
+            (col_acc2, 2, "🟠", "Alta"),
+            (col_acc3, 3, "🟡", "Media"),
+            (col_acc4, 4, "🟢", "Baja"),
+        ]:
+            sub = df_prioridades[df_prioridades['nivel_num'] == niv_num]
+            col_ui.metric(
+                f"{emoji} {label}",
+                f"{len(sub)} clientes",
+                delta=f"${sub['monto'].sum():,.0f}",
+                delta_color="inverse" if niv_num <= 2 else "normal",
+            )
+
+        st.write("")
+
+        # ── Filtro interactivo de nivel ──────────────────────────────────────
+        nivel_filtro = st.multiselect(
+            "Filtrar por nivel de prioridad:",
+            options=["🔴 URGENTE", "🟠 ALTA", "🟡 MEDIA", "🟢 BAJA"],
+            default=["🔴 URGENTE", "🟠 ALTA"],
+            key="filtro_nivel_cobranza",
+        )
+
+        df_vista = df_prioridades[df_prioridades['nivel'].isin(nivel_filtro)] \
+                   if nivel_filtro else df_prioridades
+
+        # ── Tabla principal ──────────────────────────────────────────────────
+        st.write(f"**{len(df_vista)} cliente(s) en los niveles seleccionados**")
+
+        df_tabla = df_vista[[
+            'nivel', 'deudor', 'monto', 'dias_max', 'dias_prom',
+            'documentos', 'pct_riesgo', 'score', 'accion'
+        ]].copy()
+
+        st.dataframe(
+            df_tabla,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "nivel":      st.column_config.TextColumn("Prioridad",       width="small"),
+                "deudor":     st.column_config.TextColumn("Cliente",         width="large"),
+                "monto":      st.column_config.NumberColumn("Saldo ($)",     width="medium",
+                              format="$%.0f"),
+                "dias_max":   st.column_config.NumberColumn("Días Máx.",     width="small"),
+                "dias_prom":  st.column_config.NumberColumn("Días Prom.",    width="small"),
+                "documentos": st.column_config.NumberColumn("# Docs",        width="small"),
+                "pct_riesgo": st.column_config.NumberColumn("% Alto Riesgo", width="small",
+                              format="%.1f%%"),
+                "score":      st.column_config.ProgressColumn(
+                              "Score", width="small", min_value=0, max_value=100, format="%.1f"),
+                "accion":     st.column_config.TextColumn("Acción Recomendada", width="large"),
+            },
+        )
+
+        # ── Explicación del score ────────────────────────────────────────────
+        with st.expander("ℹ️ ¿Cómo se calcula el Score de Prioridad?"):
+            st.markdown("""
+            El **Score de Prioridad** (0–100) combina 4 factores para identificar
+            qué clientes requieren atención **antes** de que la deuda se deteriore:
+
+            | Factor | Peso | Descripción |
+            |--------|------|-------------|
+            | 💰 **Monto relativo** | 30 % | Saldo del cliente vs. el mayor deudor de la cartera |
+            | ⏰ **Días máx. vencido** | 35 % | Factura más antigua vencida (normalizada a 180 días) |
+            | 📄 **# Documentos** | 15 % | Cantidad de facturas pendientes (normalizada a 20) |
+            | 🔴 **% en Alto Riesgo** | 20 % | Porcentaje del saldo del cliente con >90 días vencido |
+
+            **Umbral de niveles:**
+            - 🔴 URGENTE: Score ≥ 65
+            - 🟠 ALTA: Score 40–64
+            - 🟡 MEDIA: Score 20–39
+            - 🟢 BAJA: Score < 20
+            """)
+
+        # ── Descarga Excel semanal ───────────────────────────────────────────
         st.write("---")
-        
+        st.write("### 📥 Exportar Lista de Cobranza Semanal")
+        col_dl1, col_dl2 = st.columns([2, 3])
+
+        with col_dl1:
+            nivel_export = st.multiselect(
+                "Incluir niveles en el Excel:",
+                options=["🔴 URGENTE", "🟠 ALTA", "🟡 MEDIA", "🟢 BAJA"],
+                default=["🔴 URGENTE", "🟠 ALTA"],
+                key="nivel_export_cobranza",
+            )
+
+        with col_dl2:
+            st.write("")
+            st.write("")
+            if nivel_export:
+                df_export_cobranza = df_prioridades[
+                    df_prioridades['nivel'].isin(nivel_export)
+                ].copy()
+                try:
+                    excel_bytes = crear_excel_cobranza_semanal(df_export_cobranza)
+                    fecha_archivo = datetime.now().strftime("%Y%m%d")
+                    st.download_button(
+                        label=f"⬇️ Descargar Excel ({len(df_export_cobranza)} clientes)",
+                        data=excel_bytes,
+                        file_name=f"cobranza_semanal_{fecha_archivo}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                    )
+                    st.caption(
+                        "El Excel incluye: semáforo de colores por prioridad, "
+                        "acción recomendada y columnas vacías para Gestor, Notas y Fecha de Compromiso."
+                    )
+                except Exception as e:
+                    st.error(f"Error al generar Excel: {e}")
+            else:
+                st.info("Selecciona al menos un nivel para habilitar la descarga.")
+
+        st.write("---")
+
+        # ── Gráfico: distribución de saldo por nivel ─────────────────────────
+        if not df_prioridades.empty:
+            resumen_niv = (
+                df_prioridades.groupby('nivel')['monto']
+                .sum()
+                .reset_index()
+                .rename(columns={'nivel': 'Nivel', 'monto': 'Saldo'})
+            )
+            orden = ["🔴 URGENTE", "🟠 ALTA", "🟡 MEDIA", "🟢 BAJA"]
+            colores_niv = {
+                "🔴 URGENTE": "#F44336",
+                "🟠 ALTA":    "#FF9800",
+                "🟡 MEDIA":   "#FFEB3B",
+                "🟢 BAJA":    "#4CAF50",
+            }
+            resumen_niv['Nivel'] = pd.Categorical(resumen_niv['Nivel'], categories=orden, ordered=True)
+            resumen_niv = resumen_niv.sort_values('Nivel')
+
+            fig_prio = px.bar(
+                resumen_niv, x='Nivel', y='Saldo',
+                color='Nivel',
+                color_discrete_map=colores_niv,
+                title='Saldo por Nivel de Prioridad',
+                text_auto='.3s',
+                labels={'Saldo': 'Saldo Adeudado ($)'},
+            )
+            fig_prio.update_layout(
+                showlegend=False,
+                height=320,
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)',
+                xaxis_title='',
+            )
+            st.plotly_chart(fig_prio, use_container_width=True)
+
         # Top 5 deudores con tabla mejorada
         st.dataframe(top_deudores.reset_index().rename(
             columns={'deudor': 'Cliente (Col F)', 'saldo_adeudado': 'Monto Adeudado ($)'}
         ).style.format({'Monto Adeudado ($)': '${:,.2f}'}))
-        
+
         # Gráfico de concentración
         st.bar_chart(top_deudores)
-        
+
         # =====================================================================
         # FASE 4: ANÁLISIS POR LÍNEA DE NEGOCIO
         # =====================================================================

@@ -819,6 +819,196 @@ def preparar_datos_para_export(df: pd.DataFrame) -> pd.DataFrame:
     return df_export
 
 
+def crear_excel_cobranza_semanal(
+    df_prioridades: pd.DataFrame,
+    nombre_empresa: str = "FRADMA"
+) -> bytes:
+    """
+    Crea un Excel de lista semanal de cobranza listo para compartir con el equipo.
+
+    Genera un archivo con dos hojas:
+    - "Lista Cobranza": tabla completa con colores por nivel de prioridad,
+      columna de "Acción Recomendada" y campo vacío "Gestión / Notas"
+    - "Resumen": métricas agregadas por nivel
+
+    Args:
+        df_prioridades: DataFrame con columnas:
+            - deudor (str)
+            - monto (float)
+            - dias_max (float)
+            - documentos (int)
+            - score (float)
+            - nivel (str): "🔴 URGENTE" | "🟠 ALTA" | "🟡 MEDIA" | "🟢 BAJA"
+            - nivel_num (int): 1-4 para ordenación
+        nombre_empresa: Nombre de la empresa para el encabezado
+
+    Returns:
+        bytes: Contenido del archivo Excel (.xlsx)
+    """
+    output = io.BytesIO()
+
+    # Colores de fondo por nivel (RGB hex para xlsxwriter: sin #)
+    COLOR_BG = {
+        "🔴 URGENTE": "FFCCCC",   # rojo claro
+        "🟠 ALTA":    "FFE0CC",   # naranja claro
+        "🟡 MEDIA":   "FFFACC",   # amarillo claro
+        "🟢 BAJA":    "CCFFCC",   # verde claro
+    }
+    COLOR_FONT = {
+        "🔴 URGENTE": "990000",
+        "🟠 ALTA":    "7D3C00",
+        "🟡 MEDIA":   "7D6608",
+        "🟢 BAJA":    "1A5C1A",
+    }
+    ACCION = {
+        "🔴 URGENTE": "⚡ Contacto INMEDIATO - Evaluar plan de pagos / suspender crédito",
+        "🟠 ALTA":    "📞 Llamar en las próximas 48 h - Comprometer fecha de pago",
+        "🟡 MEDIA":   "📧 Enviar estado de cuenta + recordatorio por correo",
+        "🟢 BAJA":    "🔔 Seguimiento de rutina - monitoreo semanal",
+    }
+
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        wb = writer.book
+
+        # ── Formatos base ──────────────────────────────────────────────────
+        fmt_titulo = wb.add_format({
+            "bold": True, "font_size": 15,
+            "font_color": "#1f77b4", "align": "center", "valign": "vcenter",
+        })
+        fmt_fecha = wb.add_format({"italic": True, "font_color": "#666666", "font_size": 10})
+        fmt_header = wb.add_format({
+            "bold": True, "bg_color": "2C3E50", "font_color": "FFFFFF",
+            "align": "center", "valign": "vcenter", "border": 1,
+            "text_wrap": True,
+        })
+        fmt_moneda = wb.add_format({"num_format": '$#,##0.00', "align": "right"})
+        fmt_numero = wb.add_format({"num_format": '#,##0', "align": "center"})
+        fmt_decimal = wb.add_format({"num_format": '0.0', "align": "center"})
+        fmt_center  = wb.add_format({"align": "center", "valign": "vcenter"})
+
+        # Fábrica de formatos por nivel (bg + font)
+        def _fmt_nivel(nivel, extra=None):
+            cfg = {
+                "bg_color": COLOR_BG.get(nivel, "FFFFFF"),
+                "font_color": COLOR_FONT.get(nivel, "000000"),
+                "valign": "vcenter", "border": 1,
+            }
+            if extra:
+                cfg.update(extra)
+            return wb.add_format(cfg)
+
+        # ── Hoja 1: Lista de Cobranza ──────────────────────────────────────
+        ws = wb.add_worksheet("Lista Cobranza")
+        writer.sheets["Lista Cobranza"] = ws
+
+        fecha_str = datetime.now().strftime("%d/%m/%Y %H:%M")
+        semana_str = datetime.now().strftime("Semana %W · %Y")
+
+        ws.set_row(0, 28)
+        ws.merge_range("A1:J1", f"Lista de Cobranza — {nombre_empresa}  |  {semana_str}", fmt_titulo)
+        ws.write("A2", f"Generado: {fecha_str}", fmt_fecha)
+
+        # Encabezados (fila 3, índice 2)
+        headers = [
+            "Prioridad", "Cliente", "Saldo Adeudado ($)",
+            "Días Máx Vencido", "# Documentos", "Score",
+            "Acción Recomendada", "Gestor Asignado", "Gestión / Notas", "Fecha Compromiso",
+        ]
+        ws.set_row(2, 36)
+        for col_n, h in enumerate(headers):
+            ws.write(2, col_n, h, fmt_header)
+
+        # Anchos de columna
+        anchos = [14, 34, 20, 16, 12, 8, 52, 20, 32, 16]
+        for col_n, w in enumerate(anchos):
+            ws.set_column(col_n, col_n, w)
+
+        # Filas de datos
+        df_sorted = df_prioridades.sort_values(
+            ["nivel_num", "score"], ascending=[True, False]
+        ).reset_index(drop=True)
+
+        for row_n, row in df_sorted.iterrows():
+            nivel = row.get("nivel", "🟢 BAJA")
+            excel_row = row_n + 3   # offset: título + fecha + header
+            ws.set_row(excel_row, 20)
+
+            fmt_txt  = _fmt_nivel(nivel)
+            fmt_mon  = _fmt_nivel(nivel, {"num_format": '$#,##0.00', "align": "right"})
+            fmt_num  = _fmt_nivel(nivel, {"num_format": '#,##0',     "align": "center"})
+            fmt_dec  = _fmt_nivel(nivel, {"num_format": '0.0',       "align": "center"})
+            fmt_acc  = _fmt_nivel(nivel, {"text_wrap": True, "italic": True})
+            fmt_vac  = _fmt_nivel(nivel, {"font_color": "AAAAAA", "italic": True})
+
+            ws.write(excel_row, 0, nivel,                                  fmt_txt)
+            ws.write(excel_row, 1, str(row.get("deudor", "")),             fmt_txt)
+            ws.write(excel_row, 2, float(row.get("monto", 0)),             fmt_mon)
+            ws.write(excel_row, 3, int(row.get("dias_max", 0)),            fmt_num)
+            ws.write(excel_row, 4, int(row.get("documentos", 0)),          fmt_num)
+            ws.write(excel_row, 5, round(float(row.get("score", 0)), 1),   fmt_dec)
+            ws.write(excel_row, 6, ACCION.get(nivel, ""),                  fmt_acc)
+            ws.write(excel_row, 7, "",                                      fmt_vac)  # Gestor
+            ws.write(excel_row, 8, "",                                      fmt_vac)  # Notas
+            ws.write(excel_row, 9, "",                                      fmt_vac)  # Fecha compromiso
+
+        # Inmovilizar fila de encabezado
+        ws.freeze_panes(3, 0)
+
+        # ── Hoja 2: Resumen ────────────────────────────────────────────────
+        ws_res = wb.add_worksheet("Resumen")
+        writer.sheets["Resumen"] = ws_res
+
+        ws_res.merge_range("A1:E1", f"Resumen Ejecutivo — {semana_str}", fmt_titulo)
+        ws_res.write("A2", f"Generado: {fecha_str}", fmt_fecha)
+
+        res_headers = ["Nivel", "# Clientes", "Saldo Total ($)", "Score Promedio", "% del Total Saldo"]
+        ws_res.set_row(2, 30)
+        for col_n, h in enumerate(res_headers):
+            ws_res.write(2, col_n, h, fmt_header)
+
+        ws_res.set_column(0, 0, 16)
+        ws_res.set_column(1, 1, 12)
+        ws_res.set_column(2, 2, 20)
+        ws_res.set_column(3, 3, 16)
+        ws_res.set_column(4, 4, 18)
+
+        total_monto = df_prioridades["monto"].sum() if "monto" in df_prioridades.columns else 0
+
+        for row_n, nivel in enumerate(["🔴 URGENTE", "🟠 ALTA", "🟡 MEDIA", "🟢 BAJA"]):
+            sub = df_prioridades[df_prioridades["nivel"] == nivel]
+            excel_row = row_n + 3
+
+            fmt_txt  = _fmt_nivel(nivel)
+            fmt_mon  = _fmt_nivel(nivel, {"num_format": '$#,##0.00', "align": "right"})
+            fmt_num  = _fmt_nivel(nivel, {"num_format": '#,##0',     "align": "center"})
+            fmt_pct  = _fmt_nivel(nivel, {"num_format": '0.00%',     "align": "center"})
+            fmt_dec  = _fmt_nivel(nivel, {"num_format": '0.0',       "align": "center"})
+
+            saldo_nivel = sub["monto"].sum() if len(sub) else 0
+            score_prom  = sub["score"].mean() if len(sub) else 0
+            pct_saldo   = (saldo_nivel / total_monto) if total_monto > 0 else 0
+
+            ws_res.write(excel_row, 0, nivel,           fmt_txt)
+            ws_res.write(excel_row, 1, len(sub),        fmt_num)
+            ws_res.write(excel_row, 2, saldo_nivel,     fmt_mon)
+            ws_res.write(excel_row, 3, score_prom,      fmt_dec)
+            ws_res.write(excel_row, 4, pct_saldo,       fmt_pct)
+
+        # Fila de TOTAL
+        total_row = 3 + 4
+        fmt_bold = wb.add_format({"bold": True, "border": 1, "align": "center"})
+        fmt_bold_mon = wb.add_format({"bold": True, "border": 1, "num_format": '$#,##0.00', "align": "right"})
+        ws_res.write(total_row, 0, "TOTAL",                     fmt_bold)
+        ws_res.write(total_row, 1, len(df_prioridades),         fmt_bold)
+        ws_res.write(total_row, 2, total_monto,                 fmt_bold_mon)
+        ws_res.write(total_row, 3, "",                          fmt_bold)
+        ws_res.write(total_row, 4, 1.0,
+                     wb.add_format({"bold": True, "border": 1, "num_format": '0.00%', "align": "center"}))
+
+    output.seek(0)
+    return output.getvalue()
+
+
 if __name__ == "__main__":
     # Demo de export
     print("🧪 Demo de export_helper.py\n")
