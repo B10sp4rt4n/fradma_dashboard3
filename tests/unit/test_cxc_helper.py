@@ -90,8 +90,10 @@ class TestCalcularDiasOverdue:
         })
         result = calcular_dias_overdue(df)
         
-        assert result[0] == 30  # 60 - 30 = 30 días vencido
-        assert result[1] == -30  # 60 - 90 = -30 días vigente
+        # Ajuste: 30 días de crédito = día 1-30 vigente, día 31 vencido
+        # 60 días desde fecha_pago, 30 de crédito: vencido = 60 - 30 + 1 = 31 días
+        assert result[0] == 31  # 60 días - 30 crédito + 1 = 31 días vencido
+        assert result[1] == -29  # 60 días - 90 crédito + 1 = -29 días vigente
     
     def test_valores_faltantes(self):
         """Maneja NaN correctamente"""

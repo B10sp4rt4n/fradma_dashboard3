@@ -114,13 +114,13 @@ def crear_grafico_ventas_periodo(df_agrupado, tipo_periodo):
 def crear_pie_cxc(metricas_cxc):
     """Crea un gráfico de pie para distribución de CxC."""
     
-    labels = ['Vigente', 'Vencida 0-30', 'Vencida 30-60', 'Vencida 60-90', 'Crítica >90']
+    labels = ['Vigente', 'Vencida 0-30', 'Vencida 31-60', 'Vencida 61-90', 'Alto Riesgo >90']
     values = [
         metricas_cxc.get('vigente', 0),
         metricas_cxc.get('vencida_0_30', 0),
-        metricas_cxc.get('vencida_30_60', 0),
-        metricas_cxc.get('vencida_60_90', 0),
-        metricas_cxc.get('critica', 0)
+        metricas_cxc.get('vencida_31_60', 0),
+        metricas_cxc.get('vencida_61_90', 0),
+        metricas_cxc.get('alto_riesgo', 0)
     ]
     colors = ['#4CAF50', '#FFC107', '#FF9800', '#FF5722', '#F44336']
     
@@ -266,7 +266,14 @@ def _calcular_metricas_cxc(df_cxc):
     
     try:
         metricas = calcular_metricas_basicas(df_cxc)
-        score = calcular_score_salud(metricas['pct_vigente'], metricas['pct_critica'])
+        score = calcular_score_salud(
+            metricas['pct_vigente'], 
+            metricas['pct_critica'],
+            metricas.get('pct_vencida_0_30', 0),
+            metricas.get('pct_vencida_31_60', 0),
+            metricas.get('pct_vencida_61_90', 0),
+            metricas.get('pct_alto_riesgo', 0)
+        )
         status, _ = clasificar_score_salud(score)
         
         return {

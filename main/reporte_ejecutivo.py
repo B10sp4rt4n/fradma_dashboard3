@@ -330,6 +330,14 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
             mask_no_pagado & (df_cxc_local["dias_overdue"] > 0) & (df_cxc_local["dias_overdue"] <= 30),
             "saldo_adeudado",
         ].sum()
+        vencida_31_60 = df_cxc_local.loc[
+            mask_no_pagado & (df_cxc_local["dias_overdue"] > 30) & (df_cxc_local["dias_overdue"] <= 60),
+            "saldo_adeudado",
+        ].sum()
+        vencida_61_90 = df_cxc_local.loc[
+            mask_no_pagado & (df_cxc_local["dias_overdue"] > 60) & (df_cxc_local["dias_overdue"] <= 90),
+            "saldo_adeudado",
+        ].sum()
         critica = df_cxc_local.loc[mask_no_pagado & (df_cxc_local["dias_overdue"] > 30), "saldo_adeudado"].sum()
         alto_riesgo = df_cxc_local.loc[mask_no_pagado & (df_cxc_local["dias_overdue"] > 90), "saldo_adeudado"].sum()
         
@@ -337,12 +345,16 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
         logger.debug("Métricas CxC calculadas", extra={
             "vigente": {"tipo": type(vigente).__name__, "valor": float(vigente)},
             "vencida_0_30": {"tipo": type(vencida_0_30).__name__, "valor": float(vencida_0_30)},
+            "vencida_31_60": {"tipo": type(vencida_31_60).__name__, "valor": float(vencida_31_60)},
+            "vencida_61_90": {"tipo": type(vencida_61_90).__name__, "valor": float(vencida_61_90)},
             "critica": {"tipo": type(critica).__name__, "valor": float(critica)},
             "alto_riesgo": {"tipo": type(alto_riesgo).__name__, "valor": float(alto_riesgo)}
         })
         
         pct_vigente = (vigente / total_adeudado * 100) if total_adeudado > 0 else 100
         pct_vencida_0_30 = (vencida_0_30 / total_adeudado * 100) if total_adeudado > 0 else 0
+        pct_vencida_31_60 = (vencida_31_60 / total_adeudado * 100) if total_adeudado > 0 else 0
+        pct_vencida_61_90 = (vencida_61_90 / total_adeudado * 100) if total_adeudado > 0 else 0
         pct_critica = (critica / total_adeudado * 100) if total_adeudado > 0 else 0
         pct_vencida_total = pct_vencida_0_30 + pct_critica
         # Compatibilidad: algunas secciones/ediciones pueden referirse a `pct_vencida`
@@ -350,7 +362,10 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
         pct_alto_riesgo = (alto_riesgo / total_adeudado * 100) if total_adeudado > 0 else 0
         
         # Calcular score de salud CxC para análisis posterior
-        score_salud_cxc = calcular_score_salud(pct_vigente, pct_critica)
+        score_salud_cxc = calcular_score_salud(
+            pct_vigente, pct_critica,
+            pct_vencida_0_30, pct_vencida_31_60, pct_vencida_61_90, pct_alto_riesgo
+        )
         
         st.metric("💰 Cartera Total", formato_moneda(total_adeudado),
                  delta=f"{pct_vigente:.1f}% Vigente" if pct_vigente > 0 else "0% Vigente",
@@ -384,16 +399,9 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
     
     col1, col2, col3, col4 = st.columns(4)
     
-    # KPI 1: Salud General del Negocio (Score 0-100) 
-    # Combina desempeño de ventas + salud de cartera
-    # (Diferente al "Score de Salud" de CxC que solo mide cartera)
-    score_ventas = min(100, (ventas_mes_actual / 1_000_000) * 50) if "fecha" in df_ventas.columns else 50
-    score_cartera = calcular_score_salud(pct_vigente, pct_critica)  # Usar función de referencia en lugar de duplicar fórmula
-    score_general = (score_ventas + score_cartera) / 2
-    
-    color_score = "🟢" if score_general >= 80 else "🟡" if score_general >= 60 else "🟠" if score_general >= 40 else "🔴"
-    col1.metric(f"{color_score} Salud General", f"{score_general:.0f}/100", 
-                help="Combina desempeño de ventas (50%) + salud de cartera (50%)")
+    # KPI 1: Ventas del Período
+    col1.metric("💰 Ventas Totales", formato_moneda(total_ventas),
+                help="Suma total de ventas en el período seleccionado")
     
     # KPI 2: Índice de Liquidez
     indice_liquidez = (vigente + ventas_mes_actual) / (critica + 1) if critica > 0 else 10
@@ -778,20 +786,7 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
         
         ### 🎯 KPIs Consolidados (Semáforos)
         
-        **🟢 Salud General (Score 0-100)**
-        - **Definición**: Indicador compuesto de desempeño global
-        - **Fórmula**: `(50% × Score Ventas) + (50% × Score Cartera)`
-        - **Donde**:
-          - Score Ventas = min(100, (Ventas Mes / $1M) × 50)
-          - Score Cartera = calcular_score_salud(% Vigente, % Crítica)
-        - **Escala**:
-          - 🟢 80-100 = Excelente
-          - 🟡 60-79 = Buena
-          - 🟠 40-59 = Regular
-          - 🔴 <40 = Crítica
-        - **Nota**: Diferente al "Score de Salud CxC" que SOLO mide cartera
-        
-        **💧 Índice de Liquidez**
+        ** Índice de Liquidez**
         - **Definición**: Capacidad de cubrir deuda crítica con recursos disponibles
         - **Fórmula**: `(Cartera Vigente + Ventas Mes Actual) / Cartera Crítica`
         - **Meta**: ≥ 3x (recursos disponibles cubren 3 veces la deuda crítica)
@@ -875,17 +870,7 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
         
         ---
         
-        ### 📊 Diferencias entre Scores
-        
-        | Métrica | Alcance | Componentes | Ubicación |
-        |---------|---------|-------------|-----------|
-        | **Salud General** | Global (ventas + cartera) | 50% ventas + 50% cartera | Reporte Ejecutivo |
-        | **Score de Salud CxC** | Solo cartera | 40% liquidez + 30% concentración + 30% morosidad | Dashboard CxC |
-        | **Calificación** | Solo cartera | Mismo que Score CxC | Resumen CxC |
-        
-        ---
-        
-        ### 📝 Notas Importantes
+        ###  Notas Importantes
         
         - **Período de análisis**: Por defecto último año completo
         - **Moneda**: USD (con conversión automática si aplica)

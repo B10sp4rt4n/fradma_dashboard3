@@ -201,55 +201,34 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
         pct_vencida_total = metricas['pct_vencida']
         pct_alto_riesgo = metricas['pct_alto_riesgo']
         
+        # Extraer porcentajes por rangos para el score
+        pct_vencida_0_30 = metricas.get('pct_vencida_0_30', 0)
+        pct_vencida_31_60 = metricas.get('pct_vencida_31_60', 0)
+        pct_vencida_61_90 = metricas.get('pct_vencida_61_90', 0)
+        
         # Concentración top 3
         top3_deuda = df_np.groupby('deudor')['saldo_adeudado'].sum().nlargest(3).sum()
         pct_concentracion = (top3_deuda / total_adeudado * 100) if total_adeudado > 0 else 0
         
-        # Score usando función helper
-        score_salud = calcular_score_salud(pct_vigente, pct_critica)
+        # Score usando función helper con todos los rangos
+        score_salud = calcular_score_salud(
+            pct_vigente, pct_critica,
+            pct_vencida_0_30, pct_vencida_31_60, pct_vencida_61_90, pct_alto_riesgo
+        )
         score_status, score_color = clasificar_score_salud(score_salud)
         
-        # Gauge principal de salud
+        # Gauge principal de salud — reemplazado por métricas directas
         col_health1, col_health2 = st.columns([1, 2])
         
         with col_health1:
-            st.write("### 💚 Score de Salud Financiera")
-            fig_health = go.Figure(go.Indicator(
-                mode="gauge+number+delta",
-                value=score_salud,
-                domain={'x': [0, 1], 'y': [0, 1]},
-                title={'text': f"<b>{score_status}</b>", 'font': {'size': 20}},
-                number={'suffix': '', 'font': {'size': 40}},
-                gauge={
-                    'axis': {'range': [None, 100], 'tickwidth': 2, 'tickcolor': "darkgray"},
-                    'bar': {'color': score_color, 'thickness': 0.8},
-                    'bgcolor': "white",
-                    'borderwidth': 2,
-                    'bordercolor': "gray",
-                    'steps': [
-                        {'range': [0, 20], 'color': '#FFCDD2'},
-                        {'range': [20, 40], 'color': '#FFE0B2'},
-                        {'range': [40, 60], 'color': '#FFF9C4'},
-                        {'range': [60, 80], 'color': '#DCEDC8'},
-                        {'range': [80, 100], 'color': '#C8E6C9'}
-                    ],
-                    'threshold': {
-                        'line': {'color': "black", 'width': 4},
-                        'thickness': 0.75,
-                        'value': 60
-                    }
-                }
-            ))
-            fig_health.update_layout(
-                height=350,
-                margin=dict(t=80, b=20, l=20, r=20)
-            )
-            st.plotly_chart(fig_health, width='stretch')
-            
-            # Métricas auxiliares
-            st.metric("Liquidez (Vigente)", f"{pct_vigente:.1f}%", 
+            st.write("### 📊 Resumen de Cartera")
+            st.metric("💰 Cartera Total", f"${total_adeudado:,.0f}")
+            st.metric("✅ Vigente", f"{pct_vigente:.1f}%", 
                      delta=f"{pct_vigente - 70:.1f}pp vs objetivo 70%",
                      help="📐 Porcentaje de cartera que aún no ha vencido (días restantes > 0). Objetivo: ≥ 70%")
+            st.metric("⚠️ Vencida Total", f"{pct_vencida_total:.1f}%",
+                     delta_color="inverse",
+                     help="📐 Porcentaje de cartera vencida sobre total")
         
         with col_health2:
             st.write("### 📊 Indicadores Clave de Desempeño (KPIs)")

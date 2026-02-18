@@ -65,18 +65,23 @@ def calcular_dias_overdue(df: pd.DataFrame) -> pd.Series:
     """
     Calcula días de atraso usando lógica unificada con fallback en cascada.
     
+    LÓGICA MATEMÁTICA:
+    - Si dias_credito = 30, el cliente tiene del día 1 al día 30 para pagar (30 días completos)
+    - Día 31 = primer día vencido (1 día vencido)
+    - Día 32 = 2 días vencido, etc.
+    
     Prioridad de cálculo:
     1. dias_vencido (si existe)
-    2. fecha_vencimiento (vs hoy)
+    2. fecha_vencimiento (vs hoy) + ajuste
     3. dias_restante/dias_restantes (invertido, negativo = vencido)
-    4. fecha_pago + dias_de_credito (calculado)
-    5. fecha + 30 días crédito estándar (estimado)
+    4. fecha_pago + dias_de_credito (calculado) + ajuste
+    5. fecha + 30 días crédito estándar (estimado) + ajuste
     
     Args:
         df: DataFrame con datos de CxC
         
     Returns:
-        pd.Series con días de atraso (positivo = vencido, negativo = vigente)
+        pd.Series con días de atraso (positivo = vencido, negativo/cero = vigente)
         
     Example:
         df['dias_overdue'] = calcular_dias_overdue(df)
@@ -89,9 +94,12 @@ def calcular_dias_overdue(df: pd.DataFrame) -> pd.Series:
             return dias
     
     # Método 2: Calcular desde fecha de vencimiento (MÁS CONFIABLE)
+    # NOTA: fecha_vencimiento se interpreta como el ÚLTIMO DÍA VÁLIDO para pagar
     for col_venc in ['vencimiento', 'fecha_vencimiento', 'vencimient']:
         if col_venc in df.columns:
             fecha_venc = pd.to_datetime(df[col_venc], errors='coerce', dayfirst=True)
+            # Si hoy = fecha_venc: 0 días vencido (aún válido)
+            # Si hoy = fecha_venc + 1: 1 día vencido
             dias = (pd.Timestamp.today().normalize() - fecha_venc).dt.days
             return pd.to_numeric(dias, errors='coerce').fillna(0)
     
@@ -103,6 +111,8 @@ def calcular_dias_overdue(df: pd.DataFrame) -> pd.Series:
             return -dias_restantes
     
     # Método 4: fecha_pago + dias_de_credito
+    # NOTA: dias_credito representa días COMPLETOS de gracia
+    # Si dias_credito = 30, el cliente puede pagar del día 1 al 30, el día 31 ya está vencido
     col_fecha_pago = detectar_columna(df, COLUMNAS_FECHA_PAGO)
     col_credito = detectar_columna(df, COLUMNAS_DIAS_CREDITO)
     
@@ -114,15 +124,20 @@ def calcular_dias_overdue(df: pd.DataFrame) -> pd.Series:
         else:
             dias_credito = pd.Series(0, index=df.index)
         
+        # fecha_base + dias_credito = primer día donde ya está vencido
         fecha_venc = fecha_base + pd.to_timedelta(dias_credito, unit='D')
-        dias = (pd.Timestamp.today().normalize() - fecha_venc).dt.days
+        # Si hoy = fecha_base + 30 días: 1 día vencido (el día 31 desde factura)
+        # Si hoy = fecha_base + 29 días: 0 días vencido (el día 30, aún vigente)
+        dias = (pd.Timestamp.today().normalize() - fecha_venc).dt.days + 1
         return pd.to_numeric(dias, errors='coerce').fillna(0)
     
     # Método 5: Si solo existe 'fecha' (fecha de factura), asumir 30 días de crédito estándar
+    # NOTA: 30 días completos de gracia, el día 31 es el primer día vencido
     if 'fecha' in df.columns:
         fecha_factura = pd.to_datetime(df['fecha'], errors='coerce', dayfirst=True)
+        # fecha + 30 días = día 31 = primer día vencido
         fecha_venc_estimada = fecha_factura + pd.Timedelta(days=30)
-        dias = (pd.Timestamp.today().normalize() - fecha_venc_estimada).dt.days
+        dias = (pd.Timestamp.today().normalize() - fecha_venc_estimada).dt.days + 1
         return pd.to_numeric(dias, errors='coerce').fillna(0)
     
     # Fallback final: todos vigentes (días = 0)
@@ -161,21 +176,55 @@ def preparar_datos_cxc(df: pd.DataFrame) -> tuple:
     return df_prep, df_np, mask_pagado
 
 
-def calcular_score_salud(pct_vigente: float, pct_critica: float) -> float:
+def calcular_score_salud(pct_vigente: float, pct_critica: float, pct_vencida_0_30: float = 0, 
+                         pct_vencida_31_60: float = 0, pct_vencida_61_90: float = 0, 
+                         pct_alto_riesgo: float = 0) -> float:
     """
-    Calcula el score de salud financiera usando fórmula del Reporte Ejecutivo.
+    Calcula el score de salud financiera con consideración de todos los rangos.
     
-    Score = pct_vigente * 0.7 + max(0, 100 - pct_critica * 2) * 0.3
+    Fórmula mejorada:
+    - Vigente (≤0 días): +100 puntos
+    - Vencida 0-30 días: +70 puntos (bajo riesgo)
+    - Vencida 31-60 días: +40 puntos (riesgo medio)
+    - Vencida 61-90 días: +20 puntos (riesgo alto)
+    - >90 días: +0 puntos (riesgo crítico)
+    
+    Score = Σ(porcentaje × puntos) / 100
     
     Args:
         pct_vigente: Porcentaje de cartera vigente (0-100)
-        pct_critica: Porcentaje de cartera crítica >30 días (0-100)
+        pct_critica: Porcentaje de cartera crítica >30 días (0-100) [deprecado, por compatibilidad]
+        pct_vencida_0_30: Porcentaje vencida 0-30 días
+        pct_vencida_31_60: Porcentaje vencida 31-60 días
+        pct_vencida_61_90: Porcentaje vencida 61-90 días
+        pct_alto_riesgo: Porcentaje >90 días
         
     Returns:
         float: Score de 0 a 100
+        
+    Examples:
+        >>> # Cartera perfecta (100% vigente)
+        >>> calcular_score_salud(100, 0, 0, 0, 0, 0)
+        100.0
+        
+        >>> # 50% vigente, 50% en 0-30 días
+        >>> calcular_score_salud(50, 50, 50, 0, 0, 0)
+        85.0  # (50×100 + 50×70) / 100
     """
-    score = pct_vigente * ScoreSalud.PESO_VIGENTE + \
-            max(0, 100 - pct_critica * 2) * ScoreSalud.PESO_CRITICA
+    # Si se proporcionan rangos detallados, usar la fórmula mejorada
+    if pct_vencida_0_30 > 0 or pct_vencida_31_60 > 0 or pct_vencida_61_90 > 0 or pct_alto_riesgo > 0:
+        score = (
+            pct_vigente * 100 +           # Vigente: excelente
+            pct_vencida_0_30 * 70 +       # 0-30 días: bueno
+            pct_vencida_31_60 * 40 +      # 31-60 días: regular
+            pct_vencida_61_90 * 20 +      # 61-90 días: malo
+            pct_alto_riesgo * 0           # >90 días: crítico
+        ) / 100
+    else:
+        # Fórmula legacy para compatibilidad
+        score = pct_vigente * ScoreSalud.PESO_VIGENTE + \
+                max(0, 100 - pct_critica * 2) * ScoreSalud.PESO_CRITICA
+    
     return max(0, min(100, score))
 
 
@@ -253,17 +302,7 @@ def calcular_metricas_basicas(df_np: pd.DataFrame, columna_saldo: str = 'saldo_a
         df_np['dias_overdue'] > UmbralesCxC.DIAS_ALTO_RIESGO
     ][columna_saldo].sum()
     
-    # Calcular porcentajes
-    pct_vigente = (vigente / total_adeudado * 100) if total_adeudado > 0 else 0
-    pct_vencida = (vencida / total_adeudado * 100) if total_adeudado > 0 else 0
-    pct_critica = (critica / total_adeudado * 100) if total_adeudado > 0 else 0
-    pct_alto_riesgo = (alto_riesgo / total_adeudado * 100) if total_adeudado > 0 else 0
-    
-    # Calcular score de salud y su clasificación
-    score_salud = calcular_score_salud(pct_vigente, pct_critica)
-    clasificacion_salud, _ = clasificar_score_salud(score_salud)
-    
-    # Calcular por rangos adicionales (vencida 31-60, 61-90)
+    # Calcular por rangos adicionales primero (vencida 31-60, 61-90)
     vencida_31_60 = df_np[
         (df_np['dias_overdue'] > 30) & 
         (df_np['dias_overdue'] <= 60)
@@ -273,9 +312,21 @@ def calcular_metricas_basicas(df_np: pd.DataFrame, columna_saldo: str = 'saldo_a
         (df_np['dias_overdue'] <= 90)
     ][columna_saldo].sum()
     
+    # Calcular porcentajes (TODOS antes de calcular el score)
+    pct_vigente = (vigente / total_adeudado * 100) if total_adeudado > 0 else 0
+    pct_vencida = (vencida / total_adeudado * 100) if total_adeudado > 0 else 0
+    pct_critica = (critica / total_adeudado * 100) if total_adeudado > 0 else 0
+    pct_alto_riesgo = (alto_riesgo / total_adeudado * 100) if total_adeudado > 0 else 0
     pct_vencida_0_30 = (vencida_0_30 / total_adeudado * 100) if total_adeudado > 0 else 0
     pct_vencida_31_60 = (vencida_31_60 / total_adeudado * 100) if total_adeudado > 0 else 0
     pct_vencida_61_90 = (vencida_61_90 / total_adeudado * 100) if total_adeudado > 0 else 0
+    
+    # AHORA sí calcular score de salud con TODOS los porcentajes disponibles
+    score_salud = calcular_score_salud(
+        pct_vigente, pct_critica,
+        pct_vencida_0_30, pct_vencida_31_60, pct_vencida_61_90, pct_alto_riesgo
+    )
+    clasificacion_salud, _ = clasificar_score_salud(score_salud)
     
     return {
         'total_adeudado': total_adeudado,

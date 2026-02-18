@@ -98,8 +98,8 @@ def crear_excel_metricas_cxc(
             ('Vencida 0-30 días', metricas.get('vencida_0_30', 0), formato_moneda),
             ('Vencida 31-60 días', metricas.get('vencida_31_60', 0), formato_moneda),
             ('Vencida 61-90 días', metricas.get('vencida_61_90', 0), formato_moneda),
-            ('Crítica (>90 días)', metricas.get('critica', 0), formato_moneda),
-            ('Alto Riesgo (>120 días)', metricas.get('alto_riesgo', 0), formato_moneda),
+            ('Crítica (>30 días)', metricas.get('critica', 0), formato_moneda),
+            ('Alto Riesgo (>90 días)', metricas.get('alto_riesgo', 0), formato_moneda),
             ('', '', None),  # Separador
             ('Score de Salud', metricas.get('score_salud', 0), formato_numero),
             ('Clasificación', metricas.get('clasificacion_salud', 'N/A'), None),
@@ -592,9 +592,9 @@ def crear_reporte_html(
                             <div class="metric-subtitle">{formato_porcentaje(metricas.get('pct_vencida', 0))}</div>
                         </div>
                         <div class="metric-card critica">
-                            <div class="metric-label">&#128308; Cr&iacute;tica (&gt;90 d&iacute;as)</div>
-                            <div class="metric-value">{formato_moneda(metricas.get('critica', 0))}</div>
-                            <div class="metric-subtitle">{formato_porcentaje(metricas.get('pct_critica', 0))}</div>
+                            <div class="metric-label">&#128308; Alto Riesgo (&gt;90 d&iacute;as)</div>
+                            <div class="metric-value">{formato_moneda(metricas.get('alto_riesgo', 0))}</div>
+                            <div class="metric-subtitle">{formato_porcentaje(metricas.get('pct_alto_riesgo', 0))}</div>
                         </div>
                     </div>
                 </div>
@@ -622,7 +622,7 @@ def crear_reporte_html(
             ('Vencida 0-30 días', 'vencida_0_30', 'pct_vencida_0_30', 'success'),
             ('Vencida 31-60 días', 'vencida_31_60', 'pct_vencida_31_60', 'warning'),
             ('Vencida 61-90 días', 'vencida_61_90', 'pct_vencida_61_90', 'warning'),
-            ('Crítica (>90 días)', 'critica', 'pct_critica', 'danger')
+            ('Alto Riesgo (>90 días)', 'alto_riesgo', 'pct_alto_riesgo', 'danger')
         ]
         
         for label, key_monto, key_pct, badge in categorias:
@@ -648,13 +648,62 @@ def crear_reporte_html(
     if 'score' in secciones:
         score = metricas.get('score_salud', 0)
         clasificacion = metricas.get('clasificacion_salud', 'N/A')
+        
+        # Calcular desglose del score para explicación
+        pct_vig = metricas.get('pct_vigente', 0)
+        pct_0_30 = metricas.get('pct_vencida_0_30', 0)
+        pct_31_60 = metricas.get('pct_vencida_31_60', 0)
+        pct_61_90 = metricas.get('pct_vencida_61_90', 0)
+        pct_90plus = metricas.get('pct_alto_riesgo', 0)
+        
         html_parts.append(f"""
                 <div class="section">
-                    <h2 class="section-title">&#127919; Score de Salud General</h2>
+                    <h2 class="section-title">&#127919; Score de Salud de Cartera</h2>
                     <div class="score-container">
-                        <div class="score-label">Puntuaci&oacute;n de Cartera</div>
-                        <div class="score-value">{score:.0f}<span style="font-size: 32px; opacity: 0.7;">/100</span></div>
+                        <div class="score-label">Puntuaci&oacute;n General</div>
+                        <div class="score-value">{score:.1f}<span style="font-size: 32px; opacity: 0.7;">/100</span></div>
                         <div class="score-classification">{clasificacion}</div>
+                    </div>
+                    <div style="margin-top: 20px; padding: 20px; background: white; border-radius: 8px;">
+                        <h3 style="font-size: 16px; margin-bottom: 10px; color: #2c3e50;">&#128200; C&oacute;mo se calcula el Score</h3>
+                        <p style="font-size: 14px; color: #7f8c8d; margin-bottom: 15px;">
+                            El score pondera cada rango de antig&uuml;edad seg&uacute;n su nivel de riesgo:
+                        </p>
+                        <table style="width: 100%; font-size: 13px; margin-top: 10px;">
+                            <tr>
+                                <td style="padding: 8px; border-bottom: 1px solid #ecf0f1;">Vigente (&le;0 d&iacute;as)</td>
+                                <td style="padding: 8px; border-bottom: 1px solid #ecf0f1; text-align: right;">{pct_vig:.1f}% &times; 100 pts</td>
+                                <td style="padding: 8px; border-bottom: 1px solid #ecf0f1; text-align: right; font-weight: 600;">= {pct_vig * 100 / 100:.1f}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 8px; border-bottom: 1px solid #ecf0f1;">Vencida 0-30 d&iacute;as</td>
+                                <td style="padding: 8px; border-bottom: 1px solid #ecf0f1; text-align: right;">{pct_0_30:.1f}% &times; 70 pts</td>
+                                <td style="padding: 8px; border-bottom: 1px solid #ecf0f1; text-align: right; font-weight: 600;">= {pct_0_30 * 70 / 100:.1f}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 8px; border-bottom: 1px solid #ecf0f1;">Vencida 31-60 d&iacute;as</td>
+                                <td style="padding: 8px; border-bottom: 1px solid #ecf0f1; text-align: right;">{pct_31_60:.1f}% &times; 40 pts</td>
+                                <td style="padding: 8px; border-bottom: 1px solid #ecf0f1; text-align: right; font-weight: 600;">= {pct_31_60 * 40 / 100:.1f}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 8px; border-bottom: 1px solid #ecf0f1;">Vencida 61-90 d&iacute;as</td>
+                                <td style="padding: 8px; border-bottom: 1px solid #ecf0f1; text-align: right;">{pct_61_90:.1f}% &times; 20 pts</td>
+                                <td style="padding: 8px; border-bottom: 1px solid #ecf0f1; text-align: right; font-weight: 600;">= {pct_61_90 * 20 / 100:.1f}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 8px; border-bottom: 2px solid #34495e;">Alto Riesgo (&gt;90 d&iacute;as)</td>
+                                <td style="padding: 8px; border-bottom: 2px solid #34495e; text-align: right;">{pct_90plus:.1f}% &times; 0 pts</td>
+                                <td style="padding: 8px; border-bottom: 2px solid #34495e; text-align: right; font-weight: 600;">= {pct_90plus * 0 / 100:.1f}</td>
+                            </tr>
+                            <tr style="background: #f8f9fa;">
+                                <td style="padding: 12px; font-weight: 700;">SCORE TOTAL</td>
+                                <td></td>
+                                <td style="padding: 12px; text-align: right; font-size: 18px; font-weight: 700; color: #2c3e50;">{score:.1f}/100</td>
+                            </tr>
+                        </table>
+                        <p style="font-size: 12px; color: #95a5a6; margin-top: 15px; font-style: italic;">
+                            * Un score de 100 = 100% vigente. Un score de 0 = 100% en alto riesgo (&gt;90 d&iacute;as).
+                        </p>
                     </div>
                 </div>
         """)
