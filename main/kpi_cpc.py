@@ -201,18 +201,77 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
         df_metricas_cliente = calcular_metricas_por_cliente(df_np)
         
         if not df_metricas_cliente.empty:
-            # Selector de cuántos clientes mostrar
-            col_selector1, col_selector2 = st.columns([1, 3])
-            with col_selector1:
-                num_clientes = st.selectbox(
-                    "Clientes a mostrar",
-                    options=[10, 20, 50, 100],
+            # Selector de modo de visualización
+            col_mode, col_params = st.columns([1, 3])
+            
+            with col_mode:
+                modo_vista = st.radio(
+                    "Modo de visualización",
+                    options=["📊 Top N Clientes", "🔍 Buscar Cliente"],
                     index=0,
-                    help="Selecciona cuántos clientes mostrar ordenados por saldo"
+                    help="Elige cómo visualizar los datos"
                 )
             
-            # Obtener top N clientes
-            df_top_clientes = obtener_top_n_clientes(df_metricas_cliente, n=num_clientes)
+            df_display_raw = None  # DataFrame a mostrar (será filtrado según el modo)
+            
+            # ==== MODO 1: TOP N CLIENTES ====
+            if modo_vista == "📊 Top N Clientes":
+                with col_params:
+                    col_num, col_btn = st.columns([2, 1])
+                    with col_num:
+                        num_clientes = st.selectbox(
+                            "Número de clientes",
+                            options=[10, 20, 50, 100],
+                            index=0,
+                            help="Selecciona cuántos clientes mostrar ordenados por saldo"
+                        )
+                    with col_btn:
+                        st.write("")  # Espaciador
+                        btn_actualizar = st.button("🔄 Actualizar", key="btn_top_n", use_container_width=True)
+                
+                # Solo actualizar cuando se presione el botón o sea la primera vez
+                if btn_actualizar or 'df_top_clientes_cache' not in st.session_state:
+                    st.session_state.df_top_clientes_cache = obtener_top_n_clientes(df_metricas_cliente, n=num_clientes)
+                    st.session_state.num_clientes_cache = num_clientes
+                
+                df_display_raw = st.session_state.df_top_clientes_cache
+                titulo_tabla = f"**Top {st.session_state.num_clientes_cache} Clientes por Saldo Adeudado**"
+            
+            # ==== MODO 2: BUSCAR CLIENTE ESPECÍFICO ====
+            else:
+                with col_params:
+                    col_search, col_btn = st.columns([3, 1])
+                    with col_search:
+                        buscar_cliente = st.text_input(
+                            "Nombre del cliente",
+                            placeholder="Escribe el nombre o parte del nombre...",
+                            help="Busca clientes por nombre (no distingue mayúsculas)"
+                        )
+                    with col_btn:
+                        st.write("")  # Espaciador
+                        btn_buscar = st.button("🔍 Buscar", key="btn_buscar_cliente", use_container_width=True)
+                
+                # Solo buscar cuando se presione el botón
+                if btn_buscar and buscar_cliente.strip():
+                    # Filtrar clientes que contengan el texto buscado (case-insensitive)
+                    texto_busqueda = buscar_cliente.strip().lower()
+                    mask = df_metricas_cliente['deudor'].str.lower().str.contains(texto_busqueda, na=False)
+                    st.session_state.df_busqueda_cache = df_metricas_cliente[mask]
+                    st.session_state.texto_busqueda_cache = buscar_cliente.strip()
+                
+                # Mostrar resultados de búsqueda si existen
+                if 'df_busqueda_cache' in st.session_state and not st.session_state.df_busqueda_cache.empty:
+                    df_display_raw = st.session_state.df_busqueda_cache
+                    num_resultados = len(df_display_raw)
+                    plural_cliente = 's' if num_resultados > 1 else ''
+                    plural_encontrado = 's' if num_resultados > 1 else ''
+                    titulo_tabla = f"**{num_resultados} Cliente{plural_cliente} encontrado{plural_encontrado} para: '{st.session_state.texto_busqueda_cache}'**"
+                elif 'df_busqueda_cache' in st.session_state and st.session_state.df_busqueda_cache.empty:
+                    st.warning(f"⚠️ No se encontraron clientes que contengan '{st.session_state.texto_busqueda_cache}'")
+                    df_display_raw = None
+                else:
+                    st.info("👆 Escribe un nombre de cliente y presiona 'Buscar'")
+                    df_display_raw = None
             
             # Explicación de las 3 métricas
             with st.expander("ℹ️ **Explicación: 3 Métodos de Cálculo de Días Vencidos**", expanded=False):
@@ -241,39 +300,40 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                 💡 **La columna "Rango" usa el Promedio Ponderado** porque es la métrica más equilibrada.
                 """)
             
-            # Mostrar tabla de clientes
-            st.write(f"**Top {num_clientes} Clientes por Saldo Adeudado**")
-            
-            # Formatear DataFrame para display
-            df_display = df_top_clientes.copy()
-            df_display['saldo_total'] = df_display['saldo_total'].apply(lambda x: f"${x:,.0f}")
-            
-            st.dataframe(
-                df_display,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "deudor": st.column_config.TextColumn("Cliente", width="large"),
-                    "saldo_total": st.column_config.TextColumn("Saldo Total", width="medium"),
-                    "num_facturas": st.column_config.NumberColumn("# Facturas", width="small"),
-                    "dias_promedio_ponderado": st.column_config.NumberColumn(
-                        "📊 Días Promedio Ponderado", 
-                        width="medium",
-                        help="Promedio de días vencidos ponderado por monto de cada factura"
-                    ),
-                    "dias_factura_mas_antigua": st.column_config.NumberColumn(
-                        "⏰ Días Factura Más Antigua", 
-                        width="medium",
-                        help="Días vencidos de la factura más vieja del cliente"
-                    ),
-                    "dias_factura_mas_reciente": st.column_config.NumberColumn(
-                        "🆕 Días Factura Más Reciente", 
-                        width="medium",
-                        help="Días vencidos de la factura más nueva del cliente"
-                    ),
-                    "rango_antiguedad": st.column_config.TextColumn("Rango", width="small")
-                }
-            )
+            # Mostrar tabla si hay datos
+            if df_display_raw is not None and not df_display_raw.empty:
+                st.write(titulo_tabla)
+                
+                # Formatear DataFrame para display
+                df_display = df_display_raw.copy()
+                df_display['saldo_total'] = df_display['saldo_total'].apply(lambda x: f"${x:,.0f}")
+                
+                st.dataframe(
+                    df_display,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "deudor": st.column_config.TextColumn("Cliente", width="large"),
+                        "saldo_total": st.column_config.TextColumn("Saldo Total", width="medium"),
+                        "num_facturas": st.column_config.NumberColumn("# Facturas", width="small"),
+                        "dias_promedio_ponderado": st.column_config.NumberColumn(
+                            "📊 Días Promedio Ponderado", 
+                            width="medium",
+                            help="Promedio de días vencidos ponderado por monto de cada factura"
+                        ),
+                        "dias_factura_mas_antigua": st.column_config.NumberColumn(
+                            "⏰ Días Factura Más Antigua", 
+                            width="medium",
+                            help="Días vencidos de la factura más vieja del cliente"
+                        ),
+                        "dias_factura_mas_reciente": st.column_config.NumberColumn(
+                            "🆕 Días Factura Más Reciente", 
+                            width="medium",
+                            help="Días vencidos de la factura más nueva del cliente"
+                        ),
+                        "rango_antiguedad": st.column_config.TextColumn("Rango", width="small")
+                    }
+                )
             
             # Resumen estadístico
             col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
