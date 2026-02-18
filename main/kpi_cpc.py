@@ -20,7 +20,9 @@ from utils.cxc_helper import (
     calcular_score_salud, clasificar_score_salud, clasificar_antiguedad,
     obtener_semaforo_morosidad, obtener_semaforo_riesgo, obtener_semaforo_concentracion
 )
-from utils.cxc_metricas_cliente import calcular_metricas_por_cliente, obtener_top_n_clientes
+from utils.cxc_metricas_cliente import (
+    calcular_metricas_por_cliente, obtener_top_n_clientes, obtener_facturas_cliente
+)
 from utils.data_normalizer import normalizar_columnas
 from utils.ai_helper import generar_resumen_ejecutivo_cxc, validar_api_key
 from utils.logger import configurar_logger
@@ -372,7 +374,158 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                 )
         else:
             st.info("No hay datos de clientes para mostrar métricas detalladas")
-        
+
+        # =====================================================================
+        # DRILL-DOWN: FACTURAS POR CLIENTE
+        # =====================================================================
+        if not df_metricas_cliente.empty:
+            st.subheader("🔎 Detalle de Facturas por Cliente")
+
+            # Poblar lista de clientes desde la tabla actualmente visible o del total
+            lista_clientes = sorted(df_metricas_cliente['deudor'].dropna().unique().tolist())
+
+            cliente_seleccionado = st.selectbox(
+                "Selecciona un cliente para ver sus facturas:",
+                options=["— Selecciona un cliente —"] + lista_clientes,
+                index=0,
+                key="selectbox_drill_down"
+            )
+
+            if cliente_seleccionado != "— Selecciona un cliente —":
+                df_facturas = obtener_facturas_cliente(df_np, cliente_seleccionado)
+
+                if df_facturas.empty:
+                    st.warning(f"No se encontraron facturas para '{cliente_seleccionado}'")
+                else:
+                    # Resumen rápido del cliente
+                    fila_cliente = df_metricas_cliente[
+                        df_metricas_cliente['deudor'].str.strip().str.lower() ==
+                        cliente_seleccionado.strip().lower()
+                    ]
+                    if not fila_cliente.empty:
+                        r = fila_cliente.iloc[0]
+                        col_d1, col_d2, col_d3, col_d4 = st.columns(4)
+                        col_d1.metric("💰 Saldo Total", f"${r['saldo_total']:,.0f}")
+                        col_d2.metric("📄 # Facturas", int(r['num_facturas']))
+                        col_d3.metric("📊 Días Prom. Ponderado", f"{r['dias_promedio_ponderado']:.0f}")
+                        col_d4.metric("⏰ Factura Más Antigua", f"{r['dias_factura_mas_antigua']:.0f} días")
+
+                    # Formatear tabla de facturas
+                    df_facturas_display = df_facturas.copy()
+                    if 'saldo_adeudado' in df_facturas_display.columns:
+                        df_facturas_display['saldo_adeudado'] = df_facturas_display['saldo_adeudado'].apply(
+                            lambda x: f"${x:,.0f}" if pd.notna(x) else "-"
+                        )
+
+                    # Mapa de colores para la columna rango
+                    col_config_facturas = {}
+                    if 'saldo_adeudado' in df_facturas_display.columns:
+                        col_config_facturas["saldo_adeudado"] = st.column_config.TextColumn("Saldo", width="medium")
+                    if 'factura' in df_facturas_display.columns:
+                        col_config_facturas["factura"] = st.column_config.TextColumn("Factura", width="medium")
+                    if 'fecha' in df_facturas_display.columns:
+                        col_config_facturas["fecha"] = st.column_config.DateColumn("Fecha", width="medium")
+                    if 'dias_overdue' in df_facturas_display.columns:
+                        col_config_facturas["dias_overdue"] = st.column_config.NumberColumn("Días Vencidos", width="small")
+                    if 'rango' in df_facturas_display.columns:
+                        col_config_facturas["rango"] = st.column_config.TextColumn("Rango", width="medium")
+                    if 'estatus' in df_facturas_display.columns:
+                        col_config_facturas["estatus"] = st.column_config.TextColumn("Estatus", width="small")
+
+                    st.dataframe(
+                        df_facturas_display,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config=col_config_facturas
+                    )
+                    st.caption(f"📄 {len(df_facturas)} factura(s) para **{cliente_seleccionado}**")
+
+        # =====================================================================
+        # GRÁFICO: EVOLUCIÓN DE MOROSIDAD
+        # =====================================================================
+        st.subheader("📈 Evolución de Morosidad en el Tiempo")
+
+        # Detectar columna de fecha disponible
+        col_fecha = None
+        for _c in ['fecha', 'fecha_factura', 'fecha_emision', 'fecha_doc']:
+            if _c in df_np.columns:
+                col_fecha = _c
+                break
+
+        if col_fecha is None:
+            st.info(
+                "ℹ️ No se detectó una columna de fecha en los datos. "
+                "Para ver la evolución de morosidad, el archivo debe incluir una columna de fecha de factura."
+            )
+        else:
+            df_evol = df_np[[col_fecha, 'saldo_adeudado', 'dias_overdue']].copy()
+            df_evol[col_fecha] = pd.to_datetime(df_evol[col_fecha], errors='coerce')
+            df_evol = df_evol.dropna(subset=[col_fecha])
+
+            # Clasificar rango por fila
+            def _rango_evol(d):
+                if d <= 0:   return 'Vigente'
+                elif d <= 30: return '0-30 días'
+                elif d <= 60: return '31-60 días'
+                elif d <= 90: return '61-90 días'
+                else:         return '>90 días'
+
+            df_evol['rango'] = df_evol['dias_overdue'].apply(_rango_evol)
+            df_evol['mes'] = df_evol[col_fecha].dt.to_period('M').astype(str)
+
+            meses_unicos = df_evol['mes'].nunique()
+
+            if meses_unicos < 2:
+                st.info(
+                    "ℹ️ Se necesitan datos de **al menos 2 meses** para mostrar la evolución. "
+                    f"El archivo actual contiene datos de {meses_unicos} periodo(s)."
+                )
+            else:
+                # Pivot: mes × rango → saldo
+                pivot = (
+                    df_evol.groupby(['mes', 'rango'])['saldo_adeudado']
+                    .sum()
+                    .unstack(fill_value=0)
+                    .reset_index()
+                )
+                pivot = pivot.sort_values('mes')
+
+                orden_rangos  = ['Vigente', '0-30 días', '31-60 días', '61-90 días', '>90 días']
+                colores_rangos = {
+                    'Vigente':    '#4CAF50',
+                    '0-30 días':  '#8BC34A',
+                    '31-60 días': '#FFEB3B',
+                    '61-90 días': '#FF9800',
+                    '>90 días':   '#F44336',
+                }
+
+                fig_evol = go.Figure()
+                for rango in orden_rangos:
+                    if rango in pivot.columns:
+                        fig_evol.add_trace(go.Bar(
+                            name=rango,
+                            x=pivot['mes'],
+                            y=pivot[rango],
+                            marker_color=colores_rangos.get(rango, '#999'),
+                            hovertemplate='%{x}<br>' + rango + ': $%{y:,.0f}<extra></extra>'
+                        ))
+
+                fig_evol.update_layout(
+                    barmode='stack',
+                    title='Evolución mensual de cartera por rango de antigüedad',
+                    xaxis_title='Mes',
+                    yaxis_title='Saldo Adeudado ($)',
+                    legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+                    height=420,
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    paper_bgcolor='rgba(0,0,0,0)',
+                )
+                st.plotly_chart(fig_evol, use_container_width=True)
+                st.caption(
+                    f"Periodos analizados: {pivot['mes'].iloc[0]} → {pivot['mes'].iloc[-1]} "
+                    f"({meses_unicos} meses)"
+                )
+
         # =====================================================================
         # FASE 2: DASHBOARD DE SALUD FINANCIERA
         # =====================================================================

@@ -115,3 +115,79 @@ def obtener_clientes_por_rango(df_metricas: pd.DataFrame, rango: str) -> pd.Data
         DataFrame filtrado
     """
     return df_metricas[df_metricas['rango_antiguedad'] == rango]
+
+
+def obtener_facturas_cliente(df: pd.DataFrame, nombre_cliente: str) -> pd.DataFrame:
+    """
+    Retorna el detalle de todas las facturas de un cliente específico.
+
+    Args:
+        df: DataFrame completo de CxC (df_np) con columnas normalizadas
+        nombre_cliente: Nombre exacto del cliente (columna 'deudor')
+
+    Returns:
+        DataFrame con una fila por factura, columnas disponibles:
+        - factura: número o ID de factura (si existe)
+        - fecha: fecha de emisión (si existe)
+        - saldo_adeudado: monto pendiente
+        - dias_overdue: días vencidos
+        - rango: clasificación individual de la factura
+        - estatus: estado de pago (si existe)
+    Ordenado por dias_overdue descendente (más vencidas primero).
+    """
+    if df.empty or 'deudor' not in df.columns:
+        return pd.DataFrame()
+
+    # Filtrar filas del cliente
+    mask = df['deudor'].str.strip().str.lower() == nombre_cliente.strip().lower()
+    df_cliente = df[mask].copy()
+
+    if df_cliente.empty:
+        return pd.DataFrame()
+
+    # Columnas a incluir según disponibilidad
+    col_map = {
+        'factura':          ['factura', 'no_factura', 'num_factura', 'numero_factura',
+                             'folio', 'documento', 'referencia', 'no_doc'],
+        'fecha':            ['fecha', 'fecha_factura', 'fecha_emision', 'fecha_doc',
+                             'fecha_vencimiento'],
+        'linea_de_negocio': ['linea_de_negocio', 'linea', 'producto', 'descripcion'],
+        'estatus':          ['estatus', 'status', 'estado'],
+    }
+
+    cols_output = []
+    rename_map = {}
+
+    for nombre_estandar, candidatos in col_map.items():
+        for c in candidatos:
+            if c in df_cliente.columns:
+                cols_output.append(c)
+                rename_map[c] = nombre_estandar
+                break  # solo el primero que encuentre
+
+    # Columnas obligatorias
+    for col in ['saldo_adeudado', 'dias_overdue']:
+        if col in df_cliente.columns and col not in cols_output:
+            cols_output.append(col)
+
+    df_detalle = df_cliente[cols_output].rename(columns=rename_map).copy()
+
+    # Clasificar rango individual de cada factura
+    def _rango(dias):
+        if dias <= 0:
+            return 'Vigente'
+        elif dias <= 30:
+            return '0-30 días'
+        elif dias <= 60:
+            return '31-60 días'
+        elif dias <= 90:
+            return '61-90 días'
+        else:
+            return '>90 días'
+
+    if 'dias_overdue' in df_detalle.columns:
+        df_detalle['rango'] = df_detalle['dias_overdue'].apply(_rango)
+        df_detalle = df_detalle.sort_values('dias_overdue', ascending=False)
+
+    df_detalle = df_detalle.reset_index(drop=True)
+    return df_detalle
