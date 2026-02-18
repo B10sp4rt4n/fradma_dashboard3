@@ -20,6 +20,7 @@ from utils.cxc_helper import (
     calcular_score_salud, clasificar_score_salud, clasificar_antiguedad,
     obtener_semaforo_morosidad, obtener_semaforo_riesgo, obtener_semaforo_concentracion
 )
+from utils.cxc_metricas_cliente import calcular_metricas_por_cliente, obtener_top_n_clientes
 from utils.data_normalizer import normalizar_columnas
 from utils.ai_helper import generar_resumen_ejecutivo_cxc, validar_api_key
 from utils.logger import configurar_logger
@@ -189,6 +190,128 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
         # Top 5 deudores (USANDO COLUMNA F - CLIENTE)
         st.subheader("🔝 Principales Deudores (Columna Cliente)")
         top_deudores = df_np.groupby('deudor')['saldo_adeudado'].sum().nlargest(5)
+        
+        # =====================================================================
+        # ANÁLISIS DETALLADO POR CLIENTE: 3 MÉTODOS DE CÁLCULO DE DÍAS
+        # =====================================================================
+        st.write("---")
+        st.subheader("📊 Análisis Detallado de Antigüedad por Cliente")
+        
+        # Calcular métricas por cliente con 3 métodos
+        df_metricas_cliente = calcular_metricas_por_cliente(df_np)
+        
+        if not df_metricas_cliente.empty:
+            # Selector de cuántos clientes mostrar
+            col_selector1, col_selector2 = st.columns([1, 3])
+            with col_selector1:
+                num_clientes = st.selectbox(
+                    "Clientes a mostrar",
+                    options=[10, 20, 50, 100],
+                    index=0,
+                    help="Selecciona cuántos clientes mostrar ordenados por saldo"
+                )
+            
+            # Obtener top N clientes
+            df_top_clientes = obtener_top_n_clientes(df_metricas_cliente, n=num_clientes)
+            
+            # Explicación de las 3 métricas
+            with st.expander("ℹ️ **Explicación: 3 Métodos de Cálculo de Días Vencidos**", expanded=False):
+                st.markdown("""
+                Cuando un cliente tiene **múltiples facturas vencidas**, hay 3 formas de calcular "cuántos días debe":
+                
+                1. **📊 Promedio Ponderado** (Recomendado para análisis):
+                   - Toma cada factura y la pondera por su monto
+                   - Fórmula: `Σ(días_factura × monto_factura) / total_cliente`
+                   - **Ejemplo**: Cliente con 2 facturas:
+                     - Factura A: $10,000 a 45 días → $450,000
+                     - Factura B: $2,000 a 10 días → $20,000
+                     - **Promedio ponderado = $470,000 / $12,000 = 39.2 días**
+                   - **Uso**: Métrica más realista para scoring y análisis
+                
+                2. **⏰ Factura Más Antigua** (Peor caso):
+                   - Toma la factura con más días vencidos
+                   - **Ejemplo**: 45 días (Factura A del ejemplo anterior)
+                   - **Uso**: Para cobranza agresiva - atacar primero la más vieja
+                
+                3. **🆕 Factura Más Reciente** (Última actividad):
+                   - Toma la factura con menos días vencidos
+                   - **Ejemplo**: 10 días (Factura B del ejemplo anterior)
+                   - **Uso**: Para detectar clientes que siguen comprando pero no pagan
+                
+                💡 **La columna "Rango" usa el Promedio Ponderado** porque es la métrica más equilibrada.
+                """)
+            
+            # Mostrar tabla de clientes
+            st.write(f"**Top {num_clientes} Clientes por Saldo Adeudado**")
+            
+            # Formatear DataFrame para display
+            df_display = df_top_clientes.copy()
+            df_display['saldo_total'] = df_display['saldo_total'].apply(lambda x: f"${x:,.0f}")
+            
+            st.dataframe(
+                df_display,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "deudor": st.column_config.TextColumn("Cliente", width="large"),
+                    "saldo_total": st.column_config.TextColumn("Saldo Total", width="medium"),
+                    "num_facturas": st.column_config.NumberColumn("# Facturas", width="small"),
+                    "dias_promedio_ponderado": st.column_config.NumberColumn(
+                        "📊 Días Promedio Ponderado", 
+                        width="medium",
+                        help="Promedio de días vencidos ponderado por monto de cada factura"
+                    ),
+                    "dias_factura_mas_antigua": st.column_config.NumberColumn(
+                        "⏰ Días Factura Más Antigua", 
+                        width="medium",
+                        help="Días vencidos de la factura más vieja del cliente"
+                    ),
+                    "dias_factura_mas_reciente": st.column_config.NumberColumn(
+                        "🆕 Días Factura Más Reciente", 
+                        width="medium",
+                        help="Días vencidos de la factura más nueva del cliente"
+                    ),
+                    "rango_antiguedad": st.column_config.TextColumn("Rango", width="small")
+                }
+            )
+            
+            # Resumen estadístico
+            col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
+            with col_stat1:
+                st.metric(
+                    "Clientes Totales", 
+                    f"{len(df_metricas_cliente):,}",
+                    help="Número total de clientes con saldo pendiente"
+                )
+            with col_stat2:
+                clientes_criticos = len(df_metricas_cliente[df_metricas_cliente['rango_antiguedad'] == '>90 días'])
+                st.metric(
+                    "Clientes >90 días", 
+                    f"{clientes_criticos:,}",
+                    delta=f"{clientes_criticos/len(df_metricas_cliente)*100:.1f}%",
+                    delta_color="inverse",
+                    help="Clientes con promedio ponderado >90 días vencidos"
+                )
+            with col_stat3:
+                prom_ponderado_global = (
+                    (df_metricas_cliente['dias_promedio_ponderado'] * df_metricas_cliente['saldo_total']).sum() /
+                    df_metricas_cliente['saldo_total'].sum()
+                )
+                st.metric(
+                    "Promedio Global", 
+                    f"{prom_ponderado_global:.1f} días",
+                    help="Promedio ponderado de días vencidos de toda la cartera"
+                )
+            with col_stat4:
+                max_dias_cliente = df_metricas_cliente['dias_factura_mas_antigua'].max()
+                st.metric(
+                    "Factura Más Antigua", 
+                    f"{max_dias_cliente:.0f} días",
+                    delta_color="inverse",
+                    help="Factura más antigua en toda la cartera"
+                )
+        else:
+            st.info("No hay datos de clientes para mostrar métricas detalladas")
         
         # =====================================================================
         # FASE 2: DASHBOARD DE SALUD FINANCIERA
