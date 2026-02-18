@@ -1920,6 +1920,10 @@ Departamento de Crédito y Cobranza
 
         # Resumen ejecutivo
         st.subheader("📝 Resumen Ejecutivo para Dirección")
+
+        # urgente_count: clientes en nivel URGENTE (calculado desde df_prioridades)
+        urgente_count = len(df_prioridades[df_prioridades['nivel_num'] == 1]) \
+                        if 'df_prioridades' in dir() and not df_prioridades.empty else 0
         
         # Crear resumen en formato de reporte ejecutivo
         col_resumen1, col_resumen2, col_resumen3 = st.columns(3)
