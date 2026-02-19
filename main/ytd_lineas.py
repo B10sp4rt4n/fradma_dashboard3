@@ -918,61 +918,61 @@ def run(df, habilitar_ia=False, openai_api_key=None):
                         api_key=openai_api_key,
                         datos_lineas=datos_lineas
                     )
-                
-                # Mostrar análisis estructurado
-                if analisis:
-                    # Resumen ejecutivo principal
-                    st.markdown("### 📋 Resumen Ejecutivo")
-                    st.info(analisis.get('resumen_ejecutivo', 'No disponible'))
                     
-                    # Crear columnas para organizar el contenido
-                    col_izq, col_der = st.columns(2)
-                    
-                    with col_izq:
-                        # Highlights clave
-                        st.markdown("### ✨ Highlights Clave")
-                        highlights = analisis.get('highlights_clave', [])
-                        if highlights:
-                            for highlight in highlights:
-                                st.markdown(f"- {highlight}")
-                        else:
-                            st.caption("No disponible")
+                    # Mostrar análisis estructurado
+                    if analisis:
+                        # Resumen ejecutivo principal
+                        st.markdown("### 📋 Resumen Ejecutivo")
+                        st.info(analisis.get('resumen_ejecutivo', 'No disponible'))
                         
-                        st.markdown("")
+                        # Crear columnas para organizar el contenido
+                        col_izq, col_der = st.columns(2)
                         
-                        # Insights principales
-                        st.markdown("### 💡 Insights Principales")
-                        insights = analisis.get('insights_principales', [])
-                        if insights:
-                            for insight in insights:
-                                st.markdown(f"- {insight}")
-                        else:
-                            st.caption("No disponible")
-                    
-                    with col_der:
-                        # Áreas de atención
-                        st.markdown("### ⚠️ Áreas de Atención")
-                        areas = analisis.get('areas_atencion', [])
-                        if areas:
-                            for area in areas:
-                                st.markdown(f"- {area}")
-                        else:
-                            st.caption("No hay áreas críticas identificadas")
+                        with col_izq:
+                            # Highlights clave
+                            st.markdown("### ✨ Highlights Clave")
+                            highlights = analisis.get('highlights_clave', [])
+                            if highlights:
+                                for highlight in highlights:
+                                    st.markdown(f"- {highlight}")
+                            else:
+                                st.caption("No disponible")
+                            
+                            st.markdown("")
+                            
+                            # Insights principales
+                            st.markdown("### 💡 Insights Principales")
+                            insights = analisis.get('insights_principales', [])
+                            if insights:
+                                for insight in insights:
+                                    st.markdown(f"- {insight}")
+                            else:
+                                st.caption("No disponible")
                         
-                        st.markdown("")
+                        with col_der:
+                            # Áreas de atención
+                            st.markdown("### ⚠️ Áreas de Atención")
+                            areas = analisis.get('areas_atencion', [])
+                            if areas:
+                                for area in areas:
+                                    st.markdown(f"- {area}")
+                            else:
+                                st.caption("No hay áreas críticas identificadas")
+                            
+                            st.markdown("")
+                            
+                            # Recomendaciones ejecutivas
+                            st.markdown("### 🎯 Recomendaciones Ejecutivas")
+                            recomendaciones = analisis.get('recomendaciones_ejecutivas', [])
+                            if recomendaciones:
+                                for rec in recomendaciones:
+                                    st.markdown(f"- {rec}")
+                            else:
+                                st.caption("No disponible")
                         
-                        # Recomendaciones ejecutivas
-                        st.markdown("### 🎯 Recomendaciones Ejecutivas")
-                        recomendaciones = analisis.get('recomendaciones_ejecutivas', [])
-                        if recomendaciones:
-                            for rec in recomendaciones:
-                                st.markdown(f"- {rec}")
-                        else:
-                            st.caption("No disponible")
-                    
-                    st.caption("🤖 Análisis generado por OpenAI GPT-4o-mini")
-                else:
-                    st.warning("⚠️ No se pudo generar el análisis ejecutivo")
+                        st.caption("🤖 Análisis generado por OpenAI GPT-4o-mini")
+                    else:
+                        st.warning("⚠️ No se pudo generar el análisis ejecutivo")
                     
                 except Exception as e:
                     st.error(f"❌ Error al generar análisis con IA: {str(e)}")
