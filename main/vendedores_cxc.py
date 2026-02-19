@@ -14,6 +14,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 from datetime import datetime
+from unidecode import unidecode
+import re
 
 from utils.cxc_helper import preparar_datos_cxc, calcular_dias_overdue
 from utils.data_normalizer import normalizar_columnas
@@ -23,6 +25,28 @@ logger = configurar_logger("vendedores_cxc", nivel="INFO")
 
 
 # ── Helpers internos ──────────────────────────────────────────────────────────
+
+def _normalizar_nombre_cliente(texto: str) -> str:
+    """
+    Normaliza nombre de cliente para mejorar matching entre archivos.
+    - Elimina acentos
+    - Convierte a minúsculas
+    - Elimina espacios extra y caracteres especiales
+    - Trim espacios
+    """
+    if pd.isna(texto):
+        return ""
+    # Convertir a string y eliminar acentos
+    texto = unidecode(str(texto))
+    # Minúsculas
+    texto = texto.lower()
+    # Eliminar caracteres especiales (mantener solo letras, números y espacios)
+    texto = re.sub(r'[^a-z0-9\s]', '', texto)
+    # Eliminar espacios extra
+    texto = re.sub(r'\s+', ' ', texto)
+    # Trim
+    texto = texto.strip()
+    return texto
 
 def _detectar_col_vendedor(df: pd.DataFrame) -> str | None:
     """Retorna el nombre de la primera columna que sea vendedor/agente/ejecutivo."""
@@ -184,28 +208,76 @@ def run():
 
     # Método B: Unir por cliente → heredar vendedor de ventas
     else:
-        # Mapa cliente → vendedor desde ventas
-        mapa = (
-            df_ventas.dropna(subset=[col_cliente_v, "vendedor"])
-            .groupby(col_cliente_v)["vendedor"]
-            .agg(lambda x: x.mode().iloc[0] if len(x) > 0 else None)
-            .reset_index()
-            .rename(columns={col_cliente_v: "deudor"})
-        )
+        # Normalizar nombres de clientes en ambos DataFrames para mejorar matching
+        logger.info("Normalizando nombres de clientes para matching...")
+        
+        # Crear columna normalizada en ventas
+        df_ventas["_cliente_norm"] = df_ventas[col_cliente_v].apply(_normalizar_nombre_cliente)
+        
+        # Crear columna normalizada en CxC
         if col_cliente_c != "deudor":
             df_np = df_np.rename(columns={col_cliente_c: "deudor"})
-        df_cxc_vend = df_np.merge(mapa, on="deudor", how="left")
+        df_np["_cliente_norm"] = df_np["deudor"].apply(_normalizar_nombre_cliente)
+        
+        # Mapa cliente normalizado → vendedor desde ventas
+        mapa = (
+            df_ventas.dropna(subset=["_cliente_norm", "vendedor"])
+            .groupby("_cliente_norm")["vendedor"]
+            .agg(lambda x: x.mode().iloc[0] if len(x) > 0 else None)
+            .reset_index()
+        )
+        
+        # Merge por nombre normalizado
+        df_cxc_vend = df_np.merge(mapa, on="_cliente_norm", how="left")
+        
+        # Estadísticas de matching
         sin_vendedor = df_cxc_vend["vendedor"].isna().sum()
+        total_cxc = len(df_cxc_vend)
+        con_vendedor = total_cxc - sin_vendedor
+        pct_match = (con_vendedor / total_cxc * 100) if total_cxc > 0 else 0
+        
+        logger.info(f"Matching completado: {con_vendedor}/{total_cxc} registros ({pct_match:.1f}%)")
+        
         if sin_vendedor > 0:
             st.info(
                 f"ℹ️ {sin_vendedor} registros CxC no pudieron asociarse a un vendedor "
-                "(clientes sin historial de ventas en el archivo)."
+                f"({pct_match:.1f}% match rate). "
+                "Clientes sin historial de ventas en el archivo."
             )
+        
+        # Limpiar columna temporal
+        df_cxc_vend = df_cxc_vend.drop(columns=["_cliente_norm"])
 
     df_cxc_vend = df_cxc_vend.dropna(subset=["vendedor"])
 
     if df_cxc_vend.empty:
         st.warning("⚠️ No se pudo asociar ningún registro CxC a un vendedor.")
+        
+        # Mostrar ejemplos de clientes para diagnóstico
+        st.write("**Diagnóstico:**")
+        
+        col_diag1, col_diag2 = st.columns(2)
+        
+        with col_diag1:
+            st.write("**Clientes en CxC (5 primeros):**")
+            clientes_cxc = df_np["deudor"].dropna().unique()[:5].tolist()
+            for c in clientes_cxc:
+                st.caption(f"• {c}")
+        
+        with col_diag2:
+            st.write("**Clientes en Ventas (5 primeros):**")
+            if col_cliente_v:
+                clientes_ventas = df_ventas[col_cliente_v].dropna().unique()[:5].tolist()
+                for c in clientes_ventas:
+                    st.caption(f"• {c}")
+            else:
+                st.caption("(No se detectó columna de cliente)")
+        
+        st.info(
+            "💡 **Tip:** Los nombres de clientes deben coincidir entre archivos. "
+            "Verifica que los nombres sean consistentes (mayúsculas, acentos, espacios)."
+        )
+        
         return
 
     # ── Agregar métricas por vendedor ─────────────────────────────────────────
