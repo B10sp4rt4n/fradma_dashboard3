@@ -239,11 +239,58 @@ def run():
         logger.info(f"Matching completado: {con_vendedor}/{total_cxc} registros ({pct_match:.1f}%)")
         
         if sin_vendedor > 0:
+            # Separar registros sin match para análisis
+            df_sin_match = df_cxc_vend[df_cxc_vend["vendedor"].isna()].copy()
+            
+            # Calcular estadísticas
+            monto_sin_match = df_sin_match["saldo_adeudado"].sum()
+            monto_total_cxc = df_cxc_vend["saldo_adeudado"].sum()
+            pct_monto_sin_match = (monto_sin_match / monto_total_cxc * 100) if monto_total_cxc > 0 else 0
+            
             st.info(
-                f"ℹ️ {sin_vendedor} registros CxC no pudieron asociarse a un vendedor "
-                f"({pct_match:.1f}% match rate). "
-                "Clientes sin historial de ventas en el archivo."
+                f"ℹ️ **{sin_vendedor} registros CxC no asociados** "
+                f"({pct_match:.1f}% match rate) | "
+                f"Monto: ${monto_sin_match:,.0f} ({pct_monto_sin_match:.1f}% del total)"
             )
+            
+            # Expander con detalles de registros no asociados
+            with st.expander("📋 Ver detalles de registros sin vendedor asociado"):
+                st.write(f"**{sin_vendedor} clientes sin historial de ventas en el archivo**")
+                
+                # Top 10 clientes sin match por saldo
+                top_sin_match = (
+                    df_sin_match.groupby("deudor")["saldo_adeudado"]
+                    .sum()
+                    .sort_values(ascending=False)
+                    .head(10)
+                    .reset_index()
+                )
+                top_sin_match.columns = ["Cliente", "Saldo Adeudado"]
+                
+                col_stats1, col_stats2 = st.columns([2, 1])
+                
+                with col_stats1:
+                    st.write("**Top 10 Clientes (por saldo)**")
+                    st.dataframe(
+                        top_sin_match.style.format({"Saldo Adeudado": "${:,.0f}"}),
+                        hide_index=True,
+                        use_container_width=True
+                    )
+                
+                with col_stats2:
+                    st.metric("💰 Total sin asociar", f"${monto_sin_match:,.0f}")
+                    st.metric("📊 % del total", f"{pct_monto_sin_match:.1f}%")
+                    st.metric("👥 Clientes únicos", df_sin_match["deudor"].nunique())
+                    
+                    # Antigüedad promedio si existe dias_overdue
+                    if "dias_overdue" in df_sin_match.columns:
+                        dias_prom = df_sin_match["dias_overdue"].mean()
+                        st.metric("📅 Días prom. vencido", f"{dias_prom:.0f}")
+                
+                st.caption(
+                    "💡 **Nota:** Estos clientes tienen deuda pero no aparecen en el archivo de ventas. "
+                    "Pueden ser clientes antiguos, dados de baja, o tener nombres inconsistentes."
+                )
         
         # Limpiar columna temporal
         df_cxc_vend = df_cxc_vend.drop(columns=["_cliente_norm"])
