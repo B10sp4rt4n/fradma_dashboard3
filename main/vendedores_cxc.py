@@ -287,6 +287,124 @@ def run():
                         dias_prom = df_sin_match["dias_overdue"].mean()
                         st.metric("📅 Días prom. vencido", f"{dias_prom:.0f}")
                 
+                # =====================================================================
+                # MAPA TEMPORAL DE ADEUDOS
+                # =====================================================================
+                if "dias_overdue" in df_sin_match.columns:
+                    st.write("---")
+                    st.write("### 🗓️ Mapa Temporal de Adeudos")
+                    
+                    # Clasificar por rangos de antigüedad
+                    def clasificar_antiguedad_detallado(dias):
+                        if pd.isna(dias) or dias <= 0:
+                            return "Por vencer"
+                        elif dias <= 30:
+                            return "1-30 días"
+                        elif dias <= 60:
+                            return "31-60 días"
+                        elif dias <= 90:
+                            return "61-90 días"
+                        elif dias <= 180:
+                            return "91-180 días"
+                        else:
+                            return ">180 días"
+                    
+                    df_sin_match["rango_antiguedad"] = df_sin_match["dias_overdue"].apply(
+                        clasificar_antiguedad_detallado
+                    )
+                    
+                    # Calcular distribución
+                    dist_antiguedad = (
+                        df_sin_match.groupby("rango_antiguedad")
+                        .agg({
+                            "saldo_adeudado": "sum",
+                            "deudor": "count"
+                        })
+                        .reset_index()
+                    )
+                    dist_antiguedad.columns = ["Rango", "Monto", "Facturas"]
+                    
+                    # Ordenar por severidad
+                    orden_rangos = ["Por vencer", "1-30 días", "31-60 días", "61-90 días", 
+                                   "91-180 días", ">180 días"]
+                    dist_antiguedad["orden"] = dist_antiguedad["Rango"].apply(
+                        lambda x: orden_rangos.index(x) if x in orden_rangos else 999
+                    )
+                    dist_antiguedad = dist_antiguedad.sort_values("orden").drop(columns=["orden"])
+                    
+                    col_viz1, col_viz2 = st.columns(2)
+                    
+                    with col_viz1:
+                        st.write("**Distribución por Antigüedad**")
+                        
+                        # Pie chart de distribución de monto
+                        colores_rangos = {
+                            "Por vencer": "#4CAF50",
+                            "1-30 días": "#8BC34A",
+                            "31-60 días": "#FFEB3B",
+                            "61-90 días": "#FF9800",
+                            "91-180 días": "#F44336",
+                            ">180 días": "#B71C1C"
+                        }
+                        
+                        colors_pie = [colores_rangos.get(r, "#999999") for r in dist_antiguedad["Rango"]]
+                        
+                        fig_pie_antiguedad = go.Figure(data=[go.Pie(
+                            labels=dist_antiguedad["Rango"],
+                            values=dist_antiguedad["Monto"],
+                            marker=dict(colors=colors_pie),
+                            textinfo='label+percent',
+                            textposition='outside',
+                            hole=0.4
+                        )])
+                        fig_pie_antiguedad.update_layout(
+                            showlegend=True,
+                            height=300,
+                            margin=dict(t=20, b=20, l=20, r=20)
+                        )
+                        st.plotly_chart(fig_pie_antiguedad, use_container_width=True)
+                    
+                    with col_viz2:
+                        st.write("**Monto por Rango Temporal**")
+                        
+                        # Gráfico de barras horizontales
+                        fig_barras = px.bar(
+                            dist_antiguedad,
+                            y="Rango",
+                            x="Monto",
+                            orientation='h',
+                            color="Rango",
+                            color_discrete_map=colores_rangos,
+                            text="Monto"
+                        )
+                        fig_barras.update_traces(
+                            texttemplate='$%{text:,.0f}',
+                            textposition='outside'
+                        )
+                        fig_barras.update_layout(
+                            showlegend=False,
+                            height=300,
+                            margin=dict(t=20, b=20, l=20, r=20),
+                            xaxis_title="Monto Adeudado ($)",
+                            yaxis_title=""
+                        )
+                        st.plotly_chart(fig_barras, use_container_width=True)
+                    
+                    # Tabla resumen
+                    st.write("**Resumen por Rango Temporal**")
+                    dist_antiguedad_display = dist_antiguedad.copy()
+                    dist_antiguedad_display["% Monto"] = (
+                        dist_antiguedad_display["Monto"] / dist_antiguedad_display["Monto"].sum() * 100
+                    )
+                    st.dataframe(
+                        dist_antiguedad_display[["Rango", "Facturas", "Monto", "% Monto"]].style.format({
+                            "Monto": "${:,.0f}",
+                            "% Monto": "{:.1f}%"
+                        }),
+                        hide_index=True,
+                        use_container_width=True
+                    )
+                
                 st.caption(
                     "💡 **Nota:** Estos clientes tienen deuda pero no aparecen en el archivo de ventas. "
                     "Pueden ser clientes antiguos, dados de baja, o tener nombres inconsistentes."
