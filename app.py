@@ -763,23 +763,18 @@ if "df" in st.session_state and "archivo_excel" in st.session_state:
             with st.expander("⚙️ Configurar Reporte HTML", expanded=False):
                 st.caption("Selecciona las secciones a incluir:")
                 
-                col_conf1, col_conf2 = st.columns(2)
-                
-                with col_conf1:
-                    incluir_resumen = st.checkbox("📈 Resumen Ejecutivo", value=True, 
-                                                  help="KPIs consolidados (Ventas + CxC)")
-                    incluir_ventas = st.checkbox("💼 Ventas Detalladas", value=True,
-                                                help="Métricas de desempeño de ventas")
-                    incluir_cxc = st.checkbox("🏦 CxC Detallada", value=True,
-                                             help="Desglose de cuentas por cobrar")
-                
-                with col_conf2:
-                    incluir_antiguedad = st.checkbox("📅 Tabla Antigüedad", value=False,
-                                                    help="Distribución detallada por rangos")
-                    incluir_score = st.checkbox("🎯 Score de Salud", value=True,
-                                               help="Puntuación de salud financiera")
-                    incluir_top = st.checkbox("👥 Top 5 Deudores", value=False,
-                                             help="Clientes con mayor adeudo")
+                incluir_resumen = st.checkbox("📈 Resumen Ejecutivo", value=True, 
+                                              help="KPIs consolidados (Ventas + CxC)")
+                incluir_ventas = st.checkbox("💼 Ventas Detalladas", value=True,
+                                            help="Métricas de desempeño de ventas")
+                incluir_cxc = st.checkbox("🏦 CxC Detallada", value=True,
+                                         help="Desglose de cuentas por cobrar")
+                incluir_antiguedad = st.checkbox("📅 Tabla Antigüedad", value=False,
+                                                help="Distribución detallada por rangos")
+                incluir_score = st.checkbox("🎯 Score de Salud", value=True,
+                                           help="Puntuación de salud financiera")
+                incluir_top = st.checkbox("👥 Top 5 Deudores", value=False,
+                                         help="Clientes con mayor adeudo")
                 
                 # Construir lista de secciones
                 secciones_seleccionadas = []
