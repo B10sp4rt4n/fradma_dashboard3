@@ -33,10 +33,23 @@ def _detectar_col_vendedor(df: pd.DataFrame) -> str | None:
 
 
 def _detectar_col_ventas(df: pd.DataFrame) -> str | None:
+    """Detecta columna de ventas con búsqueda flexible."""
+    # Primera pasada: búsqueda exacta
     for col in ("valor_usd", "ventas_usd", "ventas_usd_con_iva", "ventas_usd_sin_iva",
-                "importe", "monto_usd", "total_usd", "venta"):
+                "importe", "monto_usd", "total_usd", "venta", "monto", "total"):
         if col in df.columns:
             return col
+    
+    # Segunda pasada: búsqueda parcial (case insensitive)
+    for col in df.columns:
+        col_lower = col.lower()
+        if any(keyword in col_lower for keyword in 
+               ["valor", "venta", "importe", "monto", "total", "usd"]):
+            # Excluir columnas que claramente no son de ventas
+            if not any(excl in col_lower for excl in 
+                      ["fecha", "cliente", "vendedor", "producto", "linea", "saldo", "adeudo"]):
+                return col
+    
     return None
 
 
@@ -83,11 +96,13 @@ def run():
     # Normalizar columna de ventas
     col_ventas = _detectar_col_ventas(df_ventas)
     if col_ventas and col_ventas != "valor_usd":
+        logger.info(f"Columna de ventas detectada: '{col_ventas}' → renombrada a 'valor_usd'")
         df_ventas = df_ventas.rename(columns={col_ventas: "valor_usd"})
         col_ventas = "valor_usd"
 
     col_vendedor_v = _detectar_col_vendedor(df_ventas)
     if col_vendedor_v and col_vendedor_v != "vendedor":
+        logger.info(f"Columna de vendedor detectada: '{col_vendedor_v}' → renombrada a 'vendedor'")
         df_ventas = df_ventas.rename(columns={col_vendedor_v: "vendedor"})
         col_vendedor_v = "vendedor"
 
@@ -95,6 +110,8 @@ def run():
 
     if not col_ventas:
         st.error("❌ No se encontró columna de ventas (valor_usd / ventas_usd / importe).")
+        st.info(f"📋 Columnas disponibles: {', '.join(df_ventas.columns.tolist())}")
+        logger.error(f"No se detectó columna de ventas. Columnas disponibles: {df_ventas.columns.tolist()}")
         return
 
     if not col_vendedor_v:
@@ -102,6 +119,8 @@ def run():
             "❌ No se encontró columna de vendedor/agente en el archivo de ventas. "
             "El cruce no es posible sin esta columna."
         )
+        st.info(f"📋 Columnas disponibles: {', '.join(df_ventas.columns.tolist())}")
+        logger.error(f"No se detectó columna de vendedor. Columnas disponibles: {df_ventas.columns.tolist()}")
         return
 
     # ── Cargar CxC ────────────────────────────────────────────────────────────
