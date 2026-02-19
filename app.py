@@ -731,112 +731,112 @@ if "df" in st.session_state and "archivo_excel" in st.session_state:
         df_cxc_procesado = None
         metricas = None
     
-    col_excel, col_html = st.sidebar.columns(2)
+    # Excel (arriba)
+    if df_cxc_procesado is not None and metricas is not None:
+        try:
+            # Generar Excel con métricas completas
+            excel_buffer = crear_excel_metricas_cxc(metricas, df_cxc_procesado)
+            st.sidebar.download_button(
+                label="📊 Excel",
+                data=excel_buffer,
+                file_name="reporte_cxc.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+        except ImportError:
+            st.sidebar.warning("⚠️ Librería xlsxwriter no disponible. Instala con: pip install xlsxwriter")
+            logger.error("Falta dependencia xlsxwriter")
+        except MemoryError:
+            st.sidebar.warning("⚠️ Datos demasiado grandes para generar Excel")
+            logger.error("Memoria insuficiente para generar Excel")
+        except Exception as e:
+            st.sidebar.warning(f"⚠️ Excel no disponible: {str(e)}")
+            logger.exception(f"Error generando Excel: {e}")
+    else:
+        st.sidebar.caption("⚠️ Sin datos CxC")
     
-    with col_excel:
-        if df_cxc_procesado is not None and metricas is not None:
-            try:
-                # Generar Excel con métricas completas
-                excel_buffer = crear_excel_metricas_cxc(metricas, df_cxc_procesado)
-                st.download_button(
-                    label="📊 Excel",
-                    data=excel_buffer,
-                    file_name="reporte_cxc.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
-                )
-            except ImportError:
-                st.warning("⚠️ Librería xlsxwriter no disponible. Instala con: pip install xlsxwriter")
-                logger.error("Falta dependencia xlsxwriter")
-            except MemoryError:
-                st.warning("⚠️ Datos demasiado grandes para generar Excel")
-                logger.error("Memoria insuficiente para generar Excel")
-            except Exception as e:
-                st.warning(f"⚠️ Excel no disponible: {str(e)}")
-                logger.exception(f"Error generando Excel: {e}")
-        else:
-            st.caption("⚠️ Sin datos CxC")
-    
-    with col_html:
-        if df_cxc_procesado is not None and metricas is not None:
-            # Configuración de secciones del reporte HTML
-            with st.expander("⚙️ Configurar Reporte HTML", expanded=False):
-                st.caption("Selecciona las secciones a incluir:")
-                
-                incluir_resumen = st.checkbox("📈 Resumen Ejecutivo", value=True, 
-                                              help="KPIs consolidados (Ventas + CxC)")
-                incluir_ventas = st.checkbox("💼 Ventas Detalladas", value=True,
-                                            help="Métricas de desempeño de ventas")
-                incluir_cxc = st.checkbox("🏦 CxC Detallada", value=True,
-                                         help="Desglose de cuentas por cobrar")
-                incluir_antiguedad = st.checkbox("📅 Tabla Antigüedad", value=False,
-                                                help="Distribución detallada por rangos")
-                incluir_score = st.checkbox("🎯 Score de Salud", value=True,
-                                           help="Puntuación de salud financiera")
-                incluir_top = st.checkbox("👥 Top 5 Deudores", value=False,
-                                         help="Clientes con mayor adeudo")
-                
-                # Construir lista de secciones
-                secciones_seleccionadas = []
-                if incluir_resumen:
-                    secciones_seleccionadas.append('resumen_ejecutivo')
-                if incluir_ventas:
-                    secciones_seleccionadas.append('ventas')
-                if incluir_cxc:
-                    secciones_seleccionadas.append('cxc')
-                if incluir_antiguedad:
-                    secciones_seleccionadas.append('antiguedad')
-                if incluir_score:
-                    secciones_seleccionadas.append('score')
-                if incluir_top:
-                    secciones_seleccionadas.append('top_clientes')
-                
-                if secciones_seleccionadas:
-                    st.caption(f"✅ {len(secciones_seleccionadas)} sección(es) seleccionada(s)")
-                else:
-                    st.warning("⚠️ Selecciona al menos una sección")
+    # HTML (abajo)
+    if df_cxc_procesado is not None and metricas is not None:
+        # Inicializar lista de secciones
+        secciones_seleccionadas = []
+        
+        # Configuración de secciones del reporte HTML
+        with st.sidebar.expander("⚙️ Configurar Reporte HTML", expanded=False):
+            st.caption("Selecciona las secciones a incluir:")
             
-            try:
-                # Obtener df_ventas si está disponible
-                df_ventas_export = None
-                if "df" in st.session_state:
-                    df_ventas_export = st.session_state["df"]
+            incluir_resumen = st.checkbox("📈 Resumen Ejecutivo", value=True, 
+                                          help="KPIs consolidados (Ventas + CxC)")
+            incluir_ventas = st.checkbox("💼 Ventas Detalladas", value=True,
+                                        help="Métricas de desempeño de ventas")
+            incluir_cxc = st.checkbox("🏦 CxC Detallada", value=True,
+                                     help="Desglose de cuentas por cobrar")
+            incluir_antiguedad = st.checkbox("📅 Tabla Antigüedad", value=False,
+                                            help="Distribución detallada por rangos")
+            incluir_score = st.checkbox("🎯 Score de Salud", value=True,
+                                       help="Puntuación de salud financiera")
+            incluir_top = st.checkbox("👥 Top 5 Deudores", value=False,
+                                     help="Clientes con mayor adeudo")
+            
+            # Construir lista de secciones
+            if incluir_resumen:
+                secciones_seleccionadas.append('resumen_ejecutivo')
+            if incluir_ventas:
+                secciones_seleccionadas.append('ventas')
+            if incluir_cxc:
+                secciones_seleccionadas.append('cxc')
+            if incluir_antiguedad:
+                secciones_seleccionadas.append('antiguedad')
+            if incluir_score:
+                secciones_seleccionadas.append('score')
+            if incluir_top:
+                secciones_seleccionadas.append('top_clientes')
+            
+            if secciones_seleccionadas:
+                st.caption(f"✅ {len(secciones_seleccionadas)} sección(es) seleccionada(s)")
+            else:
+                st.warning("⚠️ Selecciona al menos una sección")
+        
+        try:
+            # Obtener df_ventas si está disponible
+            df_ventas_export = None
+            if "df" in st.session_state:
+                df_ventas_export = st.session_state["df"]
+            
+            # Generar HTML con configuración personalizada
+            if secciones_seleccionadas:
+                html_content = crear_reporte_html(
+                    metricas, 
+                    df_cxc_procesado,
+                    df_ventas=df_ventas_export,
+                    secciones=secciones_seleccionadas
+                )
                 
-                # Generar HTML con configuración personalizada
-                if secciones_seleccionadas:
-                    html_content = crear_reporte_html(
-                        metricas, 
-                        df_cxc_procesado,
-                        df_ventas=df_ventas_export,
-                        secciones=secciones_seleccionadas
-                    )
-                    
-                    st.download_button(
-                        label="🌐 Descargar HTML",
-                        data=html_content,
-                        file_name="reporte_ejecutivo.html",
-                        mime="text/html",
-                        use_container_width=True,
-                        help="Reporte ejecutivo configurable en formato HTML"
-                    )
-                else:
-                    st.button(
-                        "🌐 Descargar HTML",
-                        disabled=True,
-                        use_container_width=True,
-                        help="Selecciona al menos una sección"
-                    )
-            except KeyError as e:
-                st.warning(f"⚠️ Falta columna requerida para HTML: {e}")
-                logger.error(f"Columna faltante en reporte HTML: {e}")
-            except MemoryError:
-                st.warning("⚠️ Datos demasiado grandes para generar HTML")
-                logger.error("Memoria insuficiente para generar HTML")
-            except Exception as e:
-                st.warning(f"⚠️ HTML no disponible: {str(e)}")
-                logger.exception(f"Error generando HTML: {e}")
-        else:
-            st.caption("⚠️ Sin datos CxC")
+                st.sidebar.download_button(
+                    label="🌐 Descargar HTML",
+                    data=html_content,
+                    file_name="reporte_ejecutivo.html",
+                    mime="text/html",
+                    use_container_width=True,
+                    help="Reporte ejecutivo configurable en formato HTML"
+                )
+            else:
+                st.sidebar.button(
+                    "🌐 Descargar HTML",
+                    disabled=True,
+                    use_container_width=True,
+                    help="Selecciona al menos una sección"
+                )
+        except KeyError as e:
+            st.sidebar.warning(f"⚠️ Falta columna requerida para HTML: {e}")
+            logger.error(f"Columna faltante en reporte HTML: {e}")
+        except MemoryError:
+            st.sidebar.warning("⚠️ Datos demasiado grandes para generar HTML")
+            logger.error("Memoria insuficiente para generar HTML")
+        except Exception as e:
+            st.sidebar.warning(f"⚠️ HTML no disponible: {str(e)}")
+            logger.exception(f"Error generando HTML: {e}")
+    else:
+        st.sidebar.caption("⚠️ Sin datos CxC")
 
 # =====================================================================
 # NAVEGACIÓN MEJORADA CON TABS Y TOOLTIPS
