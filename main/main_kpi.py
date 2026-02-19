@@ -3,6 +3,7 @@ import pandas as pd
 import altair as alt
 import plotly.express as px
 from utils.ai_helper_premium import generar_insights_kpi_vendedores
+from utils.filters_helper import obtener_lineas_filtradas, generar_contexto_filtros
 from utils.logger import configurar_logger
 
 logger = configurar_logger("main_kpi", nivel="INFO")
@@ -355,8 +356,8 @@ def run(habilitar_ia=False, openai_api_key=None):
                     # Aplicar filtro de líneas de negocio si existe
                     df_analisis = df.copy()
                     
-                    # Filtrar líneas específicas (remover "Todas" si existe y validar entrada)
-                    lineas_filtrar = [l for l in (lineas_seleccionadas or []) if l and l != "Todas"]
+                    # Filtrar líneas específicas
+                    lineas_filtrar = obtener_lineas_filtradas(lineas_seleccionadas)
                     
                     if lineas_filtrar:
                         if "linea_de_negocio" in df_analisis.columns:
@@ -418,11 +419,7 @@ def run(habilitar_ia=False, openai_api_key=None):
                         })
                     
                     # Preparar contexto de filtros para IA
-                    if lineas_filtrar:
-                        lineas_texto = ", ".join(lineas_filtrar)
-                        contexto_filtros = f"Este análisis se enfoca ÚNICAMENTE en las siguientes líneas de negocio: {lineas_texto}. Las ventas y métricas reflejan SOLO estas líneas, no todo el negocio."
-                    else:
-                        contexto_filtros = None
+                    contexto_filtros = generar_contexto_filtros(lineas_filtrar)
                     
                     # Generar insights con IA
                     insights = generar_insights_kpi_vendedores(

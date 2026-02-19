@@ -885,8 +885,8 @@ def run(df, habilitar_ia=False, openai_api_key=None):
                     # Filtrar datos según configuración
                     df_analisis = df_ytd_actual.copy()
                     
-                    # Filtrar líneas específicas (remover "Todas" si existe y validar entrada)
-                    lineas_filtrar = [l for l in (lineas_seleccionadas or []) if l and l != "Todas"]
+                    # Filtrar líneas específicas
+                    lineas_filtrar = obtener_lineas_filtradas(lineas_seleccionadas)
                     
                     # Aplicar filtro de líneas (validar columna existe)
                     if lineas_filtrar and 'linea_de_negocio' in df_analisis.columns:
@@ -911,11 +911,7 @@ def run(df, habilitar_ia=False, openai_api_key=None):
                     
                     # Generar análisis
                     # Preparar contexto de filtros para IA
-                    if lineas_filtrar:
-                        lineas_texto = ", ".join(lineas_filtrar)
-                        contexto_filtros = f"Este análisis se enfoca ÚNICAMENTE en las siguientes líneas de negocio: {lineas_texto}. Las ventas y métricas reflejan SOLO estas líneas, no todo el negocio."
-                    else:
-                        contexto_filtros = None
+                    contexto_filtros = generar_contexto_filtros(lineas_filtrar)
                     
                     # Recalcular métricas con datos filtrados
                     ventas_ytd_actual_filtrado = df_analisis['ventas_usd'].sum()

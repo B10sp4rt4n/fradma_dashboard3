@@ -19,6 +19,7 @@ from datetime import datetime, timedelta
 import os
 from utils.logger import configurar_logger
 from utils.ai_helper import validar_api_key, generar_analisis_consolidado_ia
+from utils.filters_helper import obtener_lineas_filtradas, generar_contexto_filtros
 from utils.cxc_helper import calcular_metricas_basicas, calcular_score_salud, clasificar_score_salud, calcular_dias_overdue
 from utils.data_normalizer import normalizar_datos_cxc, normalizar_columna_fecha, detectar_columnas_cxc
 from utils.constantes import DIAS_CREDITO_ESTANDAR
@@ -428,15 +429,8 @@ def _renderizar_analisis_ia(total_ventas, crecimiento_ventas_pct, metricas_cxc,
     if st.button("🚀 Generar Análisis con IA", type="primary", use_container_width=True, key="btn_ia_consolidado"):
         with st.spinner("🔄 Generando análisis ejecutivo consolidado con GPT-4o-mini..."):
             try:
-                # Preparar contexto de filtros para IA (validar entrada)
-                lineas_seleccionadas = st.session_state.get("analisis_lineas", ["Todas"])
-                lineas_filtrar = [l for l in (lineas_seleccionadas or []) if l and l != "Todas"]
-                
-                if lineas_filtrar:
-                    lineas_texto = ", ".join(lineas_filtrar)
-                    contexto_filtros = f"Este análisis se enfoca ÚNICAMENTE en las siguientes líneas de negocio: {lineas_texto}. Las ventas y métricas reflejan SOLO estas líneas, no todo el negocio."
-                else:
-                    contexto_filtros = None
+                # Preparar contexto de filtros para IA (reutilizar lineas_filtrar de PASO 3.5)
+                contexto_filtros = generar_contexto_filtros(lineas_filtrar)
                 
                 analisis = generar_analisis_consolidado_ia(
                     total_ventas=total_ventas,
@@ -587,8 +581,8 @@ def run(df_ventas, df_cxc=None, habilitar_ia=False, openai_api_key=None):
     # =====================================================================
     lineas_seleccionadas = st.session_state.get("analisis_lineas", ["Todas"])
     
-    # Filtrar líneas específicas (remover "Todas" si existe y validar entrada)
-    lineas_filtrar = [l for l in (lineas_seleccionadas or []) if l and l != "Todas"]
+    # Filtrar líneas específicas
+    lineas_filtrar = obtener_lineas_filtradas(lineas_seleccionadas)
     
     # Aplicar filtro solo si hay líneas específicas
     if lineas_filtrar:

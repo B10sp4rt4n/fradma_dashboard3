@@ -25,6 +25,7 @@ from utils.cxc_metricas_cliente import (
 )
 from utils.data_normalizer import normalizar_columnas
 from utils.ai_helper import generar_resumen_ejecutivo_cxc, validar_api_key
+from utils.filters_helper import obtener_lineas_filtradas, generar_contexto_filtros
 from utils.logger import configurar_logger
 
 # Configurar logger
@@ -653,8 +654,8 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                         # Filtrar datos según configuración
                         df_analisis = df_np.copy()
                         
-                        # Filtrar líneas específicas (remover "Todas" si existe y validar entrada)
-                        lineas_filtrar = [l for l in (lineas_seleccionadas or []) if l and l != "Todas"]
+                        # Filtrar líneas específicas
+                        lineas_filtrar = obtener_lineas_filtradas(lineas_seleccionadas)
                         
                         # Aplicar filtro de líneas si existe la columna
                         if "linea_negocio" in df_analisis.columns and lineas_filtrar:
@@ -720,11 +721,7 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                         score_status_filtrado, _ = clasificar_score_salud(score_salud_filtrado)
                         
                         # Preparar contexto de filtros para IA
-                        if lineas_filtrar:
-                            lineas_texto = ", ".join(lineas_filtrar)
-                            contexto_filtros = f"Este análisis se enfoca ÚNICAMENTE en las siguientes líneas de negocio: {lineas_texto}. Los montos y métricas reflejan SOLO estas líneas, no todo el negocio."
-                        else:
-                            contexto_filtros = None
+                        contexto_filtros = generar_contexto_filtros(lineas_filtrar)
                         
                         # Generar análisis
                         analisis = generar_resumen_ejecutivo_cxc(
