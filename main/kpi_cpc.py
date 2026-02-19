@@ -1209,25 +1209,87 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                 
                 st.dataframe(df_display, width='stretch', hide_index=True)
                 
-                # Identificar líneas problemáticas
+                # =====================================================================
+                # SISTEMA DE SCORING Y PRIORIZACIÓN DE RIESGOS
+                # =====================================================================
                 st.write("### ⚠️ Líneas que Requieren Atención")
                 
+                # Calcular score de riesgo ponderado (0-100)
+                # Pesos: Morosidad 50%, Riesgo Alto 35%, Concentración 15%
+                df_lineas_metricas['score_riesgo'] = (
+                    df_lineas_metricas['pct_morosidad'] * 0.50 +
+                    df_lineas_metricas['pct_alto_riesgo'] * 0.35 +
+                    df_lineas_metricas['pct_concentracion'] * 0.15
+                )
+                
+                # Clasificar por nivel de riesgo
+                def clasificar_riesgo(score):
+                    if score >= 60:
+                        return '🔴 Crítico'
+                    elif score >= 40:
+                        return '🟠 Alto'
+                    elif score >= 25:
+                        return '🟡 Medio'
+                    else:
+                        return '🟢 Bajo'
+                
+                df_lineas_metricas['nivel_riesgo'] = df_lineas_metricas['score_riesgo'].apply(clasificar_riesgo)
+                
+                # Filtrar líneas que requieren atención (score >= 25)
                 lineas_problematicas = df_lineas_metricas[
-                    (df_lineas_metricas['pct_morosidad'] > 25) | 
-                    (df_lineas_metricas['pct_alto_riesgo'] > 15)
+                    df_lineas_metricas['score_riesgo'] >= 25
                 ].copy()
                 
+                # Ordenar por score de riesgo (descendente)
+                lineas_problematicas = lineas_problematicas.sort_values('score_riesgo', ascending=False)
+                
                 if len(lineas_problematicas) > 0:
-                    for _, linea_prob in lineas_problematicas.iterrows():
-                        problemas = []
-                        if linea_prob['pct_morosidad'] > 25:
-                            problemas.append(f"Morosidad alta: {linea_prob['pct_morosidad']:.1f}%")
-                        if linea_prob['pct_alto_riesgo'] > 15:
-                            problemas.append(f"Riesgo alto: {linea_prob['pct_alto_riesgo']:.1f}%")
-                        if linea_prob['pct_concentracion'] > 50:
-                            problemas.append(f"Alta concentración: {linea_prob['pct_concentracion']:.1f}%")
+                    # Gráfico de distribución de riesgos (Pie Chart)
+                    col_pie, col_list = st.columns([1, 2])
+                    
+                    with col_pie:
+                        st.write("**Clasificación de Riesgos**")
                         
-                        st.warning(f"**{linea_prob['linea']}**: {' | '.join(problemas)}")
+                        # Contar líneas por nivel de riesgo
+                        conteo_riesgos = df_lineas_metricas['nivel_riesgo'].value_counts().sort_index()
+                        
+                        fig_pie_riesgo = go.Figure(data=[go.Pie(
+                            labels=conteo_riesgos.index,
+                            values=conteo_riesgos.values,
+                            marker=dict(colors=['#B71C1C', '#FF9800', '#FFEB3B', '#4CAF50']),
+                            textinfo='label+percent',
+                            textposition='outside',
+                            hole=0.4
+                        )])
+                        fig_pie_riesgo.update_layout(
+                            showlegend=True,
+                            height=300,
+                            margin=dict(t=20, b=20, l=20, r=20)
+                        )
+                        st.plotly_chart(fig_pie_riesgo, use_container_width=True)
+                    
+                    with col_list:
+                        st.write("**Líneas Priorizadas por Riesgo**")
+                        
+                        # Mostrar lista ordenada con detalles
+                        for idx, linea_prob in lineas_problematicas.iterrows():
+                            problemas = []
+                            if linea_prob['pct_morosidad'] > 25:
+                                problemas.append(f"Morosidad alta: {linea_prob['pct_morosidad']:.1f}%")
+                            if linea_prob['pct_alto_riesgo'] > 15:
+                                problemas.append(f"Riesgo alto: {linea_prob['pct_alto_riesgo']:.1f}%")
+                            if linea_prob['pct_concentracion'] > 50:
+                                problemas.append(f"Alta concentración: {linea_prob['pct_concentracion']:.1f}%")
+                            
+                            # Mostrar con badge de nivel y score
+                            nivel_emoji = linea_prob['nivel_riesgo']
+                            score = linea_prob['score_riesgo']
+                            
+                            st.warning(
+                                f"{nivel_emoji} **{linea_prob['linea']}** "
+                                f"(Score: {score:.1f}%)\n\n"
+                                f"{' | '.join(problemas)}"
+                            )
                 else:
                     st.success("✅ Todas las líneas de negocio están dentro de parámetros aceptables")
                 
