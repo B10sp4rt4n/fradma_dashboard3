@@ -957,6 +957,15 @@ if passkey_input == PASSKEY_PREMIUM:
         st.session_state["analisis_periodo"] = analisis_periodo
         
         st.sidebar.info("💡 Análisis con IA: Presiona el botón en cada módulo para ejecutar")
+        
+        # Botón visual de recordatorio
+        st.sidebar.button(
+            "🚀 Generar Análisis con IA",
+            type="primary",
+            use_container_width=True,
+            disabled=True,
+            help="Este botón aparece en cada módulo (YTD, KPI CxC, KPI Vendedores, etc.)"
+        )
     
 else:
     st.session_state["passkey_valido"] = False
