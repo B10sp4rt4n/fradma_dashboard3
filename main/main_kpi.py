@@ -352,10 +352,29 @@ def run(habilitar_ia=False, openai_api_key=None):
         if st.button("🚀 Generar Análisis con IA", type="primary", use_container_width=True, key="btn_ia_kpi"):
             with st.spinner("🔄 Analizando patrones del equipo con IA..."):
                 try:
-                    # Preparar datos para el análisis
-                    # Primero agrupar por agente (sin año) para tener totales por vendedor
+                    # Aplicar filtro de líneas de negocio si existe
+                    df_analisis = df.copy()
+                    if "Todas" not in lineas_seleccionadas:
+                        if "linea_de_negocio" in df_analisis.columns:
+                            df_analisis = df_analisis[df_analisis['linea_de_negocio'].isin(lineas_seleccionadas)]
+                        elif "linea_producto" in df_analisis.columns:
+                            df_analisis = df_analisis[df_analisis['linea_producto'].isin(lineas_seleccionadas)]
+                    
+                    # Preparar datos para el análisis con datos filtrados
+                    df_chart_filtrado = df_analisis[["agente", "anio", "valor_usd"]].dropna()
+                    
+                    resumen_agente_filtrado = (
+                        df_chart_filtrado.groupby(["agente", "anio"])
+                        .agg(
+                            total_ventas=("valor_usd", "sum"),
+                            operaciones=("valor_usd", "count")
+                        )
+                        .reset_index()
+                    )
+                    
+                    # Agrupar por agente (sin año) para tener totales por vendedor
                     resumen_por_vendedor = (
-                        resumen_agente.groupby("agente")
+                        resumen_agente_filtrado.groupby("agente")
                         .agg(
                             total_ventas=("total_ventas", "sum"),
                             operaciones=("operaciones", "sum")

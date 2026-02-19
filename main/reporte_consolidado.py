@@ -581,7 +581,24 @@ def run(df_ventas, df_cxc=None, habilitar_ia=False, openai_api_key=None):
     config = _obtener_configuracion_ui(habilitar_ia, openai_api_key)
     
     # =====================================================================
-    # PASO 4: CALCULAR MÉTRICAS
+    # PASO 3.5: APLICAR FILTROS DE LÍNEAS DE NEGOCIO (para análisis IA)
+    # =====================================================================
+    lineas_seleccionadas = st.session_state.get("analisis_lineas", ["Todas"])
+    
+    # Aplicar filtro solo si no es "Todas"
+    if "Todas" not in lineas_seleccionadas:
+        # Filtrar ventas
+        if "linea_de_negocio" in df_ventas_limpio.columns:
+            df_ventas_limpio = df_ventas_limpio[df_ventas_limpio['linea_de_negocio'].isin(lineas_seleccionadas)]
+            logger.info(f"Datos filtrados por líneas: {lineas_seleccionadas}. Registros: {len(df_ventas_limpio)}")
+        
+        # Filtrar CxC
+        if df_cxc is not None and "linea_negocio" in df_cxc.columns:
+            df_cxc = df_cxc[df_cxc['linea_negocio'].isin(lineas_seleccionadas)]
+            logger.info(f"CxC filtrado por líneas. Registros: {len(df_cxc)}")
+    
+    # =====================================================================
+    # PASO 4: CALCULAR MÉTRICAS (con datos ya filtrados)
     # =====================================================================
     # Renombrar para compatibilidad con funciones de agrupamiento
     df_ventas_limpio = df_ventas_limpio.rename(columns={'valor_usd': 'ventas_usd'})

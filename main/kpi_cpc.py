@@ -695,6 +695,27 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                         # Calcular índice de morosidad
                         indice_morosidad = (vencida_filtrado / total_adeudado_filtrado * 100) if total_adeudado_filtrado > 0 else 0
                         
+                        # Recalcular score de salud con datos filtrados
+                        from utils.cxc_helper import calcular_score_salud, clasificar_score_salud
+                        
+                        # Calcular porcentajes de rangos con datos filtrados
+                        vencida_0_30_filtrado = df_analisis[(df_analisis['dias_overdue'] > 0) & (df_analisis['dias_overdue'] <= 30)]['saldo_adeudado'].sum()
+                        vencida_31_60_filtrado = df_analisis[(df_analisis['dias_overdue'] > 30) & (df_analisis['dias_overdue'] <= 60)]['saldo_adeudado'].sum()
+                        vencida_61_90_filtrado = df_analisis[(df_analisis['dias_overdue'] > 60) & (df_analisis['dias_overdue'] <= 90)]['saldo_adeudado'].sum()
+                        alto_riesgo_filtrado = critica_filtrado
+                        
+                        pct_vencida_0_30_filtrado = (vencida_0_30_filtrado / total_adeudado_filtrado * 100) if total_adeudado_filtrado > 0 else 0
+                        pct_vencida_31_60_filtrado = (vencida_31_60_filtrado / total_adeudado_filtrado * 100) if total_adeudado_filtrado > 0 else 0
+                        pct_vencida_61_90_filtrado = (vencida_61_90_filtrado / total_adeudado_filtrado * 100) if total_adeudado_filtrado > 0 else 0
+                        pct_alto_riesgo_filtrado = (alto_riesgo_filtrado / total_adeudado_filtrado * 100) if total_adeudado_filtrado > 0 else 0
+                        
+                        score_salud_filtrado = calcular_score_salud(
+                            pct_vigente_filtrado, pct_critica_filtrado,
+                            pct_vencida_0_30_filtrado, pct_vencida_31_60_filtrado, pct_vencida_61_90_filtrado, 
+                            pct_alto_riesgo_filtrado
+                        )
+                        score_status_filtrado, _ = clasificar_score_salud(score_salud_filtrado)
+                        
                         # Preparar contexto de filtros para IA
                         if "Todas" not in lineas_seleccionadas:
                             lineas_texto = ", ".join(lineas_seleccionadas)
@@ -710,8 +731,8 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                             critica=critica_filtrado,
                             pct_vigente=pct_vigente_filtrado,
                             pct_critica=pct_critica_filtrado,
-                            score_salud=score_salud,
-                            score_status=score_status,
+                            score_salud=score_salud_filtrado,
+                            score_status=score_status_filtrado,
                             top_deudor=top_deudores_df.index[0] if len(top_deudores_df) > 0 else "N/A",
                             monto_top_deudor=top_deudores_df.iloc[0] if len(top_deudores_df) > 0 else 0,
                             indice_morosidad=indice_morosidad,

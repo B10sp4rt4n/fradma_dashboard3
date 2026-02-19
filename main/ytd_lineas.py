@@ -914,12 +914,38 @@ def run(df, habilitar_ia=False, openai_api_key=None):
                     else:
                         contexto_filtros = None
                     
+                    # Recalcular métricas con datos filtrados
+                    ventas_ytd_actual_filtrado = df_analisis['ventas_usd'].sum()
+                    
+                    # Recalcular anterior filtrado
+                    ventas_ytd_anterior_filtrado = 0
+                    if año_anterior and not df_ytd_anterior.empty:
+                        df_anterior_filtrado = df_ytd_anterior.copy()
+                        if "Todas" not in lineas_seleccionadas:
+                            df_anterior_filtrado = df_anterior_filtrado[df_anterior_filtrado['linea_de_negocio'].isin(lineas_seleccionadas)]
+                        ventas_ytd_anterior_filtrado = df_anterior_filtrado['ventas_usd'].sum()
+                    
+                    # Recalcular crecimiento con datos filtrados
+                    if ventas_ytd_anterior_filtrado > 0:
+                        crecimiento_pct_filtrado = ((ventas_ytd_actual_filtrado - ventas_ytd_anterior_filtrado) / ventas_ytd_anterior_filtrado) * 100
+                    elif ventas_ytd_actual_filtrado > 0:
+                        crecimiento_pct_filtrado = 100.0
+                    else:
+                        crecimiento_pct_filtrado = 0
+                    
+                    # Recalcular proyección con datos filtrados
+                    dias_transcurridos_filtrado = metricas['dias_transcurridos']
+                    if dias_transcurridos_filtrado > 0:
+                        proyeccion_anual_filtrado = (ventas_ytd_actual_filtrado / dias_transcurridos_filtrado) * 365
+                    else:
+                        proyeccion_anual_filtrado = 0
+                    
                     analisis = generar_resumen_ejecutivo_ytd(
-                        ventas_ytd_actual=df_analisis['ventas_usd'].sum(),
-                        ventas_ytd_anterior=total_anterior if año_anterior else 0,
-                        crecimiento_pct=crecimiento_pct,
-                        dias_transcurridos=metricas['dias_transcurridos'],
-                        proyeccion_anual=metricas['proyeccion_anual'],
+                        ventas_ytd_actual=ventas_ytd_actual_filtrado,
+                        ventas_ytd_anterior=ventas_ytd_anterior_filtrado,
+                        crecimiento_pct=crecimiento_pct_filtrado,
+                        dias_transcurridos=dias_transcurridos_filtrado,
+                        proyeccion_anual=proyeccion_anual_filtrado,
                         linea_top=linea_top,
                         ventas_linea_top=ventas_linea_top,
                         api_key=openai_api_key,
