@@ -873,6 +873,11 @@ def run(df, habilitar_ia=False, openai_api_key=None):
         periodo_seleccionado = st.session_state.get("analisis_periodo", "Todos los datos")
         lineas_seleccionadas = st.session_state.get("analisis_lineas", ["Todas"])
         
+        # Limpiar si "Todas" está junto con otras líneas específicas
+        if "Todas" in lineas_seleccionadas and len(lineas_seleccionadas) > 1:
+            lineas_seleccionadas = [l for l in lineas_seleccionadas if l != "Todas"]
+            st.session_state["analisis_lineas"] = lineas_seleccionadas
+        
         st.info(
             f"📋 **Configuración:** Periodo: {periodo_seleccionado} | "
             f"Líneas: {', '.join(lineas_seleccionadas[:3])}{'...' if len(lineas_seleccionadas) > 3 else ''}"
@@ -885,9 +890,12 @@ def run(df, habilitar_ia=False, openai_api_key=None):
                     # Filtrar datos según configuración
                     df_analisis = df_ytd_actual.copy()
                     
+                    # Filtrar líneas específicas (remover "Todas" si existe)
+                    lineas_filtrar = [l for l in lineas_seleccionadas if l != "Todas"]
+                    
                     # Aplicar filtro de líneas
-                    if "Todas" not in lineas_seleccionadas:
-                        df_analisis = df_analisis[df_analisis['linea_de_negocio'].isin(lineas_seleccionadas)]
+                    if lineas_filtrar:
+                        df_analisis = df_analisis[df_analisis['linea_de_negocio'].isin(lineas_filtrar)]
                     
                     # Preparar datos por línea para el análisis
                     datos_lineas = {}
@@ -908,8 +916,8 @@ def run(df, habilitar_ia=False, openai_api_key=None):
                     
                     # Generar análisis
                     # Preparar contexto de filtros para IA
-                    if "Todas" not in lineas_seleccionadas:
-                        lineas_texto = ", ".join(lineas_seleccionadas)
+                    if lineas_filtrar:
+                        lineas_texto = ", ".join(lineas_filtrar)
                         contexto_filtros = f"Este análisis se enfoca ÚNICAMENTE en las siguientes líneas de negocio: {lineas_texto}. Las ventas y métricas reflejan SOLO estas líneas, no todo el negocio."
                     else:
                         contexto_filtros = None
@@ -921,8 +929,8 @@ def run(df, habilitar_ia=False, openai_api_key=None):
                     ventas_ytd_anterior_filtrado = 0
                     if año_anterior and not df_ytd_anterior.empty:
                         df_anterior_filtrado = df_ytd_anterior.copy()
-                        if "Todas" not in lineas_seleccionadas:
-                            df_anterior_filtrado = df_anterior_filtrado[df_anterior_filtrado['linea_de_negocio'].isin(lineas_seleccionadas)]
+                        if lineas_filtrar:
+                            df_anterior_filtrado = df_anterior_filtrado[df_anterior_filtrado['linea_de_negocio'].isin(lineas_filtrar)]
                         ventas_ytd_anterior_filtrado = df_anterior_filtrado['ventas_usd'].sum()
                     
                     # Recalcular crecimiento con datos filtrados

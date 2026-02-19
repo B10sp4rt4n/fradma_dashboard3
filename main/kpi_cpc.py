@@ -641,6 +641,11 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
             periodo_seleccionado = st.session_state.get("analisis_periodo", "Todos los datos")
             lineas_seleccionadas = st.session_state.get("analisis_lineas", ["Todas"])
             
+            # Limpiar si "Todas" está junto con otras líneas específicas
+            if "Todas" in lineas_seleccionadas and len(lineas_seleccionadas) > 1:
+                lineas_seleccionadas = [l for l in lineas_seleccionadas if l != "Todas"]
+                st.session_state["analisis_lineas"] = lineas_seleccionadas
+            
             st.info(
                 f"📋 **Configuración:** Periodo: {periodo_seleccionado} | "
                 f"Líneas: {', '.join(lineas_seleccionadas[:3])}{'...' if len(lineas_seleccionadas) > 3 else ''}"
@@ -653,9 +658,12 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                         # Filtrar datos según configuración
                         df_analisis = df_np.copy()
                         
+                        # Filtrar líneas específicas (remover "Todas" si existe)
+                        lineas_filtrar = [l for l in lineas_seleccionadas if l != "Todas"]
+                        
                         # Aplicar filtro de líneas si existe la columna
-                        if "linea_negocio" in df_analisis.columns and "Todas" not in lineas_seleccionadas:
-                            df_analisis = df_analisis[df_analisis['linea_negocio'].isin(lineas_seleccionadas)]
+                        if "linea_negocio" in df_analisis.columns and lineas_filtrar:
+                            df_analisis = df_analisis[df_analisis['linea_negocio'].isin(lineas_filtrar)]
                         
                         # Recalcular métricas con datos filtrados
                         total_adeudado_filtrado = df_analisis['saldo_adeudado'].sum()
@@ -717,8 +725,8 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                         score_status_filtrado, _ = clasificar_score_salud(score_salud_filtrado)
                         
                         # Preparar contexto de filtros para IA
-                        if "Todas" not in lineas_seleccionadas:
-                            lineas_texto = ", ".join(lineas_seleccionadas)
+                        if lineas_filtrar:
+                            lineas_texto = ", ".join(lineas_filtrar)
                             contexto_filtros = f"Este análisis se enfoca ÚNICAMENTE en las siguientes líneas de negocio: {lineas_texto}. Los montos y métricas reflejan SOLO estas líneas, no todo el negocio."
                         else:
                             contexto_filtros = None

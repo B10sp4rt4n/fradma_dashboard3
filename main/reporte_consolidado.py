@@ -430,8 +430,10 @@ def _renderizar_analisis_ia(total_ventas, crecimiento_ventas_pct, metricas_cxc,
             try:
                 # Preparar contexto de filtros para IA
                 lineas_seleccionadas = st.session_state.get("analisis_lineas", ["Todas"])
-                if "Todas" not in lineas_seleccionadas:
-                    lineas_texto = ", ".join(lineas_seleccionadas)
+                lineas_filtrar = [l for l in lineas_seleccionadas if l != "Todas"]
+                
+                if lineas_filtrar:
+                    lineas_texto = ", ".join(lineas_filtrar)
                     contexto_filtros = f"Este análisis se enfoca ÚNICAMENTE en las siguientes líneas de negocio: {lineas_texto}. Las ventas y métricas reflejan SOLO estas líneas, no todo el negocio."
                 else:
                     contexto_filtros = None
@@ -585,17 +587,22 @@ def run(df_ventas, df_cxc=None, habilitar_ia=False, openai_api_key=None):
     # =====================================================================
     lineas_seleccionadas = st.session_state.get("analisis_lineas", ["Todas"])
     
-    # Aplicar filtro solo si no es "Todas"
-    if "Todas" not in lineas_seleccionadas:
+    # Filtrar líneas específicas (remover "Todas" si existe)
+    lineas_filtrar = [l for l in lineas_seleccionadas if l != "Todas"]
+    
+    # Aplicar filtro solo si hay líneas específicas
+    if lineas_filtrar:
         # Filtrar ventas
         if "linea_de_negocio" in df_ventas_limpio.columns:
-            df_ventas_limpio = df_ventas_limpio[df_ventas_limpio['linea_de_negocio'].isin(lineas_seleccionadas)]
-            logger.info(f"Datos filtrados por líneas: {lineas_seleccionadas}. Registros: {len(df_ventas_limpio)}")
+            df_ventas_limpio = df_ventas_limpio[df_ventas_limpio['linea_de_negocio'].isin(lineas_filtrar)]
+            logger.info(f"✅ Datos filtrados por líneas: {lineas_filtrar}. Registros: {len(df_ventas_limpio)}")
+        else:
+            logger.warning(f"❌ Columna 'linea_de_negocio' no existe. Columnas disponibles: {df_ventas_limpio.columns.tolist()}")
         
         # Filtrar CxC
         if df_cxc is not None and "linea_negocio" in df_cxc.columns:
-            df_cxc = df_cxc[df_cxc['linea_negocio'].isin(lineas_seleccionadas)]
-            logger.info(f"CxC filtrado por líneas. Registros: {len(df_cxc)}")
+            df_cxc = df_cxc[df_cxc['linea_negocio'].isin(lineas_filtrar)]
+            logger.info(f"✅ CxC filtrado por líneas. Registros: {len(df_cxc)}")
     
     # =====================================================================
     # PASO 4: CALCULAR MÉTRICAS (con datos ya filtrados)

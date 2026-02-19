@@ -354,11 +354,15 @@ def run(habilitar_ia=False, openai_api_key=None):
                 try:
                     # Aplicar filtro de líneas de negocio si existe
                     df_analisis = df.copy()
-                    if "Todas" not in lineas_seleccionadas:
+                    
+                    # Filtrar líneas específicas (remover "Todas" si existe)
+                    lineas_filtrar = [l for l in lineas_seleccionadas if l != "Todas"]
+                    
+                    if lineas_filtrar:
                         if "linea_de_negocio" in df_analisis.columns:
-                            df_analisis = df_analisis[df_analisis['linea_de_negocio'].isin(lineas_seleccionadas)]
+                            df_analisis = df_analisis[df_analisis['linea_de_negocio'].isin(lineas_filtrar)]
                         elif "linea_producto" in df_analisis.columns:
-                            df_analisis = df_analisis[df_analisis['linea_producto'].isin(lineas_seleccionadas)]
+                            df_analisis = df_analisis[df_analisis['linea_producto'].isin(lineas_filtrar)]
                     
                     # Preparar datos para el análisis con datos filtrados
                     df_chart_filtrado = df_analisis[["agente", "anio", "valor_usd"]].dropna()
@@ -414,8 +418,8 @@ def run(habilitar_ia=False, openai_api_key=None):
                         })
                     
                     # Preparar contexto de filtros para IA
-                    if "Todas" not in lineas_seleccionadas:
-                        lineas_texto = ", ".join(lineas_seleccionadas)
+                    if lineas_filtrar:
+                        lineas_texto = ", ".join(lineas_filtrar)
                         contexto_filtros = f"Este análisis se enfoca ÚNICAMENTE en las siguientes líneas de negocio: {lineas_texto}. Las ventas y métricas reflejan SOLO estas líneas, no todo el negocio."
                     else:
                         contexto_filtros = None
