@@ -699,9 +699,6 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                         # Calcular índice de morosidad
                         indice_morosidad = (vencida_filtrado / total_adeudado_filtrado * 100) if total_adeudado_filtrado > 0 else 0
                         
-                        # Recalcular score de salud con datos filtrados
-                        from utils.cxc_helper import calcular_score_salud, clasificar_score_salud
-                        
                         # Calcular porcentajes de rangos con datos filtrados
                         vencida_0_30_filtrado = df_analisis[(df_analisis['dias_overdue'] > 0) & (df_analisis['dias_overdue'] <= 30)]['saldo_adeudado'].sum()
                         vencida_31_60_filtrado = df_analisis[(df_analisis['dias_overdue'] > 30) & (df_analisis['dias_overdue'] <= 60)]['saldo_adeudado'].sum()
