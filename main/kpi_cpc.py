@@ -641,11 +641,6 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
             periodo_seleccionado = st.session_state.get("analisis_periodo", "Todos los datos")
             lineas_seleccionadas = st.session_state.get("analisis_lineas", ["Todas"])
             
-            # Limpiar si "Todas" está junto con otras líneas específicas
-            if "Todas" in lineas_seleccionadas and len(lineas_seleccionadas) > 1:
-                lineas_seleccionadas = [l for l in lineas_seleccionadas if l != "Todas"]
-                st.session_state["analisis_lineas"] = lineas_seleccionadas
-            
             st.info(
                 f"📋 **Configuración:** Periodo: {periodo_seleccionado} | "
                 f"Líneas: {', '.join(lineas_seleccionadas[:3])}{'...' if len(lineas_seleccionadas) > 3 else ''}"
