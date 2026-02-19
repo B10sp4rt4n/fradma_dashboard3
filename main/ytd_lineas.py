@@ -869,36 +869,55 @@ def run(df, habilitar_ia=False, openai_api_key=None):
     if habilitar_ia and openai_api_key:
         st.header("🤖 Análisis Ejecutivo con IA Premium")
         
-        with st.spinner("🔄 Generando análisis ejecutivo con GPT-4o-mini..."):
-            try:
-                # Preparar datos por línea para el análisis
-                datos_lineas = {}
-                for linea in df_ytd_actual['linea_de_negocio'].unique():
-                    ventas_linea_actual = df_ytd_actual[df_ytd_actual['linea_de_negocio'] == linea]['ventas_usd'].sum()
+        # Obtener filtros configurados
+        periodo_seleccionado = st.session_state.get("analisis_periodo", "Todos los datos")
+        lineas_seleccionadas = st.session_state.get("analisis_lineas", ["Todas"])
+        
+        st.info(
+            f"📋 **Configuración:** Periodo: {periodo_seleccionado} | "
+            f"Líneas: {', '.join(lineas_seleccionadas[:3])}{'...' if len(lineas_seleccionadas) > 3 else ''}"
+        )
+        
+        # Botón para ejecutar análisis
+        if st.button("🚀 Generar Análisis con IA", type="primary", use_container_width=True):
+            with st.spinner("🔄 Generando análisis ejecutivo con GPT-4o-mini..."):
+                try:
+                    # Filtrar datos según configuración
+                    df_analisis = df_ytd_actual.copy()
                     
-                    crecimiento_linea = 0
-                    if año_anterior:
-                        ventas_linea_anterior = df_ytd_anterior[df_ytd_anterior['linea_de_negocio'] == linea]['ventas_usd'].sum()
-                        if ventas_linea_anterior > 0:
-                            crecimiento_linea = ((ventas_linea_actual - ventas_linea_anterior) / ventas_linea_anterior) * 100
+                    # Aplicar filtro de líneas
+                    if "Todas" not in lineas_seleccionadas:
+                        df_analisis = df_analisis[df_analisis['linea_de_negocio'].isin(lineas_seleccionadas)]
                     
-                    datos_lineas[linea] = {
-                        'ventas': ventas_linea_actual,
-                        'crecimiento': crecimiento_linea
-                    }
-                
-                # Generar análisis
-                analisis = generar_resumen_ejecutivo_ytd(
-                    ventas_ytd_actual=metricas['total_ytd'],
-                    ventas_ytd_anterior=total_anterior if año_anterior else 0,
-                    crecimiento_pct=crecimiento_pct,
-                    dias_transcurridos=metricas['dias_transcurridos'],
-                    proyeccion_anual=metricas['proyeccion_anual'],
-                    linea_top=linea_top,
-                    ventas_linea_top=ventas_linea_top,
-                    api_key=openai_api_key,
-                    datos_lineas=datos_lineas
-                )
+                    # Preparar datos por línea para el análisis
+                    datos_lineas = {}
+                    for linea in df_analisis['linea_de_negocio'].unique():
+                        ventas_linea_actual = df_analisis[df_analisis['linea_de_negocio'] == linea]['ventas_usd'].sum()
+                        
+                        crecimiento_linea = 0
+                        if año_anterior:
+                            df_anterior_filtrado = df_ytd_anterior[df_ytd_anterior['linea_de_negocio'] == linea]
+                            ventas_linea_anterior = df_anterior_filtrado['ventas_usd'].sum()
+                            if ventas_linea_anterior > 0:
+                                crecimiento_linea = ((ventas_linea_actual - ventas_linea_anterior) / ventas_linea_anterior) * 100
+                        
+                        datos_lineas[linea] = {
+                            'ventas': ventas_linea_actual,
+                            'crecimiento': crecimiento_linea
+                        }
+                    
+                    # Generar análisis
+                    analisis = generar_resumen_ejecutivo_ytd(
+                        ventas_ytd_actual=df_analisis['ventas_usd'].sum(),
+                        ventas_ytd_anterior=total_anterior if año_anterior else 0,
+                        crecimiento_pct=crecimiento_pct,
+                        dias_transcurridos=metricas['dias_transcurridos'],
+                        proyeccion_anual=metricas['proyeccion_anual'],
+                        linea_top=linea_top,
+                        ventas_linea_top=ventas_linea_top,
+                        api_key=openai_api_key,
+                        datos_lineas=datos_lineas
+                    )
                 
                 # Mostrar análisis estructurado
                 if analisis:
@@ -955,9 +974,11 @@ def run(df, habilitar_ia=False, openai_api_key=None):
                 else:
                     st.warning("⚠️ No se pudo generar el análisis ejecutivo")
                     
-            except Exception as e:
-                st.error(f"❌ Error al generar análisis con IA: {str(e)}")
-                logger.error(f"Error en análisis con IA: {e}", exc_info=True)
+                except Exception as e:
+                    st.error(f"❌ Error al generar análisis con IA: {str(e)}")
+                    logger.error(f"Error en análisis con IA: {e}", exc_info=True)
+        else:
+            st.caption("👆 Presiona el botón para generar análisis personalizado según tus filtros")
         
         st.markdown("---")
     

@@ -637,114 +637,143 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
         if habilitar_ia and openai_api_key:
             st.header("🤖 Análisis Ejecutivo con IA Premium")
             
-            with st.spinner("🔄 Generando análisis ejecutivo con GPT-4o-mini..."):
-                try:
-                    # Preparar datos de top deudores para el análisis
-                    top_deudores_lista = []
-                    top_deudores_df = df_np.groupby('deudor')['saldo_adeudado'].sum().nlargest(5)
-                    for nombre, monto in top_deudores_df.items():
-                        pct = (monto / total_adeudado * 100) if total_adeudado > 0 else 0
-                        top_deudores_lista.append({
-                            'nombre': nombre,
-                            'monto': monto,
-                            'porcentaje': pct
-                        })
-                    
-                    # Contar alertas (calcular antes si no está disponible)
+            # Obtener filtros configurados
+            periodo_seleccionado = st.session_state.get("analisis_periodo", "Todos los datos")
+            lineas_seleccionadas = st.session_state.get("analisis_lineas", ["Todas"])
+            
+            st.info(
+                f"📋 **Configuración:** Periodo: {periodo_seleccionado} | "
+                f"Líneas: {', '.join(lineas_seleccionadas[:3])}{'...' if len(lineas_seleccionadas) > 3 else ''}"
+            )
+            
+            # Botón para ejecutar análisis
+            if st.button("🚀 Generar Análisis con IA", type="primary", use_container_width=True, key="btn_ia_cxc"):
+                with st.spinner("🔄 Generando análisis ejecutivo con GPT-4o-mini..."):
                     try:
-                        # Intentar contar alertas de los datos disponibles
-                        umbral_critico = UmbralesCxC.CRITICO_MONTO
-                        clientes_criticos = df_np[df_np['saldo_adeudado'] >= umbral_critico]
-                        alertas_count = len(clientes_criticos)
-                    except:
-                        alertas_count = 0
-                    
-                    # Contar casos urgentes
-                    try:
-                        urgente_count = len(df_np[df_np['prioridad_cobranza'] == 'URGENTE'])
-                    except:
-                        urgente_count = 0
-                    
-                    # Calcular índice de morosidad
-                    indice_morosidad = (vencida / total_adeudado * 100) if total_adeudado > 0 else 0
-                    
-                    # Generar análisis
-                    analisis = generar_resumen_ejecutivo_cxc(
-                        total_adeudado=total_adeudado,
-                        vigente=vigente,
-                        vencida=vencida,
-                        critica=critica,
-                        pct_vigente=pct_vigente,
-                        pct_critica=pct_critica,
-                        score_salud=score_salud,
-                        score_status=score_status,
-                        top_deudor=top_deudores.index[0] if len(top_deudores) > 0 else "N/A",
-                        monto_top_deudor=top_deudores.iloc[0] if len(top_deudores) > 0 else 0,
-                        indice_morosidad=indice_morosidad,
-                        casos_urgentes=urgente_count,
-                        alertas_count=alertas_count,
-                        api_key=openai_api_key,
-                        datos_top_deudores=top_deudores_lista
-                    )
-                    
-                    # Mostrar análisis estructurado
-                    if analisis:
-                        # Resumen ejecutivo principal
-                        st.markdown("### 📋 Resumen Ejecutivo")
-                        st.info(analisis.get('resumen_ejecutivo', 'No disponible'))
+                        # Filtrar datos según configuración
+                        df_analisis = df_np.copy()
                         
-                        # Crear columnas para organizar el contenido
-                        col_izq, col_der = st.columns(2)
+                        # Aplicar filtro de líneas si existe la columna
+                        if "linea_negocio" in df_analisis.columns and "Todas" not in lineas_seleccionadas:
+                            df_analisis = df_analisis[df_analisis['linea_negocio'].isin(lineas_seleccionadas)]
                         
-                        with col_izq:
-                            # Highlights clave
-                            st.markdown("### ✨ Highlights Clave")
-                            highlights = analisis.get('highlights_clave', [])
-                            if highlights:
-                                for highlight in highlights:
-                                    st.markdown(f"- {highlight}")
-                            else:
-                                st.caption("No disponible")
+                        # Recalcular métricas con datos filtrados
+                        total_adeudado_filtrado = df_analisis['saldo_adeudado'].sum()
+                        vigente_filtrado = df_analisis[df_analisis['dias_overdue'] <= 0]['saldo_adeudado'].sum()
+                        vencida_filtrado = df_analisis[df_analisis['dias_overdue'] > 0]['saldo_adeudado'].sum()
+                        critica_filtrado = df_analisis[df_analisis['dias_overdue'] > 90]['saldo_adeudado'].sum()
+                        
+                        pct_vigente_filtrado = (vigente_filtrado / total_adeudado_filtrado * 100) if total_adeudado_filtrado > 0 else 0
+                        pct_critica_filtrado = (critica_filtrado / total_adeudado_filtrado * 100) if total_adeudado_filtrado > 0 else 0
+                        
+                        # Preparar datos de top deudores para el análisis
+                        top_deudores_lista = []
+                        top_deudores_df = df_analisis.groupby('deudor')['saldo_adeudado'].sum().nlargest(5)
+                        for nombre, monto in top_deudores_df.items():
+                            pct = (monto / total_adeudado_filtrado * 100) if total_adeudado_filtrado > 0 else 0
+                            top_deudores_lista.append({
+                                'nombre': nombre,
+                                'monto': monto,
+                                'porcentaje': pct
+                            })
+                        
+                        # Contar alertas (calcular antes si no está disponible)
+                        try:
+                            # Intentar contar alertas de los datos disponibles
+                            umbral_critico = UmbralesCxC.CRITICO_MONTO
+                            clientes_criticos = df_analisis[df_analisis['saldo_adeudado'] >= umbral_critico]
+                            alertas_count = len(clientes_criticos)
+                        except:
+                            alertas_count = 0
+                        
+                        # Contar casos urgentes
+                        try:
+                            urgente_count = len(df_analisis[df_analisis['prioridad_cobranza'] == 'URGENTE'])
+                        except:
+                            urgente_count = 0
+                        
+                        # Calcular índice de morosidad
+                        indice_morosidad = (vencida_filtrado / total_adeudado_filtrado * 100) if total_adeudado_filtrado > 0 else 0
+                        
+                        # Generar análisis
+                        analisis = generar_resumen_ejecutivo_cxc(
+                            total_adeudado=total_adeudado_filtrado,
+                            vigente=vigente_filtrado,
+                            vencida=vencida_filtrado,
+                            critica=critica_filtrado,
+                            pct_vigente=pct_vigente_filtrado,
+                            pct_critica=pct_critica_filtrado,
+                            score_salud=score_salud,
+                            score_status=score_status,
+                            top_deudor=top_deudores_df.index[0] if len(top_deudores_df) > 0 else "N/A",
+                            monto_top_deudor=top_deudores_df.iloc[0] if len(top_deudores_df) > 0 else 0,
+                            indice_morosidad=indice_morosidad,
+                            casos_urgentes=urgente_count,
+                            alertas_count=alertas_count,
+                            api_key=openai_api_key,
+                            datos_top_deudores=top_deudores_lista
+                        )
+                        
+                        # Mostrar análisis estructurado
+                        if analisis:
+                            # Resumen ejecutivo principal
+                            st.markdown("### 📋 Resumen Ejecutivo")
+                            st.info(analisis.get('resumen_ejecutivo', 'No disponible'))
                             
-                            st.markdown("")
+                            # Crear columnas para organizar el contenido
+                            col_izq, col_der = st.columns(2)
                             
-                            # Insights principales
-                            st.markdown("### 💡 Insights Principales")
-                            insights = analisis.get('insights_principales', [])
-                            if insights:
-                                for insight in insights:
-                                    st.markdown(f"- {insight}")
-                            else:
-                                st.caption("No disponible")
-                        
-                        with col_der:
-                            # Áreas de atención
-                            st.markdown("### ⚠️ Áreas de Atención")
-                            areas = analisis.get('areas_atencion', [])
-                            if areas:
-                                for area in areas:
-                                    st.markdown(f"- {area}")
-                            else:
-                                st.caption("No hay áreas críticas identificadas")
+                            with col_izq:
+                                # Highlights clave
+                                st.markdown("### ✨ Highlights Clave")
+                                highlights = analisis.get('highlights_clave', [])
+                                if highlights:
+                                    for highlight in highlights:
+                                        st.markdown(f"- {highlight}")
+                                else:
+                                    st.caption("No disponible")
+                                
+                                st.markdown("")
+                                
+                                # Insights principales
+                                st.markdown("### 💡 Insights Principales")
+                                insights = analisis.get('insights_principales', [])
+                                if insights:
+                                    for insight in insights:
+                                        st.markdown(f"- {insight}")
+                                else:
+                                    st.caption("No disponible")
                             
-                            st.markdown("")
+                            with col_der:
+                                # Áreas de atención
+                                st.markdown("### ⚠️ Áreas de Atención")
+                                areas = analisis.get('areas_atencion', [])
+                                if areas:
+                                    for area in areas:
+                                        st.markdown(f"- {area}")
+                                else:
+                                    st.caption("No hay áreas críticas identificadas")
+                                
+                                st.markdown("")
+                                
+                                # Recomendaciones ejecutivas
+                                st.markdown("### 🎯 Recomendaciones Ejecutivas")
+                                recomendaciones = analisis.get('recomendaciones_ejecutivas', [])
+                                if recomendaciones:
+                                    for rec in recomendaciones:
+                                        st.markdown(f"- {rec}")
+                                else:
+                                    st.caption("No disponible")
                             
-                            # Recomendaciones ejecutivas
-                            st.markdown("### 🎯 Recomendaciones Ejecutivas")
-                            recomendaciones = analisis.get('recomendaciones_ejecutivas', [])
-                            if recomendaciones:
-                                for rec in recomendaciones:
-                                    st.markdown(f"- {rec}")
-                            else:
-                                st.caption("No disponible")
-                        
-                        st.caption("🤖 Análisis generado por OpenAI GPT-4o-mini")
-                    else:
-                        st.warning("⚠️ No se pudo generar el análisis ejecutivo")
-                        
-                except Exception as e:
-                    st.error(f"❌ Error al generar análisis con IA: {str(e)}")
-                    logger.error(f"Error en análisis con IA CxC: {e}", exc_info=True)
+                            st.caption("🤖 Análisis generado por OpenAI GPT-4o-mini")
+                        else:
+                            st.warning("⚠️ No se pudo generar el análisis ejecutivo")
+                    
+                    except Exception as e:
+                        st.error(f"❌ Error al generar análisis con IA: {str(e)}")
+                        logger.error(f"Error en análisis con IA CxC: {e}", exc_info=True)
+            else:
+                st.caption("👆 Presiona el botón para generar análisis personalizado según tus filtros")
             
             st.write("---")
         

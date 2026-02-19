@@ -402,6 +402,15 @@ def _renderizar_analisis_ia(total_ventas, crecimiento_ventas_pct, metricas_cxc,
     st.markdown("## 🤖 Análisis Avanzado con Inteligencia Artificial")
     st.caption("💡 Insights generados por IA basados en los datos anteriores")
     
+    # Obtener filtros configurados
+    periodo_seleccionado = st.session_state.get("analisis_periodo", "Todos los datos")
+    lineas_seleccionadas = st.session_state.get("analisis_lineas", ["Todas"])
+    
+    st.info(
+        f"📋 **Configuración:** Periodo: {periodo_seleccionado} | "
+        f"Líneas: {', '.join(lineas_seleccionadas[:3])}{'...' if len(lineas_seleccionadas) > 3 else ''}"
+    )
+    
     periodo_label = {
         'semanal': 'Análisis Semanal',
         'mensual': 'Análisis Mensual',
@@ -415,21 +424,8 @@ def _renderizar_analisis_ia(total_ventas, crecimiento_ventas_pct, metricas_cxc,
     _pct_critica = metricas_cxc['pct_critica'] if metricas_cxc else 0
     _score_salud = score_salud_cxc if score_salud_cxc else 0
     
-    # Crear clave única para cachear análisis
-    cache_key = f"analisis_consolidado_{int(total_ventas)}_{int(_total_cxc)}_{int(crecimiento_ventas_pct)}"
-    
-    # Botón para regenerar análisis
-    col_titulo, col_boton = st.columns([4, 1])
-    with col_boton:
-        if st.button("🔄 Regenerar", key="btn_regenerar_ia_consolidado", help="Genera un nuevo análisis con IA"):
-            if cache_key in st.session_state:
-                del st.session_state[cache_key]
-            st.rerun()
-    
-    # Verificar si ya existe análisis en session_state
-    analisis = st.session_state.get(cache_key)
-    
-    if analisis is None:
+    # Botón para ejecutar análisis
+    if st.button("🚀 Generar Análisis con IA", type="primary", use_container_width=True, key="btn_ia_consolidado"):
         with st.spinner("🔄 Generando análisis ejecutivo consolidado con GPT-4o-mini..."):
             try:
                 analisis = generar_analisis_consolidado_ia(
@@ -443,63 +439,58 @@ def _renderizar_analisis_ia(total_ventas, crecimiento_ventas_pct, metricas_cxc,
                     api_key=config['api_key']
                 )
                 
+                # Mostrar análisis
                 if analisis:
-                    st.session_state[cache_key] = analisis
+                    st.markdown("### 📋 Resumen Ejecutivo")
+                    st.info(analisis.get('resumen_ejecutivo', 'No disponible'))
+                    
+                    col_izq, col_der = st.columns(2)
+                    
+                    with col_izq:
+                        st.markdown("### ⭐ Highlights Clave")
+                        highlights = analisis.get('highlights_clave', [])
+                        if highlights:
+                            for h in highlights:
+                                st.markdown(f"- {h}")
+                        else:
+                            st.caption("No disponible")
+                        
+                        st.markdown("")
+                        st.markdown("### 💡 Insights Principales")
+                        insights = analisis.get('insights_principales', [])
+                        if insights:
+                            for i in insights:
+                                st.markdown(f"- {i}")
+                        else:
+                            st.caption("No disponible")
+                    
+                    with col_der:
+                        st.markdown("### ⚠️ Áreas de Atención")
+                        areas = analisis.get('areas_atencion', [])
+                        if areas:
+                            for a in areas:
+                                st.markdown(f"- {a}")
+                        else:
+                            st.caption("No hay áreas críticas")
+                        
+                        st.markdown("")
+                        st.markdown("### 🎯 Recomendaciones Ejecutivas")
+                        recs = analisis.get('recomendaciones_ejecutivas', [])
+                        if recs:
+                            for r in recs:
+                                st.markdown(f"- {r}")
+                        else:
+                            st.caption("No disponible")
+                    
+                    st.caption("🤖 Análisis generado por OpenAI GPT-4o-mini")
+                else:
+                    st.warning("⚠️ No se pudo generar el análisis")
+            
             except Exception as e:
-                st.error(f"❌ Error al generar análisis: {str(e)}")
+                st.error(f"❌ Error al generar análisis con IA: {str(e)}")
                 logger.error(f"Error en análisis IA consolidado: {e}", exc_info=True)
-                analisis = None
-    
-    # Mostrar análisis
-    if analisis:
-        try:
-            st.markdown("### 📋 Resumen Ejecutivo")
-            st.info(analisis.get('resumen_ejecutivo', 'No disponible'))
-            
-            col_izq, col_der = st.columns(2)
-            
-            with col_izq:
-                st.markdown("### ⭐ Highlights Clave")
-                highlights = analisis.get('highlights_clave', [])
-                if highlights:
-                    for h in highlights:
-                        st.markdown(f"- {h}")
-                else:
-                    st.caption("No disponible")
-                
-                st.markdown("")
-                st.markdown("### 💡 Insights Principales")
-                insights = analisis.get('insights_principales', [])
-                if insights:
-                    for i in insights:
-                        st.markdown(f"- {i}")
-                else:
-                    st.caption("No disponible")
-            
-            with col_der:
-                st.markdown("### ⚠️ Áreas de Atención")
-                areas = analisis.get('areas_atencion', [])
-                if areas:
-                    for a in areas:
-                        st.markdown(f"- {a}")
-                else:
-                    st.caption("No hay áreas críticas")
-                
-                st.markdown("")
-                st.markdown("### 🎯 Recomendaciones Ejecutivas")
-                recs = analisis.get('recomendaciones_ejecutivas', [])
-                if recs:
-                    for r in recs:
-                        st.markdown(f"- {r}")
-                else:
-                    st.caption("No disponible")
-            
-            st.caption("🤖 Análisis generado por OpenAI GPT-4o-mini")
-        except Exception as e:
-            st.error(f"❌ Error al mostrar análisis: {str(e)}")
-            logger.error(f"Error mostrando análisis IA consolidado: {e}", exc_info=True)
     else:
-        st.warning("⚠️ No se pudo generar el análisis")
+        st.caption("👆 Presiona el botón para generar análisis consolidado según tus filtros")
 
 
 def _renderizar_tabla_detalle(df_ventas_agrupado, periodos_count, config):
