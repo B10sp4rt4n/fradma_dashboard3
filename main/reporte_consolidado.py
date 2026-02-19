@@ -428,9 +428,9 @@ def _renderizar_analisis_ia(total_ventas, crecimiento_ventas_pct, metricas_cxc,
     if st.button("🚀 Generar Análisis con IA", type="primary", use_container_width=True, key="btn_ia_consolidado"):
         with st.spinner("🔄 Generando análisis ejecutivo consolidado con GPT-4o-mini..."):
             try:
-                # Preparar contexto de filtros para IA
+                # Preparar contexto de filtros para IA (validar entrada)
                 lineas_seleccionadas = st.session_state.get("analisis_lineas", ["Todas"])
-                lineas_filtrar = [l for l in lineas_seleccionadas if l != "Todas"]
+                lineas_filtrar = [l for l in (lineas_seleccionadas or []) if l and l != "Todas"]
                 
                 if lineas_filtrar:
                     lineas_texto = ", ".join(lineas_filtrar)
@@ -587,8 +587,8 @@ def run(df_ventas, df_cxc=None, habilitar_ia=False, openai_api_key=None):
     # =====================================================================
     lineas_seleccionadas = st.session_state.get("analisis_lineas", ["Todas"])
     
-    # Filtrar líneas específicas (remover "Todas" si existe)
-    lineas_filtrar = [l for l in lineas_seleccionadas if l != "Todas"]
+    # Filtrar líneas específicas (remover "Todas" si existe y validar entrada)
+    lineas_filtrar = [l for l in (lineas_seleccionadas or []) if l and l != "Todas"]
     
     # Aplicar filtro solo si hay líneas específicas
     if lineas_filtrar:

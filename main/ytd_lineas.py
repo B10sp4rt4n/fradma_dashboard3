@@ -885,29 +885,29 @@ def run(df, habilitar_ia=False, openai_api_key=None):
                     # Filtrar datos según configuración
                     df_analisis = df_ytd_actual.copy()
                     
-                    # Filtrar líneas específicas (remover "Todas" si existe)
-                    lineas_filtrar = [l for l in lineas_seleccionadas if l != "Todas"]
+                    # Filtrar líneas específicas (remover "Todas" si existe y validar entrada)
+                    lineas_filtrar = [l for l in (lineas_seleccionadas or []) if l and l != "Todas"]
                     
-                    # Aplicar filtro de líneas
-                    if lineas_filtrar:
+                    # Aplicar filtro de líneas (validar columna existe)
+                    if lineas_filtrar and 'linea_de_negocio' in df_analisis.columns:
                         df_analisis = df_analisis[df_analisis['linea_de_negocio'].isin(lineas_filtrar)]
                     
-                    # Preparar datos por línea para el análisis
+                    # Preparar datos por línea para el análisis (optimizado con groupby)
                     datos_lineas = {}
-                    for linea in df_analisis['linea_de_negocio'].unique():
-                        ventas_linea_actual = df_analisis[df_analisis['linea_de_negocio'] == linea]['ventas_usd'].sum()
+                    if 'linea_de_negocio' in df_analisis.columns:
+                        ventas_por_linea = df_analisis.groupby('linea_de_negocio')['ventas_usd'].sum()
                         
-                        crecimiento_linea = 0
-                        if año_anterior:
-                            df_anterior_filtrado = df_ytd_anterior[df_ytd_anterior['linea_de_negocio'] == linea]
-                            ventas_linea_anterior = df_anterior_filtrado['ventas_usd'].sum()
-                            if ventas_linea_anterior > 0:
-                                crecimiento_linea = ((ventas_linea_actual - ventas_linea_anterior) / ventas_linea_anterior) * 100
-                        
-                        datos_lineas[linea] = {
-                            'ventas': ventas_linea_actual,
-                            'crecimiento': crecimiento_linea
-                        }
+                        for linea, ventas_linea_actual in ventas_por_linea.items():
+                            crecimiento_linea = 0
+                            if año_anterior and 'linea_de_negocio' in df_ytd_anterior.columns:
+                                ventas_linea_anterior = df_ytd_anterior[df_ytd_anterior['linea_de_negocio'] == linea]['ventas_usd'].sum()
+                                if ventas_linea_anterior > 0:
+                                    crecimiento_linea = ((ventas_linea_actual - ventas_linea_anterior) / ventas_linea_anterior) * 100
+                            
+                            datos_lineas[linea] = {
+                                'ventas': ventas_linea_actual,
+                                'crecimiento': crecimiento_linea
+                            }
                     
                     # Generar análisis
                     # Preparar contexto de filtros para IA
@@ -948,8 +948,13 @@ def run(df, habilitar_ia=False, openai_api_key=None):
                         linea_top_filtrado = max(datos_lineas.items(), key=lambda x: x[1]['ventas'])[0]
                         ventas_linea_top_filtrado = datos_lineas[linea_top_filtrado]['ventas']
                     else:
-                        linea_top_filtrado = linea_top
-                        ventas_linea_top_filtrado = ventas_linea_top
+                        # Fallback: usar valores globales si existen, sino valores por defecto
+                        try:
+                            linea_top_filtrado = linea_top
+                            ventas_linea_top_filtrado = ventas_linea_top
+                        except NameError:
+                            linea_top_filtrado = "N/A"
+                            ventas_linea_top_filtrado = 0
                     
                     analisis = generar_resumen_ejecutivo_ytd(
                         ventas_ytd_actual=ventas_ytd_actual_filtrado,

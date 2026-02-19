@@ -355,8 +355,8 @@ def run(habilitar_ia=False, openai_api_key=None):
                     # Aplicar filtro de líneas de negocio si existe
                     df_analisis = df.copy()
                     
-                    # Filtrar líneas específicas (remover "Todas" si existe)
-                    lineas_filtrar = [l for l in lineas_seleccionadas if l != "Todas"]
+                    # Filtrar líneas específicas (remover "Todas" si existe y validar entrada)
+                    lineas_filtrar = [l for l in (lineas_seleccionadas or []) if l and l != "Todas"]
                     
                     if lineas_filtrar:
                         if "linea_de_negocio" in df_analisis.columns:
