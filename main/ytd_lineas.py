@@ -943,14 +943,22 @@ def run(df, habilitar_ia=False, openai_api_key=None):
                     else:
                         proyeccion_anual_filtrado = 0
                     
+                    # Recalcular línea top con datos filtrados
+                    if datos_lineas:
+                        linea_top_filtrado = max(datos_lineas.items(), key=lambda x: x[1]['ventas'])[0]
+                        ventas_linea_top_filtrado = datos_lineas[linea_top_filtrado]['ventas']
+                    else:
+                        linea_top_filtrado = linea_top
+                        ventas_linea_top_filtrado = ventas_linea_top
+                    
                     analisis = generar_resumen_ejecutivo_ytd(
                         ventas_ytd_actual=ventas_ytd_actual_filtrado,
                         ventas_ytd_anterior=ventas_ytd_anterior_filtrado,
                         crecimiento_pct=crecimiento_pct_filtrado,
                         dias_transcurridos=dias_transcurridos_filtrado,
                         proyeccion_anual=proyeccion_anual_filtrado,
-                        linea_top=linea_top,
-                        ventas_linea_top=ventas_linea_top,
+                        linea_top=linea_top_filtrado,
+                        ventas_linea_top=ventas_linea_top_filtrado,
                         api_key=openai_api_key,
                         datos_lineas=datos_lineas,
                         contexto_filtros=contexto_filtros
