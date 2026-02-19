@@ -907,6 +907,13 @@ def run(df, habilitar_ia=False, openai_api_key=None):
                         }
                     
                     # Generar análisis
+                    # Preparar contexto de filtros para IA
+                    if "Todas" not in lineas_seleccionadas:
+                        lineas_texto = ", ".join(lineas_seleccionadas)
+                        contexto_filtros = f"Este análisis se enfoca ÚNICAMENTE en las siguientes líneas de negocio: {lineas_texto}. Las ventas y métricas reflejan SOLO estas líneas, no todo el negocio."
+                    else:
+                        contexto_filtros = None
+                    
                     analisis = generar_resumen_ejecutivo_ytd(
                         ventas_ytd_actual=df_analisis['ventas_usd'].sum(),
                         ventas_ytd_anterior=total_anterior if año_anterior else 0,
@@ -916,7 +923,8 @@ def run(df, habilitar_ia=False, openai_api_key=None):
                         linea_top=linea_top,
                         ventas_linea_top=ventas_linea_top,
                         api_key=openai_api_key,
-                        datos_lineas=datos_lineas
+                        datos_lineas=datos_lineas,
+                        contexto_filtros=contexto_filtros
                     )
                     
                     # Mostrar análisis estructurado

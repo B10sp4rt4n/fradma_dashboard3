@@ -49,7 +49,8 @@ def generar_resumen_ejecutivo_ytd(
     linea_top: str,
     ventas_linea_top: float,
     api_key: str,
-    datos_lineas: dict = None
+    datos_lineas: dict = None,
+    contexto_filtros: str = None
 ) -> dict:
     """
     Genera un análisis ejecutivo estructurado usando OpenAI GPT-4o-mini.
@@ -72,8 +73,21 @@ def generar_resumen_ejecutivo_ytd(
         logger.info("Solicitando análisis ejecutivo a OpenAI...")
         
         # Preparar contexto para el análisis
-        contexto = f"""
-Analiza los siguientes datos YTD (Year-to-Date) de ventas y genera un análisis ejecutivo profesional:
+        contexto_base = f"""
+Analiza los siguientes datos YTD (Year-to-Date) de ventas y genera un análisis ejecutivo profesional.
+"""
+        
+        if contexto_filtros:
+            contexto_base += f"""
+
+⚠️ IMPORTANTE - ALCANCE DEL ANÁLISIS:
+{contexto_filtros}
+
+TODOS los números y métricas presentados corresponden ÚNICAMENTE al alcance definido arriba.
+El análisis debe referirse SOLO a estos datos filtrados, NO al negocio completo.
+"""
+        
+        contexto = contexto_base + f"""
 
 ⚠️ IMPORTANTE - CONTEXTO DE COMPARACIÓN:
 - Estamos comparando PERIODOS EQUIVALENTES (mismo rango de días del año)
@@ -169,7 +183,8 @@ def generar_analisis_consolidado_ia(
     pct_critica_cxc: float,
     score_salud_cxc: float,
     periodo_analisis: str,
-    api_key: str
+    api_key: str,
+    contexto_filtros: str = None
 ) -> dict:
     """
     Genera un análisis ejecutivo consolidado integrando ventas y CxC.
@@ -193,10 +208,21 @@ def generar_analisis_consolidado_ia(
         # Inicializar cliente OpenAI
         client = OpenAI(api_key=api_key)
         
-        # Construir prompt
-        prompt = f"""Eres un CFO experto analizando el desempeño integral del negocio.
+        # Construir prompt base
+        prompt_base = "Eres un CFO experto analizando el desempeño integral del negocio.\n\n"
+        
+        if contexto_filtros:
+            prompt_base += f"""
+⚠️ IMPORTANTE - ALCANCE DEL ANÁLISIS:
+{contexto_filtros}
 
-DATOS DEL PERÍODO - {periodo_analisis}:
+TODOS los números y métricas presentados corresponden ÚNICAMENTE al alcance definido arriba.
+El análisis debe referirse SOLO a estos datos filtrados, NO al negocio completo.
+
+"""
+        
+        # Construir prompt completo
+        prompt = prompt_base + f"""DATOS DEL PERÍODO - {periodo_analisis}:
 
 VENTAS:
 - Total ventas: ${total_ventas:,.2f} USD
@@ -287,7 +313,8 @@ def generar_resumen_ejecutivo_cxc(
     casos_urgentes: int,
     alertas_count: int,
     api_key: str,
-    datos_top_deudores: list = None
+    datos_top_deudores: list = None,
+    contexto_filtros: str = None
 ) -> dict:
     """
     Genera un análisis ejecutivo estructurado de CxC usando OpenAI GPT-4o-mini.
@@ -316,8 +343,21 @@ def generar_resumen_ejecutivo_cxc(
         logger.info("Solicitando análisis ejecutivo CxC a OpenAI...")
         
         # Preparar contexto para el análisis
-        contexto = f"""
-Analiza los siguientes datos de Cuentas por Cobrar (CxC) y genera un análisis ejecutivo profesional:
+        contexto_base = f"""
+Analiza los siguientes datos de Cuentas por Cobrar (CxC) y genera un análisis ejecutivo profesional.
+"""
+        
+        if contexto_filtros:
+            contexto_base += f"""
+
+⚠️ IMPORTANTE - ALCANCE DEL ANÁLISIS:
+{contexto_filtros}
+
+TODOS los números y métricas presentados corresponden ÚNICAMENTE al alcance definido arriba.
+El análisis debe referirse SOLO a estos datos filtrados, NO al negocio completo.
+"""
+        
+        contexto = contexto_base + f"""
 
 MÉTRICAS PRINCIPALES:
 - Total Adeudado: ${total_adeudado:,.2f}

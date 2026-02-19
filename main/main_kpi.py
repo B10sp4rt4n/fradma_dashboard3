@@ -394,6 +394,13 @@ def run(habilitar_ia=False, openai_api_key=None):
                             'ticket_avg': row['ticket_promedio']
                         })
                     
+                    # Preparar contexto de filtros para IA
+                    if "Todas" not in lineas_seleccionadas:
+                        lineas_texto = ", ".join(lineas_seleccionadas)
+                        contexto_filtros = f"Este análisis se enfoca ÚNICAMENTE en las siguientes líneas de negocio: {lineas_texto}. Las ventas y métricas reflejan SOLO estas líneas, no todo el negocio."
+                    else:
+                        contexto_filtros = None
+                    
                     # Generar insights con IA
                     insights = generar_insights_kpi_vendedores(
                         num_vendedores=num_vendedores,
@@ -405,7 +412,8 @@ def run(habilitar_ia=False, openai_api_key=None):
                         ventas_vendedor_bottom=ventas_vendedor_bottom,
                         concentracion_top3_pct=concentracion_top3_pct,
                         api_key=openai_api_key,
-                        datos_vendedores=datos_vendedores
+                        datos_vendedores=datos_vendedores,
+                        contexto_filtros=contexto_filtros
                     )
                     
                     if insights:

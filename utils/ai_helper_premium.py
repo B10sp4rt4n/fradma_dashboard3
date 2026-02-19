@@ -26,7 +26,8 @@ def generar_insights_kpi_vendedores(
     ventas_vendedor_bottom: float,
     concentracion_top3_pct: float,
     api_key: str,
-    datos_vendedores: list = None
+    datos_vendedores: list = None,
+    contexto_filtros: str = None
 ) -> dict:
     """
     Genera insights estratégicos sobre el desempeño del equipo de ventas.
@@ -52,8 +53,18 @@ def generar_insights_kpi_vendedores(
         
         client = OpenAI(api_key=api_key)
         
-        contexto = f"""
-Analiza el desempeño del equipo de ventas y genera insights estratégicos (NO repetir métricas):
+        contexto_base = "Analiza el desempeño del equipo de ventas y genera insights estratégicos (NO repetir métricas)."
+        
+        if contexto_filtros:
+            contexto_base += f"""
+
+⚠️ IMPORTANTE - ALCANCE DEL ANÁLISIS:
+{contexto_filtros}
+
+TODOS los números y métricas presentados corresponden ÚNICAMENTE al alcance definido arriba.
+"""
+        
+        contexto = contexto_base + f"""
 
 EQUIPO DE VENTAS:
 - Total de vendedores activos: {num_vendedores}

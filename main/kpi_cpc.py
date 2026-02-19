@@ -695,6 +695,13 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                         # Calcular índice de morosidad
                         indice_morosidad = (vencida_filtrado / total_adeudado_filtrado * 100) if total_adeudado_filtrado > 0 else 0
                         
+                        # Preparar contexto de filtros para IA
+                        if "Todas" not in lineas_seleccionadas:
+                            lineas_texto = ", ".join(lineas_seleccionadas)
+                            contexto_filtros = f"Este análisis se enfoca ÚNICAMENTE en las siguientes líneas de negocio: {lineas_texto}. Los montos y métricas reflejan SOLO estas líneas, no todo el negocio."
+                        else:
+                            contexto_filtros = None
+                        
                         # Generar análisis
                         analisis = generar_resumen_ejecutivo_cxc(
                             total_adeudado=total_adeudado_filtrado,
@@ -711,7 +718,8 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                             casos_urgentes=urgente_count,
                             alertas_count=alertas_count,
                             api_key=openai_api_key,
-                            datos_top_deudores=top_deudores_lista
+                            datos_top_deudores=top_deudores_lista,
+                            contexto_filtros=contexto_filtros
                         )
                         
                         # Mostrar análisis estructurado

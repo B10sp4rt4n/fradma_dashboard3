@@ -428,6 +428,14 @@ def _renderizar_analisis_ia(total_ventas, crecimiento_ventas_pct, metricas_cxc,
     if st.button("🚀 Generar Análisis con IA", type="primary", use_container_width=True, key="btn_ia_consolidado"):
         with st.spinner("🔄 Generando análisis ejecutivo consolidado con GPT-4o-mini..."):
             try:
+                # Preparar contexto de filtros para IA
+                lineas_seleccionadas = st.session_state.get("analisis_lineas", ["Todas"])
+                if "Todas" not in lineas_seleccionadas:
+                    lineas_texto = ", ".join(lineas_seleccionadas)
+                    contexto_filtros = f"Este análisis se enfoca ÚNICAMENTE en las siguientes líneas de negocio: {lineas_texto}. Las ventas y métricas reflejan SOLO estas líneas, no todo el negocio."
+                else:
+                    contexto_filtros = None
+                
                 analisis = generar_analisis_consolidado_ia(
                     total_ventas=total_ventas,
                     crecimiento_ventas_pct=crecimiento_ventas_pct,
@@ -436,7 +444,8 @@ def _renderizar_analisis_ia(total_ventas, crecimiento_ventas_pct, metricas_cxc,
                     pct_critica_cxc=_pct_critica,
                     score_salud_cxc=_score_salud,
                     periodo_analisis=periodo_label,
-                    api_key=config['api_key']
+                    api_key=config['api_key'],
+                    contexto_filtros=contexto_filtros
                 )
                 
                 # Mostrar análisis
