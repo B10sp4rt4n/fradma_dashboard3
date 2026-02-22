@@ -384,7 +384,7 @@ def _renderizar_visualizaciones(df_ventas_agrupado, metricas_cxc, config):
 
 
 def _renderizar_analisis_ia(total_ventas, crecimiento_ventas_pct, metricas_cxc, 
-                            score_salud_cxc, config):
+                            score_salud_cxc, config, lineas_filtrar=None):
     """
     Sección 4: Renderiza análisis con IA (opcional, al final como skill avanzado).
     
@@ -393,6 +393,7 @@ def _renderizar_analisis_ia(total_ventas, crecimiento_ventas_pct, metricas_cxc,
         crecimiento_ventas_pct: Porcentaje de crecimiento
         metricas_cxc: Dict con métricas de CxC o None
         score_salud_cxc: Score de salud CxC o None
+        lineas_filtrar: Lista de líneas de negocio filtradas o None
         config: Dict con configuración (habilitar_ia, api_key, tipo_periodo)
     """
     if not config['habilitar_ia'] or not config['api_key']:
@@ -429,8 +430,10 @@ def _renderizar_analisis_ia(total_ventas, crecimiento_ventas_pct, metricas_cxc,
     if st.button("🚀 Generar Análisis con IA", type="primary", use_container_width=True, key="btn_ia_consolidado"):
         with st.spinner("🔄 Generando análisis ejecutivo consolidado con GPT-4o-mini..."):
             try:
-                # Preparar contexto de filtros para IA (reutilizar lineas_filtrar de PASO 3.5)
-                contexto_filtros = generar_contexto_filtros(lineas_filtrar)
+                # Preparar contexto de filtros para IA (manejar None de forma segura)
+                contexto_filtros = ""
+                if lineas_filtrar and len(lineas_filtrar) > 0:
+                    contexto_filtros = generar_contexto_filtros(lineas_filtrar)
                 
                 analisis = generar_analisis_consolidado_ia(
                     total_ventas=total_ventas,
@@ -581,8 +584,12 @@ def run(df_ventas, df_cxc=None, habilitar_ia=False, openai_api_key=None):
     # =====================================================================
     lineas_seleccionadas = st.session_state.get("analisis_lineas", ["Todas"])
     
-    # Filtrar líneas específicas
-    lineas_filtrar = obtener_lineas_filtradas(lineas_seleccionadas)
+    # Filtrar líneas específicas (siempre definir la variable, incluso si está vacía)
+    try:
+        lineas_filtrar = obtener_lineas_filtradas(lineas_seleccionadas)
+    except Exception as e:
+        logger.warning(f"Error al obtener líneas filtradas: {e}")
+        lineas_filtrar = []  # Asegurar que siempre esté definida
     
     # Aplicar filtro solo si hay líneas específicas
     if lineas_filtrar:
@@ -644,7 +651,7 @@ def run(df_ventas, df_cxc=None, habilitar_ia=False, openai_api_key=None):
     # Sección 4: Análisis con IA (opcional, al final como skill avanzado)
     _renderizar_analisis_ia(
         total_ventas, crecimiento_ventas_pct, metricas_cxc, 
-        score_salud_cxc, config
+        score_salud_cxc, config, lineas_filtrar if 'lineas_filtrar' in locals() else []
     )
     
     # =====================================================================
