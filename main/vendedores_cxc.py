@@ -84,9 +84,30 @@ def _detectar_col_cliente(df: pd.DataFrame) -> str | None:
     return None
 
 
-def _score_calidad(pct_vencida: float) -> tuple[float, str]:
-    """Score 0-100 de calidad de cartera (100 = sin deuda vencida)."""
-    score = max(0.0, 100.0 - pct_vencida)
+def _score_calidad(pct_vigente: float, pct_1_30: float, pct_31_60: float, 
+                   pct_61_90: float, pct_mas_90: float) -> tuple[float, str]:
+    """
+    Score 0-100 de calidad de cartera ponderado por antigüedad de deuda.
+    
+    Fórmula:
+    - Vigente (≤0 días):   100 puntos
+    - Vencida 1-30 días:    85 puntos (penalidad leve)
+    - Vencida 31-60 días:   60 puntos (penalidad media)
+    - Vencida 61-90 días:   30 puntos (penalidad alta)
+    - Vencida >90 días:      0 puntos (penalidad máxima)
+    
+    Score = Σ(porcentaje × puntos) / 100
+    """
+    score = (
+        pct_vigente * 100 +
+        pct_1_30 * 85 +
+        pct_31_60 * 60 +
+        pct_61_90 * 30 +
+        pct_mas_90 * 0
+    ) / 100
+    
+    score = max(0.0, min(100.0, score))  # Asegurar rango 0-100
+    
     if score >= 85:
         return score, "🟢 Excelente"
     elif score >= 65:
@@ -458,12 +479,15 @@ def run():
     agg_cxc = (
         df_cxc_vend.groupby("vendedor")
         .apply(lambda g: pd.Series({
-            "cartera_total":   g["saldo_adeudado"].sum(),
-            "cartera_vigente": g.loc[g["dias_overdue"] <= 0, "saldo_adeudado"].sum(),
-            "cartera_vencida": g.loc[g["dias_overdue"] > 0,  "saldo_adeudado"].sum(),
+            "cartera_total":       g["saldo_adeudado"].sum(),
+            "cartera_vigente":     g.loc[g["dias_overdue"] <= 0, "saldo_adeudado"].sum(),
+            "cartera_vencida":     g.loc[g["dias_overdue"] > 0,  "saldo_adeudado"].sum(),
+            "cartera_1_30":        g.loc[(g["dias_overdue"] > 0) & (g["dias_overdue"] <= 30), "saldo_adeudado"].sum(),
+            "cartera_31_60":       g.loc[(g["dias_overdue"] > 30) & (g["dias_overdue"] <= 60), "saldo_adeudado"].sum(),
+            "cartera_61_90":       g.loc[(g["dias_overdue"] > 60) & (g["dias_overdue"] <= 90), "saldo_adeudado"].sum(),
             "cartera_alto_riesgo": g.loc[g["dias_overdue"] > 90, "saldo_adeudado"].sum(),
-            "clientes_unicos": g["deudor"].nunique() if "deudor" in g.columns else 0,
-            "dias_max":        g["dias_overdue"].max(),
+            "clientes_unicos":     g["deudor"].nunique() if "deudor" in g.columns else 0,
+            "dias_max":            g["dias_overdue"].max(),
         }))
         .reset_index()
     )
@@ -483,8 +507,20 @@ def run():
     df_cruce["ratio_deuda_ventas"] = (
         df_cruce["cartera_vencida"] / df_cruce["ventas_totales"].replace(0, 1) * 100
     )
-    df_cruce[["score_calidad", "nivel_calidad"]] = df_cruce["pct_vencida"].apply(
-        lambda p: pd.Series(_score_calidad(p))
+    
+    # Calcular porcentajes por rango de antigüedad
+    df_cruce["pct_vigente"] = (df_cruce["cartera_vigente"] / df_cruce["cartera_total"].replace(0, 1) * 100)
+    df_cruce["pct_1_30"] = (df_cruce["cartera_1_30"] / df_cruce["cartera_total"].replace(0, 1) * 100)
+    df_cruce["pct_31_60"] = (df_cruce["cartera_31_60"] / df_cruce["cartera_total"].replace(0, 1) * 100)
+    df_cruce["pct_61_90"] = (df_cruce["cartera_61_90"] / df_cruce["cartera_total"].replace(0, 1) * 100)
+    df_cruce["pct_mas_90"] = (df_cruce["cartera_alto_riesgo"] / df_cruce["cartera_total"].replace(0, 1) * 100)
+    
+    # Calcular score de calidad ponderado por antigüedad
+    df_cruce[["score_calidad", "nivel_calidad"]] = df_cruce.apply(
+        lambda row: pd.Series(_score_calidad(
+            row["pct_vigente"], row["pct_1_30"], row["pct_31_60"], 
+            row["pct_61_90"], row["pct_mas_90"]
+        )), axis=1
     )
     df_cruce = df_cruce.sort_values("ventas_totales", ascending=False).reset_index(drop=True)
 
@@ -545,12 +581,15 @@ def run():
         | Columna | Qué mide |
         |---------|----------|
         | **Deuda/Ventas %** | Cartera vencida ÷ ventas totales. Si es alto, el vendedor cierra ventas pero no ayuda a cobrar |
-        | **Score Calidad** | 100 − % vencida. 100 = toda la cartera del vendedor está vigente |
+        | **Score Calidad** | Score ponderado 0-100 que penaliza más la deuda antigua:<br>• Vigente = 100 pts<br>• 1-30 días = 85 pts<br>• 31-60 días = 60 pts<br>• 61-90 días = 30 pts<br>• >90 días = 0 pts |
         | **Días Máx** | La factura más vencida de los clientes de ese vendedor |
         | **% Vencida** | Del total de cartera que generó el vendedor, cuánto está vencido |
 
         **Señales de alerta:**
         - 🔴 Score < 40 → revisar política de crédito para ese vendedor
+        - 🟠 Score 40-65 → monitorear de cerca, tiene deuda antigua
+        - 🟡 Score 65-85 → aceptable, pero hay espacio de mejora
+        - 🟢 Score ≥85 → excelente gestión de cartera
         - Deuda/Ventas > 20% → el vendedor puede estar aceptando malos pagadores para cerrar ventas
         """)
 
