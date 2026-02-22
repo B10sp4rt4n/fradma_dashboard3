@@ -49,15 +49,17 @@ def run(df):
         st.header("⚙️ Opciones de análisis")
         periodo_tipo = st.selectbox(
             "🗓️ Tipo de periodo:",
-            ["Mensual", "Trimestral", "Anual", "Rango Personalizado"]
+            ["Mensual", "Trimestral", "Anual", "Rango Personalizado"],
+            key="heatmap_periodo_tipo"
         )
-        mostrar_crecimiento = st.checkbox("📈 Mostrar % de crecimiento")
+        mostrar_crecimiento = st.checkbox("📈 Mostrar % de crecimiento", key="heatmap_mostrar_crecimiento")
         
         if mostrar_crecimiento:
             tipo_comparacion = st.radio(
                 "Comparar contra:",
                 ["Período anterior", "Mismo período año anterior"],
-                help="Período anterior: mes vs mes previo, trimestre vs trimestre previo, etc.\nMismo período año anterior: ene-24 vs ene-23, Q1-24 vs Q1-23, etc."
+                help="Período anterior: mes vs mes previo, trimestre vs trimestre previo, etc.\nMismo período año anterior: ene-24 vs ene-23, Q1-24 vs Q1-23, etc.",
+                key="heatmap_tipo_comparacion"
             )
 
     def generar_periodo_id(row, periodo_tipo):
@@ -131,8 +133,8 @@ def run(df):
         growth_lag_yoy = 1  # Comparar con año anterior (mismo)
     elif periodo_tipo == "Rango Personalizado":
         with st.sidebar:
-            start_date = st.date_input("📅 Fecha inicio:", value=df['fecha'].min())
-            end_date = st.date_input("📅 Fecha fin:", value=df['fecha'].max())
+            start_date = st.date_input("📅 Fecha inicio:", value=df['fecha'].min(), key="heatmap_fecha_inicio")
+            end_date = st.date_input("📅 Fecha fin:", value=df['fecha'].max(), key="heatmap_fecha_fin")
         df = df[(df['fecha'] >= pd.to_datetime(start_date)) & (df['fecha'] <= pd.to_datetime(end_date))]
         df['periodo'] = "Rango Personalizado"
         growth_lag_secuencial = None
@@ -158,7 +160,8 @@ def run(df):
     selected_lineas = st.multiselect(
         "📌 Selecciona las líneas de negocio:",
         lineas_disponibles,
-        default=lineas_disponibles
+        default=lineas_disponibles,
+        key="heatmap_lineas_seleccionadas"
     )
 
     if selected_lineas:
@@ -175,7 +178,8 @@ def run(df):
                     "💰 Filtro por importe ($):",
                     min_value=float(valores_min),
                     max_value=float(valores_max),
-                    value=(float(valores_min), float(valores_max))
+                    value=(float(valores_min), float(valores_max)),
+                    key="heatmap_slider_importe"
                 )
             else:
                 # Si no hay rango válido, usar valores por defecto
@@ -188,7 +192,8 @@ def run(df):
                 min_value=1,
                 max_value=len(selected_lineas),
                 value=min(10, len(selected_lineas)),
-                step=1
+                step=1,
+                key="heatmap_top_n"
             )
 
         df_filtered = df_filtered.map(lambda x: x if min_importe <= x <= max_importe else np.nan)
@@ -296,7 +301,8 @@ def run(df):
         ax.set_yticklabels(ax.get_yticklabels(), rotation=0, fontsize=10)
         plt.title(f"Heatmap de Ventas ({periodo_tipo})", fontsize=14, pad=20)
         plt.tight_layout()
-        st.pyplot(fig)
+        st.pyplot(fig, clear_figure=True)
+        plt.close(fig)
 
         # Pie chart de líneas de negocio más vendidas
         st.write("---")
@@ -306,7 +312,7 @@ def run(df):
         ventas_linea = df.groupby(columna_linea)[columna_importe].sum().sort_values(ascending=False)
         
         # Top N + Otros
-        top_n_lineas = st.slider("🔢 Número de líneas a mostrar:", min_value=5, max_value=20, value=10, step=1)
+        top_n_lineas = st.slider("🔢 Número de líneas a mostrar:", min_value=5, max_value=20, value=10, step=1, key="heatmap_pie_top_n")
         
         if len(ventas_linea) > top_n_lineas:
             top_lineas_pie = ventas_linea.head(top_n_lineas)
