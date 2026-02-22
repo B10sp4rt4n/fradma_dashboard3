@@ -308,11 +308,14 @@ def run(df):
         st.write("---")
         st.subheader("🥧 Ventas por Línea de Negocio")
         
-        # Calcular ventas por línea de negocio
-        ventas_linea = df.groupby(columna_linea)[columna_importe].sum().sort_values(ascending=False)
+        # Calcular ventas por línea de negocio (solo líneas seleccionadas)
+        df_pie = df[df[columna_linea].isin(selected_lineas)]
+        ventas_linea = df_pie.groupby(columna_linea)[columna_importe].sum().sort_values(ascending=False)
         
-        # Top N + Otros
-        top_n_lineas = st.slider("🔢 Número de líneas a mostrar:", min_value=5, max_value=20, value=10, step=1, key="heatmap_pie_top_n")
+        # Top N + Otros (ajustar max según líneas disponibles)
+        max_lineas = min(20, len(ventas_linea))
+        valor_inicial = min(10, len(ventas_linea))
+        top_n_lineas = st.slider("🔢 Número de líneas a mostrar:", min_value=min(5, len(ventas_linea)), max_value=max_lineas, value=valor_inicial, step=1, key="heatmap_pie_top_n")
         
         if len(ventas_linea) > top_n_lineas:
             top_lineas_pie = ventas_linea.head(top_n_lineas)
