@@ -593,16 +593,32 @@ def run():
         - Deuda/Ventas > 20% → el vendedor puede estar aceptando malos pagadores para cerrar ventas
         """)
 
-    # ── Gráfico: Ventas vs % Vencida (bubble = cartera total) ────────────────
-    st.subheader("📈 Ventas vs Calidad de Cartera")
+    # ── Gráfico: Ventas vs % Crítica (bubble = cartera total) ────────────────
+    st.subheader("📈 Ventas vs Riesgo de Cartera")
+
+    # Crear datos para hover personalizado
+    df_cruce['hover_text'] = df_cruce.apply(
+        lambda row: (
+            f"<b>{row['vendedor']}</b><br>"
+            f"Ventas: ${row['ventas_totales']:,.0f}<br>"
+            f"Score: {row['score_calidad']:.1f}/100<br>"
+            f"<br><b>Composición de Cartera:</b><br>"
+            f"Vigente: {row['pct_vigente']:.1f}%<br>"
+            f"1-30 días: {row['pct_1_30']:.1f}%<br>"
+            f"31-60 días: {row['pct_31_60']:.1f}%<br>"
+            f"61-90 días: {row['pct_61_90']:.1f}%<br>"
+            f">90 días (crítica): {row['pct_mas_90']:.1f}%"
+        ), axis=1
+    )
 
     fig_scatter = px.scatter(
         df_cruce,
         x="ventas_totales",
-        y="pct_vencida",
+        y="pct_alto_riesgo",
         size="cartera_total",
         color="nivel_calidad",
         hover_name="vendedor",
+        custom_data=['hover_text'],
         color_discrete_map={
             "🟢 Excelente": "#4CAF50",
             "🟡 Aceptable": "#FFEB3B",
@@ -611,25 +627,115 @@ def run():
         },
         labels={
             "ventas_totales": "Ventas Totales ($)",
-            "pct_vencida":    "% Cartera Vencida",
+            "pct_alto_riesgo": "% Cartera Crítica (>90 días)",
             "cartera_total":  "Cartera Total ($)",
             "nivel_calidad":  "Calidad",
         },
-        title="Cuadrante: Volumen de Ventas vs Calidad de Cartera",
+        title="Cuadrante: Volumen de Ventas vs Cartera Crítica",
     )
 
-    # Línea de referencia: media de % vencida
-    media_pct = df_cruce["pct_vencida"].mean()
+    # Actualizar hover template
+    fig_scatter.update_traces(
+        hovertemplate='%{customdata[0]}<extra></extra>'
+    )
+
+    # Línea de referencia: media de % crítica
+    media_pct_critica = df_cruce["pct_alto_riesgo"].mean()
     fig_scatter.add_hline(
-        y=media_pct, line_dash="dash", line_color="gray",
-        annotation_text=f"Promedio {media_pct:.1f}%", annotation_position="top right",
+        y=media_pct_critica, line_dash="dash", line_color="gray",
+        annotation_text=f"Promedio {media_pct_critica:.1f}%", annotation_position="top right",
     )
     fig_scatter.update_layout(height=440, plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
     st.plotly_chart(fig_scatter, use_container_width=True)
 
     st.caption(
-        "💡 Ideal: esquina inferior derecha (muchas ventas, baja cartera vencida). "
-        "Riesgo: esquina superior derecha (muchas ventas + mucha cartera vencida)."
+        "💡 Ideal: esquina inferior derecha (muchas ventas, baja cartera crítica >90 días). "
+        "Riesgo: esquina superior (mucha cartera crítica = deuda antigua difícil de cobrar)."
+    )
+
+    # ── Gráfico: Composición de Cartera por Antigüedad ───────────────────────
+    st.subheader("📊 Composición de Cartera por Antigüedad")
+    
+    # Preparar datos para gráfico 100% apilado
+    df_composicion = df_cruce.sort_values("score_calidad", ascending=False).head(15).copy()
+    
+    fig_antiguedad = go.Figure()
+    
+    # Agregar barras en orden de antigüedad (de menos a más grave)
+    fig_antiguedad.add_trace(go.Bar(
+        name='Vigente (≤0 días)',
+        x=df_composicion['vendedor'],
+        y=df_composicion['pct_vigente'],
+        marker_color='#4CAF50',
+        text=df_composicion['pct_vigente'].apply(lambda x: f'{x:.1f}%' if x > 3 else ''),
+        textposition='inside',
+        hovertemplate='Vigente: %{y:.1f}%<extra></extra>'
+    ))
+    
+    fig_antiguedad.add_trace(go.Bar(
+        name='1-30 días',
+        x=df_composicion['vendedor'],
+        y=df_composicion['pct_1_30'],
+        marker_color='#8BC34A',
+        text=df_composicion['pct_1_30'].apply(lambda x: f'{x:.1f}%' if x > 3 else ''),
+        textposition='inside',
+        hovertemplate='1-30 días: %{y:.1f}%<extra></extra>'
+    ))
+    
+    fig_antiguedad.add_trace(go.Bar(
+        name='31-60 días',
+        x=df_composicion['vendedor'],
+        y=df_composicion['pct_31_60'],
+        marker_color='#FFEB3B',
+        text=df_composicion['pct_31_60'].apply(lambda x: f'{x:.1f}%' if x > 3 else ''),
+        textposition='inside',
+        hovertemplate='31-60 días: %{y:.1f}%<extra></extra>'
+    ))
+    
+    fig_antiguedad.add_trace(go.Bar(
+        name='61-90 días',
+        x=df_composicion['vendedor'],
+        y=df_composicion['pct_61_90'],
+        marker_color='#FF9800',
+        text=df_composicion['pct_61_90'].apply(lambda x: f'{x:.1f}%' if x > 3 else ''),
+        textposition='inside',
+        hovertemplate='61-90 días: %{y:.1f}%<extra></extra>'
+    ))
+    
+    fig_antiguedad.add_trace(go.Bar(
+        name='>90 días (Crítica)',
+        x=df_composicion['vendedor'],
+        y=df_composicion['pct_mas_90'],
+        marker_color='#F44336',
+        text=df_composicion['pct_mas_90'].apply(lambda x: f'{x:.1f}%' if x > 3 else ''),
+        textposition='inside',
+        hovertemplate='>90 días: %{y:.1f}%<extra></extra>'
+    ))
+    
+    fig_antiguedad.update_layout(
+        barmode='stack',
+        title='Distribución de Cartera por Antigüedad (Top 15 vendedores por score)',
+        xaxis_title='',
+        yaxis_title='Porcentaje de Cartera (%)',
+        yaxis=dict(range=[0, 100]),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        ),
+        height=450,
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        hovermode='x unified'
+    )
+    
+    st.plotly_chart(fig_antiguedad, use_container_width=True)
+    
+    st.caption(
+        "📌 **Interpretación:** Barras verdes = cartera saludable. Amarillo/naranja = requiere atención. "
+        "Rojo = cartera crítica (>90 días) que impacta fuertemente el score."
     )
 
     # ── Gráfico: Score de calidad ranking ────────────────────────────────────
