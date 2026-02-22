@@ -593,28 +593,29 @@ def run():
         - Deuda/Ventas > 20% → el vendedor puede estar aceptando malos pagadores para cerrar ventas
         """)
 
-    # ── Gráfico: Ventas vs % Crítica (bubble = cartera total) ────────────────
-    st.subheader("📈 Ventas vs Riesgo de Cartera")
+    # ── Gráfico: Ventas vs Score (bubble = cartera total) ────────────────
+    st.subheader("📈 Cuadrante: Ventas vs Calidad de Cartera")
 
     # Crear datos para hover personalizado
     df_cruce['hover_text'] = df_cruce.apply(
         lambda row: (
             f"<b>{row['vendedor']}</b><br>"
             f"Ventas: ${row['ventas_totales']:,.0f}<br>"
+            f"Cartera: ${row['cartera_total']:,.0f}<br>"
             f"Score: {row['score_calidad']:.1f}/100<br>"
             f"<br><b>Composición de Cartera:</b><br>"
             f"Vigente: {row['pct_vigente']:.1f}%<br>"
             f"1-30 días: {row['pct_1_30']:.1f}%<br>"
             f"31-60 días: {row['pct_31_60']:.1f}%<br>"
             f"61-90 días: {row['pct_61_90']:.1f}%<br>"
-            f">90 días (crítica): {row['pct_mas_90']:.1f}%"
+            f">90 días: {row['pct_mas_90']:.1f}%"
         ), axis=1
     )
 
     fig_scatter = px.scatter(
         df_cruce,
         x="ventas_totales",
-        y="pct_alto_riesgo",
+        y="score_calidad",
         size="cartera_total",
         color="nivel_calidad",
         hover_name="vendedor",
@@ -627,11 +628,11 @@ def run():
         },
         labels={
             "ventas_totales": "Ventas Totales ($)",
-            "pct_alto_riesgo": "% Cartera Crítica (>90 días)",
+            "score_calidad": "Score de Calidad (0-100)",
             "cartera_total":  "Cartera Total ($)",
             "nivel_calidad":  "Calidad",
         },
-        title="Cuadrante: Volumen de Ventas vs Cartera Crítica",
+        title="",
     )
 
     # Actualizar hover template
@@ -639,18 +640,27 @@ def run():
         hovertemplate='%{customdata[0]}<extra></extra>'
     )
 
-    # Línea de referencia: media de % crítica
-    media_pct_critica = df_cruce["pct_alto_riesgo"].mean()
+    # Línea de referencia: media del score
+    media_score = df_cruce["score_calidad"].mean()
     fig_scatter.add_hline(
-        y=media_pct_critica, line_dash="dash", line_color="gray",
-        annotation_text=f"Promedio {media_pct_critica:.1f}%", annotation_position="top right",
+        y=media_score, line_dash="dash", line_color="gray",
+        annotation_text=f"Promedio {media_score:.1f}", annotation_position="top right",
     )
-    fig_scatter.update_layout(height=440, plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
+    
+    # Configurar rango del eje Y
+    fig_scatter.update_layout(
+        height=440, 
+        plot_bgcolor="rgba(0,0,0,0)", 
+        paper_bgcolor="rgba(0,0,0,0)",
+        yaxis=dict(range=[0, 105])
+    )
+    
     st.plotly_chart(fig_scatter, use_container_width=True)
 
     st.caption(
-        "💡 Ideal: esquina inferior derecha (muchas ventas, baja cartera crítica >90 días). "
-        "Riesgo: esquina superior (mucha cartera crítica = deuda antigua difícil de cobrar)."
+        "💡 **Esquina superior derecha** = Ideal (altas ventas + alta calidad de cartera). "
+        "**Esquina inferior derecha** = Alto riesgo (altas ventas + baja calidad). "
+        "El tamaño del círculo representa la cartera total pendiente."
     )
 
     # ── Gráfico: Composición de Cartera por Antigüedad ───────────────────────
