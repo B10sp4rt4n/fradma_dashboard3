@@ -747,6 +747,106 @@ def run():
         "📌 **Interpretación:** Barras verdes = cartera saludable. Amarillo/naranja = requiere atención. "
         "Rojo = cartera crítica (>90 días) que impacta fuertemente el score."
     )
+    
+    # ── Pie Chart: Composición de Cartera (Opcional) ─────────────────────────
+    with st.expander("🥧 Ver composición de cartera como gráfico circular"):
+        st.markdown("#### Composición de Cartera por Antigüedad")
+        
+        # Selector: Global o por vendedor
+        col_selector1, col_selector2 = st.columns([1, 2])
+        
+        with col_selector1:
+            vista_pie = st.radio(
+                "Vista:",
+                ["Global (Todo)", "Por Vendedor"],
+                key="vista_pie_cartera"
+            )
+        
+        with col_selector2:
+            if vista_pie == "Por Vendedor":
+                vendedor_seleccionado = st.selectbox(
+                    "Selecciona vendedor:",
+                    options=df_cruce.sort_values("cartera_total", ascending=False)["vendedor"].tolist(),
+                    key="vendedor_pie_select"
+                )
+        
+        # Calcular datos para el pie chart
+        if vista_pie == "Global (Todo)":
+            # Sumar todos los montos por categoría
+            cartera_vigente_total = df_cruce["cartera_vigente"].sum()
+            cartera_1_30_total = df_cruce["cartera_1_30"].sum()
+            cartera_31_60_total = df_cruce["cartera_31_60"].sum()
+            cartera_61_90_total = df_cruce["cartera_61_90"].sum()
+            cartera_mas_90_total = df_cruce["cartera_alto_riesgo"].sum()
+            titulo_pie = "Composición Global de Cartera"
+        else:
+            # Obtener datos del vendedor seleccionado
+            vendedor_data = df_cruce[df_cruce["vendedor"] == vendedor_seleccionado].iloc[0]
+            cartera_vigente_total = vendedor_data["cartera_vigente"]
+            cartera_1_30_total = vendedor_data["cartera_1_30"]
+            cartera_31_60_total = vendedor_data["cartera_31_60"]
+            cartera_61_90_total = vendedor_data["cartera_61_90"]
+            cartera_mas_90_total = vendedor_data["cartera_alto_riesgo"]
+            titulo_pie = f"Composición de Cartera - {vendedor_seleccionado}"
+        
+        # Crear pie chart
+        labels = ['Vigente (≤0 días)', '1-30 días', '31-60 días', '61-90 días', '>90 días (Crítica)']
+        values = [cartera_vigente_total, cartera_1_30_total, cartera_31_60_total, 
+                  cartera_61_90_total, cartera_mas_90_total]
+        colors = ['#4CAF50', '#8BC34A', '#FFEB3B', '#FF9800', '#F44336']
+        
+        # Filtrar valores mayores a 0 para mejor visualización
+        datos_pie = [(l, v, c) for l, v, c in zip(labels, values, colors) if v > 0]
+        
+        if datos_pie:
+            labels_filtrados, values_filtrados, colors_filtrados = zip(*datos_pie)
+            
+            fig_pie = go.Figure(data=[go.Pie(
+                labels=labels_filtrados,
+                values=values_filtrados,
+                marker=dict(colors=colors_filtrados),
+                hole=0.4,
+                textinfo='label+percent',
+                textposition='auto',
+                hovertemplate='<b>%{label}</b><br>$%{value:,.0f}<br>%{percent}<extra></extra>'
+            )])
+            
+            fig_pie.update_layout(
+                title=titulo_pie,
+                height=500,
+                showlegend=True,
+                legend=dict(
+                    orientation="v",
+                    yanchor="middle",
+                    y=0.5,
+                    xanchor="left",
+                    x=1.05
+                )
+            )
+            
+            st.plotly_chart(fig_pie, use_container_width=True)
+            
+            # Mostrar estadísticas
+            total_cartera = sum(values_filtrados)
+            col_stat1, col_stat2, col_stat3 = st.columns(3)
+            col_stat1.metric("Cartera Total", f"${total_cartera:,.0f}")
+            col_stat2.metric("Categorías", len(labels_filtrados))
+            
+            # Calcular score para este vendedor/global
+            if vista_pie == "Global (Todo)":
+                pct_vigente = (cartera_vigente_total / total_cartera * 100) if total_cartera > 0 else 0
+                pct_1_30 = (cartera_1_30_total / total_cartera * 100) if total_cartera > 0 else 0
+                pct_31_60 = (cartera_31_60_total / total_cartera * 100) if total_cartera > 0 else 0
+                pct_61_90 = (cartera_61_90_total / total_cartera * 100) if total_cartera > 0 else 0
+                pct_mas_90 = (cartera_mas_90_total / total_cartera * 100) if total_cartera > 0 else 0
+                score_calc, nivel_calc = _score_calidad(pct_vigente, pct_1_30, pct_31_60, pct_61_90, pct_mas_90)
+                col_stat3.metric("Score Global", f"{score_calc:.1f}/100", delta=nivel_calc)
+            else:
+                col_stat3.metric("Score", f"{vendedor_data['score_calidad']:.1f}/100", 
+                               delta=vendedor_data['nivel_calidad'])
+        else:
+            st.info("No hay datos de cartera para mostrar")
+
 
     # ── Gráfico: Score de calidad ranking ────────────────────────────────────
     st.subheader("🏅 Ranking de Calidad de Cartera")
