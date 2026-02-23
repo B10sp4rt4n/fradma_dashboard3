@@ -162,19 +162,8 @@ def _preparar_datos_iniciales(df_ventas, df_cxc):
     # Normalizar fechas
     df_ventas = normalizar_columna_fecha(df_ventas, 'fecha')
     
-    # Calcular dias_overdue en CxC si es necesario
-    if not df_cxc.empty and "dias_overdue" not in df_cxc.columns:
-        # Verificar qué columnas están disponibles
-        columnas_disponibles = set(df_cxc.columns)
-        columnas_ideales = {"vencimiento", "fecha_vencimiento", "dias_restantes", "dias_restante", "dias_vencido"}
-        
-        if not columnas_disponibles.intersection(columnas_ideales):
-            st.warning(f"⚠️ Los datos de CxC no contienen columnas de vencimiento. "
-                      f"Se estimará usando fecha de factura + {DIAS_CREDITO_ESTANDAR} días de crédito estándar.")
-            logger.warning(f"CxC sin columnas de vencimiento. Usando estimación con {DIAS_CREDITO_ESTANDAR} días.")
-        
-        df_cxc["dias_overdue"] = calcular_dias_overdue(df_cxc)
-        logger.info(f"dias_overdue calculado - min: {df_cxc['dias_overdue'].min():.0f}, max: {df_cxc['dias_overdue'].max():.0f}")
+    # NOTA: No hace falta calcular dias_overdue aquí porque preparar_datos_cxc()
+    # lo hace automáticamente en _calcular_metricas_cxc
     
     return df_ventas, df_cxc
 
@@ -266,7 +255,13 @@ def _calcular_metricas_cxc(df_cxc):
         return None
     
     try:
-        metricas = calcular_metricas_basicas(df_cxc)
+        # IMPORTANTE: Usar preparar_datos_cxc para excluir registros pagados
+        # calcular_metricas_basicas espera recibir SOLO registros no pagados (df_np)
+        from utils.cxc_helper import preparar_datos_cxc
+        _, df_cxc_no_pagados, _ = preparar_datos_cxc(df_cxc)
+        
+        # Ahora calcular métricas sobre datos no pagados
+        metricas = calcular_metricas_basicas(df_cxc_no_pagados)
         score = calcular_score_salud(
             metricas['pct_vigente'], 
             metricas['pct_critica'],
