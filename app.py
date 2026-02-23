@@ -189,7 +189,10 @@ st.markdown("""
 col_logo, col_title = st.columns([1, 4])
 
 with col_logo:
-    st.markdown("# �")
+    if st.session_state.get("company_logo"):
+        st.image(st.session_state["company_logo"], use_container_width=True)
+    else:
+        st.markdown("# 📈")
 
 with col_title:
     st.title("Cima Analytics")
@@ -453,6 +456,30 @@ with st.sidebar:
         if st.button("Salir", key="btn_logout", use_container_width=True):
             st.session_state["app_autenticado"] = False
             st.rerun()
+
+    # ----------------------------------------------------------------
+    # CONFIGURACIÓN: logo de empresa
+    # ----------------------------------------------------------------
+    with st.expander("⚙️ Configuración", expanded=False):
+        st.markdown("**Logo de empresa**")
+        logo_file = st.file_uploader(
+            "Sube tu logo (PNG, JPG)",
+            type=["png", "jpg", "jpeg", "svg", "webp"],
+            key="logo_uploader",
+            label_visibility="collapsed",
+            help="Se mostrará en el encabezado del dashboard."
+        )
+        if logo_file is not None:
+            st.session_state["company_logo"] = logo_file.getvalue()
+            st.session_state["company_logo_name"] = logo_file.name
+            st.success("Logo actualizado ✓")
+        if st.session_state.get("company_logo"):
+            st.image(st.session_state["company_logo"], use_container_width=True)
+            if st.button("🗑️ Quitar logo", key="btn_remove_logo", use_container_width=True):
+                st.session_state.pop("company_logo", None)
+                st.session_state.pop("company_logo_name", None)
+                st.rerun()
+
     st.markdown("---")
 
 st.sidebar.markdown("### 📂 Carga de Datos")
