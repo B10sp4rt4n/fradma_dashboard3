@@ -37,6 +37,48 @@ st.set_page_config(
 )
 
 # =====================================================================
+# PANTALLA DE ACCESO — LOGIN GATE
+# =====================================================================
+
+APP_PASSWORD = os.getenv("APP_PASSWORD", "fradma2026")
+
+if "app_autenticado" not in st.session_state:
+    st.session_state["app_autenticado"] = False
+
+if not st.session_state["app_autenticado"]:
+    st.markdown("""
+    <style>
+        [data-testid="stSidebar"] { display: none !important; }
+        #MainMenu { visibility: hidden; }
+        footer { visibility: hidden; }
+        header { visibility: hidden; }
+    </style>
+    """, unsafe_allow_html=True)
+
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    col_l, col_c, col_r = st.columns([1, 1.2, 1])
+    with col_c:
+        st.markdown(
+            """
+            <div style='text-align:center; margin-bottom:12px;'>
+                <span style='font-size:56px;'>📊</span><br>
+                <span style='font-size:28px; font-weight:700; color:#0b1f3a;'>Fradma Dashboard</span><br>
+                <span style='font-size:14px; color:#6b7280;'>Sistema Integrado de Análisis</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        pwd = st.text_input("Contraseña", type="password", key="login_pwd", label_visibility="collapsed",
+                            placeholder="Contraseña de acceso")
+        if st.button("Ingresar →", use_container_width=True, type="primary"):
+            if pwd == APP_PASSWORD:
+                st.session_state["app_autenticado"] = True
+                st.rerun()
+            else:
+                st.error("Contraseña incorrecta. Intenta de nuevo.")
+    st.stop()
+
+# =====================================================================
 # ESTILOS PERSONALIZADOS CSS
 # =====================================================================
 
@@ -401,6 +443,17 @@ def validar_columnas_requeridas(df):
 # =====================================================================
 # SIDEBAR: CARGA DE ARCHIVO Y FILTROS GLOBALES
 # =====================================================================
+
+# Botón cerrar sesión (parte superior del sidebar)
+with st.sidebar:
+    col_user, col_logout = st.columns([3, 2])
+    with col_user:
+        st.markdown("<small style='color:#aaa;'>🔒 Sesión activa</small>", unsafe_allow_html=True)
+    with col_logout:
+        if st.button("Salir", key="btn_logout", use_container_width=True):
+            st.session_state["app_autenticado"] = False
+            st.rerun()
+    st.markdown("---")
 
 st.sidebar.markdown("### 📂 Carga de Datos")
 
