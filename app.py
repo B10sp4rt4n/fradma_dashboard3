@@ -663,19 +663,37 @@ if "df" in st.session_state and "archivo_excel" in st.session_state:
         archivo_excel = st.session_state["archivo_excel"]
         
         # Leer todas las hojas disponibles directamente desde el archivo
-        hojas_disponibles = pd.ExcelFile(archivo_excel).sheet_names
-        hoja_cxc = None
+        xls = pd.ExcelFile(archivo_excel)
+        hojas_disponibles = xls.sheet_names
         
-        for nombre_hoja in hojas_disponibles:
-            if "cxc" in nombre_hoja.lower() or "cuenta" in nombre_hoja.lower():
-                hoja_cxc = nombre_hoja
-                break
-        
-        if hoja_cxc:
-            # Leer la hoja de CxC directamente
-            df_cxc_raw = pd.read_excel(archivo_excel, sheet_name=hoja_cxc)
-            df_cxc = normalizar_columnas(df_cxc_raw)
+        # Prioridad 1: Usar hojas específicas CXC VIGENTES y CXC VENCIDAS
+        if "CXC VIGENTES" in hojas_disponibles and "CXC VENCIDAS" in hojas_disponibles:
+            df_vigentes = pd.read_excel(xls, sheet_name='CXC VIGENTES')
+            df_vencidas = pd.read_excel(xls, sheet_name='CXC VENCIDAS')
             
+            df_vigentes = normalizar_columnas(df_vigentes)
+            df_vencidas = normalizar_columnas(df_vencidas)
+            
+            # Combinar ambas hojas
+            df_cxc = pd.concat([df_vigentes, df_vencidas], ignore_index=True, sort=False)
+            
+        # Prioridad 2: Buscar hoja genérica de CxC
+        else:
+            hoja_cxc = None
+            for nombre_hoja in hojas_disponibles:
+                if "cxc" in nombre_hoja.lower() or "cuenta" in nombre_hoja.lower():
+                    hoja_cxc = nombre_hoja
+                    break
+            
+            if hoja_cxc:
+                # Leer la hoja de CxC directamente
+                df_cxc_raw = pd.read_excel(xls, sheet_name=hoja_cxc)
+                df_cxc = normalizar_columnas(df_cxc_raw)
+            else:
+                df_cxc = None
+        
+        # Solo continuar si se encontró data de CxC
+        if df_cxc is not None:
             # Asegurar que existe la columna saldo_adeudado
             if "saldo_adeudado" not in df_cxc.columns:
                 for candidato in ["saldo", "saldo_adeudo", "adeudo", "importe", "monto", "total", "saldo_usd"]:
