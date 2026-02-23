@@ -1514,7 +1514,7 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                 
                 # Gráfico de barras con colores por categoría
                 st.write("### 📊 Distribución de Deuda por Antigüedad")
-                fig, ax = plt.subplots()
+                fig, ax = plt.subplots(figsize=(10, 5))
                 # Asignar colores según severidad de cada categoría
                 colores_barras = [MAPA_COLORES_RIESGO.get(nivel, '#808080') for nivel in riesgo_df['nivel_riesgo']]
                 bars = ax.bar(riesgo_df['nivel_riesgo'], riesgo_df['saldo_adeudado'], color=colores_barras)
@@ -1532,7 +1532,8 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                                 textcoords="offset points",
                                 ha='center', va='bottom')
                 
-                st.pyplot(fig)
+                st.pyplot(fig, clear_figure=True)
+                plt.close(fig)
                 
             except KeyError as e:
                 st.error(f"❌ Columna requerida no encontrada: {e}")
