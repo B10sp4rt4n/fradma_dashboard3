@@ -1121,6 +1121,13 @@ if menu == "🎯 Reporte Ejecutivo":
                             nuevas_columnas.append(col_str)
                         df_temp.columns = nuevas_columnas
                     
+                    # Registros de CXC VIGENTES son por definición vigentes:
+                    # negar dias_vencido para que queden negativos (= días restantes)
+                    for col_dias in ['dias_vencido', 'dias_vencidos']:
+                        if col_dias in df_vigentes.columns:
+                            df_vigentes[col_dias] = -pd.to_numeric(df_vigentes[col_dias], errors='coerce').abs()
+                            break
+                    
                     # Combinar ambas hojas
                     df_cxc = pd.concat([df_vigentes, df_vencidas], ignore_index=True, sort=False)
                     
@@ -1233,6 +1240,13 @@ elif menu == "📊 Reporte Consolidado":
                             col_str = unidecode(col_str)
                             nuevas_columnas.append(col_str)
                         df_temp.columns = nuevas_columnas
+                    
+                    # Registros de CXC VIGENTES son por definición vigentes:
+                    # negar dias_vencido para que queden negativos (= días restantes)
+                    for col_dias in ['dias_vencido', 'dias_vencidos']:
+                        if col_dias in df_vigentes.columns:
+                            df_vigentes[col_dias] = -pd.to_numeric(df_vigentes[col_dias], errors='coerce').abs()
+                            break
                     
                     # Combinar ambas hojas
                     df_cxc = pd.concat([df_vigentes, df_vencidas], ignore_index=True, sort=False)
