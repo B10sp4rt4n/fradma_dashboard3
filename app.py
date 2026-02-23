@@ -64,7 +64,9 @@ if not st.session_state["app_autenticado"]:
     col_l, col_c, col_r = st.columns([1, 1.2, 1])
     with col_c:
         if _DEFAULT_LOGO:
-            st.image(_DEFAULT_LOGO, width=300)
+            import base64
+            b64 = base64.b64encode(_DEFAULT_LOGO).decode()
+            st.markdown(f'<div style="display:flex;justify-content:center;"><img src="data:image/png;base64,{b64}" width="300"></div>', unsafe_allow_html=True)
         else:
             st.markdown("<div style='text-align:center;font-size:56px;'>📈</div>", unsafe_allow_html=True)
         st.markdown(
