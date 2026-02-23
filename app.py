@@ -925,65 +925,7 @@ if passkey_input == PASSKEY_PREMIUM:
             st.session_state["ia_premium_activada"] = False
     
     if st.session_state["ia_premium_activada"]:
-        st.sidebar.markdown("**Configuración de Análisis**")
-        
-        # Control: Solo analizar cuando se presione el botón
-        with st.sidebar.expander("⚙️ Filtros de Análisis", expanded=False):
-            st.caption("Define qué datos analizar con IA:")
-            
-            # Filtro de periodo
-            analisis_periodo = st.selectbox(
-                "📅 Periodo a analizar",
-                ["Todos los datos", "Año actual", "Último trimestre", "Último mes", "Personalizado"],
-                help="Selecciona el rango temporal del análisis"
-            )
-            
-            if analisis_periodo == "Personalizado" and "df" in st.session_state:
-                df_temp = st.session_state["df"]
-                if "fecha" in df_temp.columns:
-                    fecha_desde = st.date_input("Desde", value=df_temp["fecha"].min())
-                    fecha_hasta = st.date_input("Hasta", value=df_temp["fecha"].max())
-                    st.session_state["analisis_fecha_desde"] = fecha_desde
-                    st.session_state["analisis_fecha_hasta"] = fecha_hasta
-            
-            # Filtro de productos/líneas
-            if "df" in st.session_state:
-                df_temp = st.session_state["df"]
-                if "linea_de_negocio" in df_temp.columns:
-                    lineas_disponibles = df_temp["linea_de_negocio"].dropna().unique().tolist()
-                    analisis_lineas = st.multiselect(
-                        "📦 Líneas de negocio",
-                        options=["Todas"] + lineas_disponibles,
-                        default=["Todas"],
-                        help="Selecciona líneas específicas o todas"
-                    )
-                    st.session_state["analisis_lineas"] = analisis_lineas
-                
-                # Filtro de clientes
-                if "cliente" in df_temp.columns:
-                    top_clientes = df_temp.groupby("cliente")["valor_usd"].sum().nlargest(20).index.tolist() if "valor_usd" in df_temp.columns else []
-                    if top_clientes:
-                        analisis_clientes = st.multiselect(
-                            "👥 Clientes (Top 20)",
-                            options=["Todos"] + top_clientes,
-                            default=["Todos"],
-                            help="Selecciona clientes específicos o todos"
-                        )
-                        st.session_state["analisis_clientes"] = analisis_clientes
-        
-        # Guardar configuración en session_state
-        st.session_state["analisis_periodo"] = analisis_periodo
-        
-        st.sidebar.info("💡 Análisis con IA: Presiona el botón en cada módulo para ejecutar")
-        
-        # Botón visual de recordatorio
-        st.sidebar.button(
-            "🚀 Generar Análisis con IA",
-            type="primary",
-            use_container_width=True,
-            disabled=True,
-            help="Este botón aparece en cada módulo (YTD, KPI CxC, KPI Vendedores, etc.)"
-        )
+        st.sidebar.success("✅ IA Premium activa — ve al Reporte Ejecutivo para usarla")
     
 else:
     st.session_state["passkey_valido"] = False

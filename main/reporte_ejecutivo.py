@@ -886,78 +886,93 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
     # =====================================================================
     if habilitar_ia and openai_api_key:
         st.header("🤖 Análisis Ejecutivo Premium - Visión CFO")
+        st.caption("Genera un diagnóstico integral del período actual: ventas, cartera y riesgos.")
         
-        with st.spinner("🔄 Generando diagnóstico integral del negocio con IA..."):
-            try:
-                # Preparar datos para el análisis consolidado
-                total_ventas_periodo = total_ventas
-                
-                # Calcular línea top en ventas
-                if len(df_ventas) > 0 and 'linea_de_negocio' in df_ventas.columns:
-                    ventas_por_linea = df_ventas.groupby('linea_de_negocio')['valor_usd'].sum()
-                    top_linea_ventas = ventas_por_linea.idxmax() if len(ventas_por_linea) > 0 else "N/A"
-                else:
-                    top_linea_ventas = "N/A"
-                
-                # Calcular línea con mayor cartera crítica
-                if len(df_cxc) > 0 and 'linea_de_negocio' in df_cxc.columns and 'dias_vencido' in df_cxc.columns:
-                    df_cxc_critica = df_cxc[df_cxc['dias_vencido'] > 90]
-                    if len(df_cxc_critica) > 0:
-                        cxc_por_linea = df_cxc_critica.groupby('linea_de_negocio')['saldo_adeudado'].sum()
-                        top_linea_cxc_critica = cxc_por_linea.idxmax() if len(cxc_por_linea) > 0 else "N/A"
+        # Filtros contextuales del análisis — dentro de la sección
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            tipo_receptor = st.selectbox(
+                "👤 Análisis dirigido a",
+                ["CEO", "CFO", "Director Comercial", "Gerente de Cobranza"],
+                help="El tono y foco del análisis se adapta al perfil seleccionado"
+            )
+        with col_f2:
+            periodo_etiqueta = "período actual"
+            if "fecha" in df_ventas.columns and len(df_ventas) > 0:
+                fecha_max = df_ventas["fecha"].max()
+                if pd.notna(fecha_max):
+                    periodo_etiqueta = fecha_max.strftime("%B %Y")
+            st.info(f"📅 Período analizado: **{periodo_etiqueta}**")
+        
+        if st.button("🚀 Generar Análisis con IA", type="primary", use_container_width=True):
+            with st.spinner("🔄 Generando diagnóstico integral del negocio con IA..."):
+                try:
+                    # Preparar datos para el análisis consolidado
+                    total_ventas_periodo = total_ventas
+                    
+                    # Calcular línea top en ventas
+                    if len(df_ventas) > 0 and 'linea_de_negocio' in df_ventas.columns:
+                        ventas_por_linea = df_ventas.groupby('linea_de_negocio')['valor_usd'].sum()
+                        top_linea_ventas = ventas_por_linea.idxmax() if len(ventas_por_linea) > 0 else "N/A"
+                    else:
+                        top_linea_ventas = "N/A"
+                    
+                    # Calcular línea con mayor cartera crítica
+                    if len(df_cxc) > 0 and 'linea_de_negocio' in df_cxc.columns and 'dias_vencido' in df_cxc.columns:
+                        df_cxc_critica = df_cxc[df_cxc['dias_vencido'] > 90]
+                        if len(df_cxc_critica) > 0:
+                            cxc_por_linea = df_cxc_critica.groupby('linea_de_negocio')['saldo_adeudado'].sum()
+                            top_linea_cxc_critica = cxc_por_linea.idxmax() if len(cxc_por_linea) > 0 else "N/A"
+                        else:
+                            top_linea_cxc_critica = "N/A"
                     else:
                         top_linea_cxc_critica = "N/A"
-                else:
-                    top_linea_cxc_critica = "N/A"
-                
-                # Casos urgentes
-                casos_urgentes = df_cxc[df_cxc.get('dias_vencido', 0) > 90].shape[0] if 'dias_vencido' in df_cxc.columns else 0
-                
-                # Generar insights consolidados con IA
-                insights = generar_insights_ejecutivo_consolidado(
-                    total_ventas_periodo=total_ventas_periodo,
-                    crecimiento_ventas_pct=variacion_ventas,
-                    score_salud_cxc=score_salud_cxc,
-                    pct_morosidad=pct_vencida_total,
-                    top_linea_ventas=top_linea_ventas,
-                    top_linea_cxc_critica=top_linea_cxc_critica,
-                    casos_urgentes_cxc=casos_urgentes,
-                    api_key=openai_api_key
-                )
-                
-                if insights:
-                    # Diagnóstico integral
-                    st.markdown("### 🔍 Diagnóstico Integral")
-                    st.info(insights.get('diagnostico_integral', 'No disponible'))
                     
-                    # Columnas para organizar insights
-                    col_izq, col_der = st.columns(2)
+                    # Casos urgentes
+                    casos_urgentes = df_cxc[df_cxc.get('dias_vencido', 0) > 90].shape[0] if 'dias_vencido' in df_cxc.columns else 0
                     
-                    with col_izq:
-                        st.markdown("### 🚨 Riesgos Ocultos")
-                        riesgos = insights.get('riesgos_ocultos', [])
-                        if riesgos:
-                            for riesgo in riesgos:
-                                st.markdown(f"- {riesgo}")
-                        else:
-                            st.caption("No se detectaron riesgos adicionales")
+                    # Generar insights consolidados con IA
+                    insights = generar_insights_ejecutivo_consolidado(
+                        total_ventas_periodo=total_ventas_periodo,
+                        crecimiento_ventas_pct=variacion_ventas,
+                        score_salud_cxc=score_salud_cxc,
+                        pct_morosidad=pct_vencida_total,
+                        top_linea_ventas=top_linea_ventas,
+                        top_linea_cxc_critica=top_linea_cxc_critica,
+                        casos_urgentes_cxc=casos_urgentes,
+                        api_key=openai_api_key
+                    )
+                    
+                    if insights:
+                        st.markdown(f"### 🔍 Diagnóstico Integral — {tipo_receptor}")
+                        st.info(insights.get('diagnostico_integral', 'No disponible'))
                         
-                        st.markdown("")
+                        col_izq, col_der = st.columns(2)
                         
-                        st.markdown("### 🔮 Escenario Proyectado")
-                        escenario = insights.get('escenario_proyectado', 'No disponible')
-                        st.markdown(f"_{escenario}_")
-                    
-                    with col_der:
-                        st.markdown("### 📋 Decisiones Críticas")
-                        decisiones = insights.get('decisiones_criticas', [])
-                        if decisiones:
-                            for decision in decisiones:
-                                st.markdown(f"- {decision}")
-                        else:
-                            st.caption("No disponible")
-                    
-                    st.caption("🤖 Análisis generado por OpenAI GPT-4o-mini")
+                        with col_izq:
+                            st.markdown("### 🚨 Riesgos Ocultos")
+                            riesgos = insights.get('riesgos_ocultos', [])
+                            if riesgos:
+                                for riesgo in riesgos:
+                                    st.markdown(f"- {riesgo}")
+                            else:
+                                st.caption("No se detectaron riesgos adicionales")
+                            
+                            st.markdown("")
+                            st.markdown("### 🔮 Escenario Proyectado")
+                            escenario = insights.get('escenario_proyectado', 'No disponible')
+                            st.markdown(f"_{escenario}_")
+                        
+                        with col_der:
+                            st.markdown("### 📋 Decisiones Críticas")
+                            decisiones = insights.get('decisiones_criticas', [])
+                            if decisiones:
+                                for decision in decisiones:
+                                    st.markdown(f"- {decision}")
+                            else:
+                                st.caption("No disponible")
+                        
+                        st.caption(f"🤖 Análisis generado por OpenAI GPT-4o-mini · Dirigido a: {tipo_receptor}")
                 else:
                     st.warning("⚠️ No se pudo generar el análisis de IA")
                     
