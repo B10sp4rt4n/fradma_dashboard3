@@ -105,19 +105,13 @@ def calcular_dias_overdue(df: pd.DataFrame) -> pd.Series:
             dias = (pd.Timestamp.today().normalize() - fecha_venc).dt.days
             return pd.to_numeric(dias, errors='coerce').fillna(0)
     
-    # Método 3: dias_vencido directo (MENOS PRIORITARIO - puede tener convenciones diferentes)
-    # IMPORTANTE: Solo usar si no hay dias_restante, porque dias_vencido puede significar cosas diferentes
+    # Método 3: dias_vencido directo
+    # Convención: positivo = días vencido, NaN/0 = vigente (igual que Reporte Ejecutivo)
+    # Rows de hoja CXC VIGENTES tienen NaN → fillna(0) → vigente ✓
+    # Rows de hoja CXC VENCIDAS tienen valores positivos → vencido ✓
     if 'dias_vencido' in df.columns:
         dias = pd.to_numeric(df['dias_vencido'], errors='coerce').fillna(0)
-        # Solo usar si tiene al menos algún valor no-cero (indica datos reales)
-        if (dias != 0).any():
-            # Verificar si tiene valores negativos (indica convención correcta: positivo=vencido)
-            if (dias < 0).any():
-                return dias
-            # Si NO tiene valores negativos, probablemente está mal nombrada o usa otra convención
-            # Asumiríamos que valores positivos grandes (>100) son vencidos, valores cercanos a 0 son vigentes
-            # PERO esto es ambiguo, así que mejor pasar al siguiente método
-            pass
+        return dias
     
     # Método 4: fecha_pago + dias_de_credito
     # NOTA: dias_credito representa días COMPLETOS de gracia
