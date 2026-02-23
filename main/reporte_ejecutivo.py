@@ -886,7 +886,7 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
     # =====================================================================
     if habilitar_ia and openai_api_key:
         st.header("🤖 Análisis Ejecutivo Premium - Visión CFO")
-        st.caption("Genera un diagnóstico integral del período actual: ventas, cartera y riesgos.")
+        st.caption("Genera un diagnóstico integral del período seleccionado: ventas, cartera y riesgos.")
         
         # Filtros contextuales del análisis — dentro de la sección
         col_f1, col_f2 = st.columns(2)
@@ -897,22 +897,52 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
                 help="El tono y foco del análisis se adapta al perfil seleccionado"
             )
         with col_f2:
-            periodo_etiqueta = "período actual"
-            if "fecha" in df_ventas.columns and len(df_ventas) > 0:
-                fecha_max = df_ventas["fecha"].max()
-                if pd.notna(fecha_max):
-                    periodo_etiqueta = fecha_max.strftime("%B %Y")
-            st.info(f"📅 Período analizado: **{periodo_etiqueta}**")
+            opciones_periodo = ["Último mes", "Último trimestre", "Año actual", "Todo el historial", "Personalizado"]
+            periodo_seleccionado = st.selectbox(
+                "📅 Período a analizar",
+                opciones_periodo,
+                index=0,
+                help="Filtra los datos de ventas que se envían al análisis de IA"
+            )
+        
+        # Selector de fechas personalizadas
+        fecha_desde_ia = None
+        fecha_hasta_ia = None
+        if periodo_seleccionado == "Personalizado" and "fecha" in df_ventas.columns and len(df_ventas) > 0:
+            col_d1, col_d2 = st.columns(2)
+            with col_d1:
+                fecha_desde_ia = st.date_input("Desde", value=df_ventas["fecha"].min())
+            with col_d2:
+                fecha_hasta_ia = st.date_input("Hasta", value=df_ventas["fecha"].max())
         
         if st.button("🚀 Generar Análisis con IA", type="primary", use_container_width=True):
             with st.spinner("🔄 Generando diagnóstico integral del negocio con IA..."):
                 try:
-                    # Preparar datos para el análisis consolidado
-                    total_ventas_periodo = total_ventas
+                    # Filtrar df_ventas según período seleccionado
+                    df_ia = df_ventas.copy()
+                    hoy = pd.Timestamp.today().normalize()
+                    if "fecha" in df_ia.columns:
+                        df_ia["fecha"] = pd.to_datetime(df_ia["fecha"], errors="coerce")
+                        if periodo_seleccionado == "Último mes":
+                            df_ia = df_ia[df_ia["fecha"] >= hoy - pd.DateOffset(months=1)]
+                        elif periodo_seleccionado == "Último trimestre":
+                            df_ia = df_ia[df_ia["fecha"] >= hoy - pd.DateOffset(months=3)]
+                        elif periodo_seleccionado == "Año actual":
+                            df_ia = df_ia[df_ia["fecha"].dt.year == hoy.year]
+                        elif periodo_seleccionado == "Personalizado" and fecha_desde_ia and fecha_hasta_ia:
+                            df_ia = df_ia[
+                                (df_ia["fecha"] >= pd.Timestamp(fecha_desde_ia)) &
+                                (df_ia["fecha"] <= pd.Timestamp(fecha_hasta_ia))
+                            ]
                     
-                    # Calcular línea top en ventas
-                    if len(df_ventas) > 0 and 'linea_de_negocio' in df_ventas.columns:
-                        ventas_por_linea = df_ventas.groupby('linea_de_negocio')['valor_usd'].sum()
+                    total_ventas_periodo = df_ia["valor_usd"].sum() if "valor_usd" in df_ia.columns else total_ventas
+                    periodo_etiqueta = periodo_seleccionado
+                    if periodo_seleccionado == "Personalizado" and fecha_desde_ia and fecha_hasta_ia:
+                        periodo_etiqueta = f"{fecha_desde_ia} → {fecha_hasta_ia}"
+                    
+                    # Calcular línea top en ventas del período filtrado
+                    if len(df_ia) > 0 and 'linea_de_negocio' in df_ia.columns:
+                        ventas_por_linea = df_ia.groupby('linea_de_negocio')['valor_usd'].sum()
                         top_linea_ventas = ventas_por_linea.idxmax() if len(ventas_por_linea) > 0 else "N/A"
                     else:
                         top_linea_ventas = "N/A"
@@ -944,7 +974,7 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
                     )
                     
                     if insights:
-                        st.markdown(f"### 🔍 Diagnóstico Integral — {tipo_receptor}")
+                        st.markdown(f"### 🔍 Diagnóstico Integral — {tipo_receptor} · {periodo_etiqueta}")
                         st.info(insights.get('diagnostico_integral', 'No disponible'))
                         
                         col_izq, col_der = st.columns(2)
