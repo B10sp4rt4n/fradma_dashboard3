@@ -71,9 +71,9 @@ def calcular_dias_overdue(df: pd.DataFrame) -> pd.Series:
     - Día 32 = 2 días vencido, etc.
     
     Prioridad de cálculo:
-    1. dias_vencido (si existe)
+    1. dias_restante/dias_restantes (invertido, negativo = vencido)
     2. fecha_vencimiento (vs hoy) + ajuste
-    3. dias_restante/dias_restantes (invertido, negativo = vencido)
+    3. dias_vencido (si existe y tiene valores congruentes)
     4. fecha_pago + dias_de_credito (calculado) + ajuste
     5. fecha + 30 días crédito estándar (estimado) + ajuste
     
@@ -86,14 +86,16 @@ def calcular_dias_overdue(df: pd.DataFrame) -> pd.Series:
     Example:
         df['dias_overdue'] = calcular_dias_overdue(df)
     """
-    # Método 1: dias_vencido directo (si existe y tiene valores confiables)
-    if 'dias_vencido' in df.columns:
-        dias = pd.to_numeric(df['dias_vencido'], errors='coerce').fillna(0)
-        # Solo usar si tiene al menos algún valor no-cero (indica datos reales)
-        if (dias != 0).any():
-            return dias
     
-    # Método 2: Calcular desde fecha de vencimiento (MÁS CONFIABLE)
+    # Método 1: dias_restante/dias_restantes (PRIORITARIO - MÁS CONFIABLE)
+    # Positivo = vigente, negativo = vencido, entonces invertir
+    for col_rest in ['dias_restante', 'dias_restantes']:
+        if col_rest in df.columns:
+            dias_restantes = pd.to_numeric(df[col_rest], errors='coerce').fillna(0)
+            # Invertir: si faltan 5 días = -5 overdue (vigente), si pasaron 10 días = +10 overdue (vencido)
+            return -dias_restantes
+    
+    # Método 2: Calcular desde fecha de vencimiento (SEGUNDO MÁS CONFIABLE)
     # NOTA: fecha_vencimiento se interpreta como el ÚLTIMO DÍA VÁLIDO para pagar
     for col_venc in ['vencimiento', 'fecha_vencimiento', 'vencimient']:
         if col_venc in df.columns:
@@ -103,12 +105,19 @@ def calcular_dias_overdue(df: pd.DataFrame) -> pd.Series:
             dias = (pd.Timestamp.today().normalize() - fecha_venc).dt.days
             return pd.to_numeric(dias, errors='coerce').fillna(0)
     
-    # Método 3: dias_restante/dias_restantes (INVERTIDO: positivo = vigente, negativo = vencido)
-    for col_rest in ['dias_restantes', 'dias_restante']:
-        if col_rest in df.columns:
-            dias_restantes = pd.to_numeric(df[col_rest], errors='coerce').fillna(0)
-            # Invertir: si faltan 5 días = -5 overdue (vigente), si pasaron 10 días = +10 overdue (vencido)
-            return -dias_restantes
+    # Método 3: dias_vencido directo (MENOS PRIORITARIO - puede tener convenciones diferentes)
+    # IMPORTANTE: Solo usar si no hay dias_restante, porque dias_vencido puede significar cosas diferentes
+    if 'dias_vencido' in df.columns:
+        dias = pd.to_numeric(df['dias_vencido'], errors='coerce').fillna(0)
+        # Solo usar si tiene al menos algún valor no-cero (indica datos reales)
+        if (dias != 0).any():
+            # Verificar si tiene valores negativos (indica convención correcta: positivo=vencido)
+            if (dias < 0).any():
+                return dias
+            # Si NO tiene valores negativos, probablemente está mal nombrada o usa otra convención
+            # Asumiriamos que valores positivos grandes (>100) son vencidos, valores cercanos a 0 son vigentes
+            # PERO esto es ambiguo, así que mejor pasar al siguiente método
+            pass
     
     # Método 4: fecha_pago + dias_de_credito
     # NOTA: dias_credito representa días COMPLETOS de gracia
@@ -142,6 +151,7 @@ def calcular_dias_overdue(df: pd.DataFrame) -> pd.Series:
     
     # Fallback final: todos vigentes (días = 0)
     return pd.Series(0, index=df.index)
+
 
 
 def preparar_datos_cxc(df: pd.DataFrame) -> tuple:
@@ -288,9 +298,24 @@ def calcular_metricas_basicas(df_np: pd.DataFrame, columna_saldo: str = 'saldo_a
         dict con métricas: total_adeudado, vigente, vencida, vencida_0_30, 
                           critica, alto_riesgo, pct_vigente, pct_vencida, etc.
     """
+    from utils.logger import configurar_logger
+    logger = configurar_logger("cxc_helper", nivel="DEBUG")
+    
     total_adeudado = df_np[columna_saldo].sum()
+    
+    # Debug logging para diagnosticar problema de vigente
+    logger.info(f"📊 Diagnóstico CxC - Total registros: {len(df_np)}")
+    logger.info(f"📊 Diagnóstico CxC - Total adeudado: ${total_adeudado:,.2f}")
+    if 'dias_overdue' in df_np.columns:
+        logger.info(f"📊 Diagnóstico CxC - Rango dias_overdue: [{df_np['dias_overdue'].min():.1f}, {df_np['dias_overdue'].max():.1f}]")
+        logger.info(f"📊 Diagnóstico CxC - Registros con dias_overdue <=0: {(df_np['dias_overdue'] <= 0).sum()}")
+        logger.info(f"📊 Diagnóstico CxC - Registros con dias_overdue >0: {(df_np['dias_overdue'] > 0).sum()}")
+    
     vigente = df_np[df_np['dias_overdue'] <= 0][columna_saldo].sum()
     vencida = df_np[df_np['dias_overdue'] > 0][columna_saldo].sum()
+    
+    logger.info(f"📊 Diagnóstico CxC - Monto vigente: ${vigente:,.2f}")
+    logger.info(f"📊 Diagnóstico CxC - Monto vencida: ${vencida:,.2f}")
     vencida_0_30 = df_np[
         (df_np['dias_overdue'] > 0) & 
         (df_np['dias_overdue'] <= UmbralesCxC.DIAS_VENCIDO_0_30)
