@@ -943,6 +943,9 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
                     # Calcular tendencia real: pendiente de regresión lineal mensual
                     # Esto refleja lo que muestra la gráfica de evolución de ventas
                     crecimiento_ia = variacion_ventas  # fallback
+                    ventas_mensuales_debug = None
+                    pendiente_debug = None
+                    y_mean_debug = None
                     if "fecha" in df_ia.columns and "valor_usd" in df_ia.columns and len(df_ia) > 0:
                         try:
                             ventas_mensuales = (
@@ -951,20 +954,33 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
                                 .reset_index()
                             )
                             ventas_mensuales.columns = ["mes", "ventas"]
+                            ventas_mensuales_debug = ventas_mensuales.copy()
                             if len(ventas_mensuales) >= 3:
                                 x = range(len(ventas_mensuales))
                                 y = ventas_mensuales["ventas"].values
-                                # Pendiente vía regresión lineal simple
                                 n = len(x)
                                 x_mean = sum(x) / n
                                 y_mean = sum(y) / n
+                                y_mean_debug = y_mean
                                 pendiente = sum((xi - x_mean) * (yi - y_mean) for xi, yi in zip(x, y)) / \
                                             sum((xi - x_mean) ** 2 for xi in x)
-                                # Expresar como % de crecimiento mensual promedio respecto a la media
+                                pendiente_debug = pendiente
                                 if y_mean > 0:
                                     crecimiento_ia = (pendiente / y_mean) * 100
-                        except Exception:
+                        except Exception as ex_tend:
                             crecimiento_ia = variacion_ventas
+                            pendiente_debug = f"EXCEPCION: {ex_tend}"
+                    
+                    # DEBUG — mostrar internos del cálculo
+                    with st.expander("🔍 DEBUG tendencia IA", expanded=True):
+                        st.write(f"**periodo_seleccionado:** {periodo_seleccionado}")
+                        st.write(f"**df_ia filas:** {len(df_ia)}")
+                        st.write(f"**variacion_ventas (fallback):** {variacion_ventas:.2f}%")
+                        st.write(f"**y_mean (venta mensual media):** {y_mean_debug}")
+                        st.write(f"**pendiente (USD/mes):** {pendiente_debug}")
+                        st.write(f"**crecimiento_ia FINAL:** {crecimiento_ia:.2f}%")
+                        if ventas_mensuales_debug is not None:
+                            st.dataframe(ventas_mensuales_debug.astype(str))
                     if len(df_ia) > 0 and 'linea_de_negocio' in df_ia.columns:
                         ventas_por_linea = df_ia.groupby('linea_de_negocio')['valor_usd'].sum()
                         top_linea_ventas = ventas_por_linea.idxmax() if len(ventas_por_linea) > 0 else "N/A"
