@@ -34,9 +34,15 @@ class TestFormatoMoneda:
     def test_decimales_personalizados(self):
         assert formato_moneda(1234.5678, decimales=0) == "$1,235"
         assert formato_moneda(1234.5678, decimales=3) == "$1,234.568"
+        assert formato_moneda(1234.5678, decimales=4) == "$1,234.5678"  # Cubre líneas 31-32
     
     def test_numeros_grandes(self):
         assert formato_moneda(1234567.89) == "$1,234,567.89"
+    
+    def test_valores_invalidos(self):
+        """Test: Maneja valores inválidos retornando $0.00."""
+        assert formato_moneda("texto") == "$0.00"
+        assert formato_moneda([1, 2, 3]) == "$0.00"
 
 
 class TestFormatoNumero:
@@ -48,6 +54,7 @@ class TestFormatoNumero:
     
     def test_con_decimales(self):
         assert formato_numero(1234.56, decimales=2) == "1,234.56"
+        assert formato_numero(1234.567, decimales=3) == "1,234.567"  # Cubre líneas 55-56
     
     def test_valores_nulos(self):
         assert formato_numero(None) == "0"
@@ -55,6 +62,11 @@ class TestFormatoNumero:
     
     def test_cero(self):
         assert formato_numero(0) == "0"
+    
+    def test_valores_invalidos(self):
+        """Test: Maneja valores inválidos retornando 0."""
+        assert formato_numero("texto") == "0"
+        assert formato_numero({"key": "value"}) == "0"
 
 
 class TestFormatoPorcentaje:
@@ -72,10 +84,16 @@ class TestFormatoPorcentaje:
     def test_decimales_personalizados(self):
         assert formato_porcentaje(25.567, decimales=0) == "26%"
         assert formato_porcentaje(25.567, decimales=2) == "25.57%"
+        assert formato_porcentaje(25.567, decimales=3) == "25.567%"  # Cubre líneas 85-86
     
     def test_valores_nulos(self):
         assert formato_porcentaje(None) == "0.0%"
         assert formato_porcentaje(float('nan')) == "0.0%"
+    
+    def test_valores_invalidos(self):
+        """Test: Maneja valores inválidos retornando 0.0%."""
+        assert formato_porcentaje("texto") == "0.0%"
+        assert formato_porcentaje([1, 2]) == "0.0%"
 
 
 class TestFormatoCompacto:
@@ -102,6 +120,12 @@ class TestFormatoCompacto:
     
     def test_valores_nulos(self):
         assert formato_compacto(None) == "0"
+        assert formato_compacto(float('nan')) == "0"
+    
+    def test_valores_invalidos(self):
+        """Test: Maneja valores inválidos retornando 0 (líneas 144-145)."""
+        assert formato_compacto("texto") == "0"
+        assert formato_compacto({"key": 123}) == "0"
 
 
 class TestFormatoDias:
@@ -119,6 +143,12 @@ class TestFormatoDias:
     
     def test_valores_nulos(self):
         assert formato_dias(None) == "0 días"
+        assert formato_dias(float('nan')) == "0 días"
+    
+    def test_valores_invalidos(self):
+        """Test: Maneja valores inválidos retornando 0 días (líneas 167-168)."""
+        assert formato_dias("texto") == "0 días"
+        assert formato_dias([1, 2]) == "0 días"
 
 
 class TestFormatoDeltaMoneda:
@@ -132,6 +162,23 @@ class TestFormatoDeltaMoneda:
         # Debe incluir el signo negativo
         assert "-" in result
         assert "1,234.56" in result
+    
+    def test_decimales_personalizados(self):
+        """Test: Cubre líneas 109 y 113-115 (decimales 0 y arbitrarios)."""
+        assert formato_delta_moneda(1234.56, decimales=0) == "$1,235"
+        assert formato_delta_moneda(-1234.56, decimales=0) == "-$1,235"
+        assert formato_delta_moneda(1234.567, decimales=3) == "$1,234.567"
+        assert formato_delta_moneda(-1234.567, decimales=3) == "-$1,234.567"
+    
+    def test_valores_nulos(self):
+        """Test: Cubre línea 101."""
+        assert formato_delta_moneda(None) == "$0.00"
+        assert formato_delta_moneda(float('nan')) == "$0.00"
+    
+    def test_valores_invalidos(self):
+        """Test: Maneja valores inválidos retornando $0.00."""
+        assert formato_delta_moneda("texto") == "$0.00"
+        assert formato_delta_moneda([1, 2]) == "$0.00"
     
     def test_cero(self):
         assert formato_delta_moneda(0) == "$0.00"

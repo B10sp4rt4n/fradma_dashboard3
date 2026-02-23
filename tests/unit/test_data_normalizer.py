@@ -5,7 +5,15 @@ Enfocado en normalizar_columnas() (función crítica usada en todo el sistema)
 
 import pytest
 import pandas as pd
-from utils.data_normalizer import normalizar_columnas
+from utils.data_normalizer import (
+    normalizar_columnas,
+    normalizar_columna_saldo,
+    normalizar_columna_valor,
+    limpiar_valores_monetarios,
+    detectar_columnas_cxc,
+    excluir_pagados,
+    normalizar_columna_fecha
+)
 
 
 class TestNormalizarColumnas:
