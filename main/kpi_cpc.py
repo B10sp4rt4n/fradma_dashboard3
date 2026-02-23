@@ -128,12 +128,9 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
         df_vigentes['origen'] = 'VIGENTE'
         df_vencidas['origen'] = 'VENCIDA'
         
-        # Unificar columnas
-        common_cols = list(set(df_vigentes.columns) & set(df_vencidas.columns))
-        df_deudas = pd.concat([
-            df_vigentes[common_cols], 
-            df_vencidas[common_cols]
-        ], ignore_index=True)
+        # Unificar usando TODAS las columnas disponibles (no solo las comunes)
+        # Esto permite incluir 'vendedor' aunque solo esté en una de las hojas
+        df_deudas = pd.concat([df_vigentes, df_vencidas], ignore_index=True, sort=False)
         
         # Limpieza
         df_deudas = df_deudas.dropna(axis=1, how='all')
@@ -159,6 +156,14 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
         saldo_serie = df_deudas['saldo_adeudado'].astype(str)
         saldo_limpio = saldo_serie.str.replace(r'[^\d.]', '', regex=True)
         df_deudas['saldo_adeudado'] = pd.to_numeric(saldo_limpio, errors='coerce').fillna(0)
+        
+        # Log de columnas detectadas (incluye vendedor si existe)
+        logger.info(f"Columnas en df_deudas: {df_deudas.columns.tolist()}")
+        if 'vendedor' in df_deudas.columns:
+            vendedores_unicos = df_deudas['vendedor'].dropna().nunique()
+            logger.info(f"Columna 'vendedor' detectada con {vendedores_unicos} vendedores únicos")
+        else:
+            logger.warning("Columna 'vendedor' NO detectada en df_deudas")
 
         # ---------------------------------------------------------------------
         # Normalización de CxC alineada con Reporte Ejecutivo usando funciones helper
@@ -1572,299 +1577,310 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
         st.subheader("👤 Distribución de Deuda por Agente")
         
         if 'vendedor' in df_deudas.columns:
-            # Usar cartera NO pagada y días de atraso estándar
-            df_agentes = df_np.copy()
+            # Verificar si hay datos no nulos
+            vendedores_validos = df_deudas['vendedor'].dropna()
+            if len(vendedores_validos) == 0:
+                st.warning("ℹ️ La columna 'vendedor' existe pero no contiene datos válidos")
+                st.info(f"📋 Columnas disponibles en el archivo: {', '.join(df_deudas.columns.tolist())}")
+            else:
+                # Usar cartera NO pagada y días de atraso estándar
+                df_agentes = df_np.copy()
 
-            if 'dias_overdue' in df_agentes.columns:
-                # Definir categorías usando constantes
-                df_agentes['categoria_agente'] = clasificar_antiguedad(df_agentes, tipo='agentes')
-                
-                # Agrupar por agente y categoría
-                agente_categoria = df_agentes.groupby(['vendedor', 'categoria_agente'], observed=True)['saldo_adeudado'].sum().unstack().fillna(0)
-                
-                # Ordenar por el total de deuda
-                agente_categoria['Total'] = agente_categoria.sum(axis=1)
-                agente_categoria = agente_categoria.sort_values('Total', ascending=False)
+                if 'dias_overdue' in df_agentes.columns:
+                    # Definir categorías usando constantes
+                    df_agentes['categoria_agente'] = clasificar_antiguedad(df_agentes, tipo='agentes')
+                    
+                    # Agrupar por agente y categoría
+                    agente_categoria = df_agentes.groupby(['vendedor', 'categoria_agente'], observed=True)['saldo_adeudado'].sum().unstack().fillna(0)
+                    
+                    # Ordenar por el total de deuda
+                    agente_categoria['Total'] = agente_categoria.sum(axis=1)
+                    agente_categoria = agente_categoria.sort_values('Total', ascending=False)
 
-                # Pies solicitados: % deuda por agente y antigüedad (por agente)
-                st.write("### 🥧 % de Deuda por Agente y por Antigüedad")
-                col_pie_ag1, col_pie_ag2 = st.columns(2)
+                    # Pies solicitados: % deuda por agente y antigüedad (por agente)
+                    st.write("### 🥧 % de Deuda por Agente y por Antigüedad")
+                    col_pie_ag1, col_pie_ag2 = st.columns(2)
 
-                with col_pie_ag1:
-                    fig_pie_agente = go.Figure(data=[go.Pie(
-                        labels=agente_categoria.index.astype(str).tolist(),
-                        values=agente_categoria['Total'].tolist(),
-                        hole=0.4,
-                        textinfo='label+percent'
-                    )])
-                    fig_pie_agente.update_layout(
-                        title="Deuda por Agente (% del total)",
-                        height=360,
-                        margin=dict(t=50, b=20, l=20, r=20)
-                    )
-                    st.plotly_chart(fig_pie_agente, width='stretch')
-
-                with col_pie_ag2:
-                    agentes_list = agente_categoria.index.astype(str).tolist()
-                    agente_sel = st.selectbox("Agente", agentes_list, index=0, key="pie_agente_antiguedad") if agentes_list else None
-                    if agente_sel:
-                        fila = agente_categoria.loc[agente_sel].drop(labels=['Total'], errors='ignore')
-                        fila = fila.reindex(LABELS_ANTIGUEDAD_AGENTES).fillna(0)
-                        fig_pie_ant = go.Figure(data=[go.Pie(
-                            labels=fila.index.tolist(),
-                            values=fila.values.tolist(),
-                            hole=ConfigVisualizacion.PIE_HOLE,
-                            marker=dict(colors=COLORES_ANTIGUEDAD_AGENTES),
+                    with col_pie_ag1:
+                        fig_pie_agente = go.Figure(data=[go.Pie(
+                            labels=agente_categoria.index.astype(str).tolist(),
+                            values=agente_categoria['Total'].tolist(),
+                            hole=0.4,
                             textinfo='label+percent'
                         )])
-                        fig_pie_ant.update_layout(
-                            title=f"Antigüedad de la Deuda ({agente_sel})",
+                        fig_pie_agente.update_layout(
+                            title="Deuda por Agente (% del total)",
                             height=360,
                             margin=dict(t=50, b=20, l=20, r=20)
                         )
-                        st.plotly_chart(fig_pie_ant, width='stretch')
+                        st.plotly_chart(fig_pie_agente, width='stretch')
+
+                    with col_pie_ag2:
+                        agentes_list = agente_categoria.index.astype(str).tolist()
+                        agente_sel = st.selectbox("Agente", agentes_list, index=0, key="pie_agente_antiguedad") if agentes_list else None
+                        if agente_sel:
+                            fila = agente_categoria.loc[agente_sel].drop(labels=['Total'], errors='ignore')
+                            fila = fila.reindex(LABELS_ANTIGUEDAD_AGENTES).fillna(0)
+                            fig_pie_ant = go.Figure(data=[go.Pie(
+                                labels=fila.index.tolist(),
+                                values=fila.values.tolist(),
+                                hole=ConfigVisualizacion.PIE_HOLE,
+                                marker=dict(colors=COLORES_ANTIGUEDAD_AGENTES),
+                                textinfo='label+percent'
+                            )])
+                            fig_pie_ant.update_layout(
+                                title=f"Antigüedad de la Deuda ({agente_sel})",
+                                height=360,
+                                margin=dict(t=50, b=20, l=20, r=20)
+                            )
+                            st.plotly_chart(fig_pie_ant, width='stretch')
                 
-                # Crear gráfico de barras apiladas
-                st.write("### 📊 Distribución por Agente y Antigüedad")
-                fig, ax = plt.subplots(figsize=(12, 6))
+                    # Crear gráfico de barras apiladas
+                    st.write("### 📊 Distribución por Agente y Antigüedad")
+                    fig, ax = plt.subplots(figsize=(12, 6))
                 
-                # Preparar datos para el gráfico usando constantes
-                bottom = np.zeros(len(agente_categoria))
-                for i, categoria in enumerate(LABELS_ANTIGUEDAD_AGENTES):
-                    if categoria in agente_categoria.columns:
-                        valores = agente_categoria[categoria]
-                        ax.bar(agente_categoria.index, valores, bottom=bottom, label=categoria, color=COLORES_ANTIGUEDAD_AGENTES[i])
-                        bottom += valores
+                    # Preparar datos para el gráfico usando constantes
+                    bottom = np.zeros(len(agente_categoria))
+                    for i, categoria in enumerate(LABELS_ANTIGUEDAD_AGENTES):
+                        if categoria in agente_categoria.columns:
+                            valores = agente_categoria[categoria]
+                            ax.bar(agente_categoria.index, valores, bottom=bottom, label=categoria, color=COLORES_ANTIGUEDAD_AGENTES[i])
+                            bottom += valores
                 
-                # Personalizar gráfico
-                ax.set_title('Deuda por Agente y Antigüedad', fontsize=14)
-                ax.set_ylabel('Monto Adeudado ($)', fontsize=12)
-                ax.set_xlabel('Agente', fontsize=12)
-                ax.tick_params(axis='x', rotation=45)
-                ax.legend(title='Días Vencidos', loc='upper right')
-                ax.yaxis.set_major_formatter('${x:,.2f}')
+                    # Personalizar gráfico
+                    ax.set_title('Deuda por Agente y Antigüedad', fontsize=14)
+                    ax.set_ylabel('Monto Adeudado ($)', fontsize=12)
+                    ax.set_xlabel('Agente', fontsize=12)
+                    ax.tick_params(axis='x', rotation=45)
+                    ax.legend(title='Días Vencidos', loc='upper right')
+                    ax.yaxis.set_major_formatter('${x:,.2f}')
                 
-                st.pyplot(fig)
+                    st.pyplot(fig)
                 
-                # Mostrar tabla resumen
-                st.write("### 📋 Resumen por Agente")
-                resumen_agente = agente_categoria.copy()
-                resumen_agente = resumen_agente.sort_values('Total', ascending=False)
+                    # Mostrar tabla resumen
+                    st.write("### 📋 Resumen por Agente")
+                    resumen_agente = agente_categoria.copy()
+                    resumen_agente = resumen_agente.sort_values('Total', ascending=False)
                 
-                # Formatear valores
-                for col in resumen_agente.columns:
-                    if col != 'Total':
-                        resumen_agente[col] = resumen_agente[col].apply(lambda x: f"${x:,.2f}" if x > 0 else "")
-                resumen_agente['Total'] = resumen_agente['Total'].apply(lambda x: f"${x:,.2f}")
+                    # Formatear valores
+                    for col in resumen_agente.columns:
+                        if col != 'Total':
+                            resumen_agente[col] = resumen_agente[col].apply(lambda x: f"${x:,.2f}" if x > 0 else "")
+                    resumen_agente['Total'] = resumen_agente['Total'].apply(lambda x: f"${x:,.2f}")
                 
-                st.dataframe(resumen_agente)
+                    st.dataframe(resumen_agente)
                 
-                # =====================================================================
-                # EFICIENCIA DE COBRANZA POR AGENTE
-                # =====================================================================
-                st.write("---")
-                st.subheader("⚡ Eficiencia de Cobranza por Agente")
+                    # =====================================================================
+                    # EFICIENCIA DE COBRANZA POR AGENTE
+                    # =====================================================================
+                    st.write("---")
+                    st.subheader("⚡ Eficiencia de Cobranza por Agente")
                 
-                # Calcular métricas de eficiencia por agente
-                agentes_eficiencia = []
+                    # Calcular métricas de eficiencia por agente
+                    agentes_eficiencia = []
                 
-                for agente in df_agentes['vendedor'].unique():
-                    agente_data = df_agentes[df_agentes['vendedor'] == agente]
+                    for agente in df_agentes['vendedor'].unique():
+                        agente_data = df_agentes[df_agentes['vendedor'] == agente]
                     
-                    total_agente = agente_data['saldo_adeudado'].sum()
-                    vigente_agente = agente_data[agente_data['dias_overdue'] <= 0]['saldo_adeudado'].sum()
-                    vencido_agente = total_agente - vigente_agente
+                        total_agente = agente_data['saldo_adeudado'].sum()
+                        vigente_agente = agente_data[agente_data['dias_overdue'] <= 0]['saldo_adeudado'].sum()
+                        vencido_agente = total_agente - vigente_agente
                     
-                    # % Efectividad (cartera vigente)
-                    efectividad = (vigente_agente / total_agente * 100) if total_agente > 0 else 0
+                        # % Efectividad (cartera vigente)
+                        efectividad = (vigente_agente / total_agente * 100) if total_agente > 0 else 0
                     
-                    # Tiempo promedio de cobro
-                    dias_promedio = agente_data['dias_overdue'].mean() if len(agente_data) > 0 else 0
+                        # Tiempo promedio de cobro
+                        dias_promedio = agente_data['dias_overdue'].mean() if len(agente_data) > 0 else 0
                     
-                    # Cantidad de clientes y documentos
-                    clientes_agente = agente_data['deudor'].nunique()
-                    docs_agente = len(agente_data)
+                        # Cantidad de clientes y documentos
+                        clientes_agente = agente_data['deudor'].nunique()
+                        docs_agente = len(agente_data)
                     
-                    # Casos críticos (>90 días)
-                    casos_criticos = len(agente_data[agente_data['dias_overdue'] > 90])
-                    pct_criticos = (casos_criticos / docs_agente * 100) if docs_agente > 0 else 0
+                        # Casos críticos (>90 días)
+                        casos_criticos = len(agente_data[agente_data['dias_overdue'] > 90])
+                        pct_criticos = (casos_criticos / docs_agente * 100) if docs_agente > 0 else 0
                     
-                    # Monto promedio por cliente
-                    monto_promedio = total_agente / clientes_agente if clientes_agente > 0 else 0
+                        # Monto promedio por cliente
+                        monto_promedio = total_agente / clientes_agente if clientes_agente > 0 else 0
                     
-                    # Score de eficiencia (0-100)
-                    # Factores: efectividad (50%), días promedio (30%), casos críticos (20%)
-                    score_efectividad = efectividad * 0.5
-                    score_dias = max(0, 100 - (dias_promedio / 90 * 100)) * 0.3
-                    score_criticos = max(0, 100 - pct_criticos) * 0.2
+                        # Score de eficiencia (0-100)
+                        # Factores: efectividad (50%), días promedio (30%), casos críticos (20%)
+                        score_efectividad = efectividad * 0.5
+                        score_dias = max(0, 100 - (dias_promedio / 90 * 100)) * 0.3
+                        score_criticos = max(0, 100 - pct_criticos) * 0.2
                     
-                    score_eficiencia = score_efectividad + score_dias + score_criticos
+                        score_eficiencia = score_efectividad + score_dias + score_criticos
                     
-                    agentes_eficiencia.append({
-                        'agente': agente,
-                        'total': total_agente,
-                        'efectividad': efectividad,
-                        'dias_promedio': dias_promedio,
-                        'clientes': clientes_agente,
-                        'docs': docs_agente,
-                        'casos_criticos': casos_criticos,
-                        'pct_criticos': pct_criticos,
-                        'monto_promedio': monto_promedio,
-                        'score': score_eficiencia
-                    })
+                        agentes_eficiencia.append({
+                            'agente': agente,
+                            'total': total_agente,
+                            'efectividad': efectividad,
+                            'dias_promedio': dias_promedio,
+                            'clientes': clientes_agente,
+                            'docs': docs_agente,
+                            'casos_criticos': casos_criticos,
+                            'pct_criticos': pct_criticos,
+                            'monto_promedio': monto_promedio,
+                            'score': score_eficiencia
+                        })
                 
-                df_eficiencia = pd.DataFrame(agentes_eficiencia)
-                df_eficiencia = df_eficiencia.sort_values('score', ascending=False)
+                    df_eficiencia = pd.DataFrame(agentes_eficiencia)
+                    df_eficiencia = df_eficiencia.sort_values('score', ascending=False)
                 
-                # Gauges de eficiencia por agente (top 6)
-                st.write("### 🎯 Score de Eficiencia por Agente")
+                    # Gauges de eficiencia por agente (top 6)
+                    st.write("### 🎯 Score de Eficiencia por Agente")
                 
-                top_agentes_ef = df_eficiencia.head(6)
+                    top_agentes_ef = df_eficiencia.head(6)
                 
-                for i in range(0, len(top_agentes_ef), 3):
-                    cols_agente = st.columns(3)
+                    for i in range(0, len(top_agentes_ef), 3):
+                        cols_agente = st.columns(3)
                     
-                    for j in range(3):
-                        if i + j < len(top_agentes_ef):
-                            row = top_agentes_ef.iloc[i + j]
-                            agente = row['agente']
-                            score = row['score']
-                            efectividad = row['efectividad']
+                        for j in range(3):
+                            if i + j < len(top_agentes_ef):
+                                row = top_agentes_ef.iloc[i + j]
+                                agente = row['agente']
+                                score = row['score']
+                                efectividad = row['efectividad']
                             
-                            # Color según score
-                            if score >= 80:
-                                color_agente = "#4CAF50"
-                                nivel_agente = "Excelente"
-                            elif score >= 60:
-                                color_agente = "#8BC34A"
-                                nivel_agente = "Bueno"
-                            elif score >= 40:
-                                color_agente = "#FFEB3B"
-                                nivel_agente = "Regular"
-                            elif score >= 20:
-                                color_agente = "#FF9800"
-                                nivel_agente = "Bajo"
-                            else:
-                                color_agente = "#F44336"
-                                nivel_agente = "Crítico"
+                                # Color según score
+                                if score >= 80:
+                                    color_agente = "#4CAF50"
+                                    nivel_agente = "Excelente"
+                                elif score >= 60:
+                                    color_agente = "#8BC34A"
+                                    nivel_agente = "Bueno"
+                                elif score >= 40:
+                                    color_agente = "#FFEB3B"
+                                    nivel_agente = "Regular"
+                                elif score >= 20:
+                                    color_agente = "#FF9800"
+                                    nivel_agente = "Bajo"
+                                else:
+                                    color_agente = "#F44336"
+                                    nivel_agente = "Crítico"
                             
-                            with cols_agente[j]:
-                                fig_agente_ef = go.Figure(go.Indicator(
-                                    mode="gauge+number",
-                                    value=score,
-                                    domain={'x': [0, 1], 'y': [0, 1]},
-                                    title={'text': f"<b>{agente}</b><br>{nivel_agente}", 'font': {'size': 11}},
-                                    number={'suffix': '', 'font': {'size': 20}},
-                                    gauge={
-                                        'axis': {'range': [None, 100], 'tickwidth': 1},
-                                        'bar': {'color': color_agente, 'thickness': 0.75},
-                                        'bgcolor': "white",
-                                        'borderwidth': 1,
-                                        'bordercolor': "gray",
-                                        'steps': [
-                                            {'range': [0, 20], 'color': '#FFCDD2'},
-                                            {'range': [20, 40], 'color': '#FFE0B2'},
-                                            {'range': [40, 60], 'color': '#FFF9C4'},
-                                            {'range': [60, 80], 'color': '#DCEDC8'},
-                                            {'range': [80, 100], 'color': '#C8E6C9'}
-                                        ],
-                                        'threshold': {
-                                            'line': {'color': "black", 'width': 3},
-                                            'thickness': 0.75,
-                                            'value': 60
+                                with cols_agente[j]:
+                                    fig_agente_ef = go.Figure(go.Indicator(
+                                        mode="gauge+number",
+                                        value=score,
+                                        domain={'x': [0, 1], 'y': [0, 1]},
+                                        title={'text': f"<b>{agente}</b><br>{nivel_agente}", 'font': {'size': 11}},
+                                        number={'suffix': '', 'font': {'size': 20}},
+                                        gauge={
+                                            'axis': {'range': [None, 100], 'tickwidth': 1},
+                                            'bar': {'color': color_agente, 'thickness': 0.75},
+                                            'bgcolor': "white",
+                                            'borderwidth': 1,
+                                            'bordercolor': "gray",
+                                            'steps': [
+                                                {'range': [0, 20], 'color': '#FFCDD2'},
+                                                {'range': [20, 40], 'color': '#FFE0B2'},
+                                                {'range': [40, 60], 'color': '#FFF9C4'},
+                                                {'range': [60, 80], 'color': '#DCEDC8'},
+                                                {'range': [80, 100], 'color': '#C8E6C9'}
+                                            ],
+                                            'threshold': {
+                                                'line': {'color': "black", 'width': 3},
+                                                'thickness': 0.75,
+                                                'value': 60
+                                            }
                                         }
-                                    }
-                                ))
-                                fig_agente_ef.update_layout(
-                                    height=220,
-                                    margin=dict(t=60, b=10, l=10, r=10)
-                                )
-                                st.plotly_chart(fig_agente_ef, width='stretch')
-                                st.caption(f"Efectividad: {efectividad:.1f}% | Clientes: {row['clientes']}")
+                                    ))
+                                    fig_agente_ef.update_layout(
+                                        height=220,
+                                        margin=dict(t=60, b=10, l=10, r=10)
+                                    )
+                                    st.plotly_chart(fig_agente_ef, width='stretch')
+                                    st.caption(f"Efectividad: {efectividad:.1f}% | Clientes: {row['clientes']}")
                 
-                # Tabla comparativa de eficiencia
-                st.write("### 📊 Tabla Comparativa de Eficiencia")
+                    # Tabla comparativa de eficiencia
+                    st.write("### 📊 Tabla Comparativa de Eficiencia")
                 
-                df_ef_display = df_eficiencia.copy()
+                    df_ef_display = df_eficiencia.copy()
                 
-                # Agregar semáforos
-                df_ef_display['🚦 Score'] = df_ef_display['score'].apply(
-                    lambda x: "🟢" if x >= 80 else "�" if x >= 60 else "🟠" if x >= 40 else "🟠" if x >= 20 else "🔴"
-                )
+                    # Agregar semáforos
+                    df_ef_display['🚦 Score'] = df_ef_display['score'].apply(
+                        lambda x: "🟢" if x >= 80 else "�" if x >= 60 else "🟠" if x >= 40 else "🟠" if x >= 20 else "🔴"
+                    )
                 
-                df_ef_display['🚦 Efectividad'] = df_ef_display['efectividad'].apply(
-                    lambda x: "🟢" if x >= 80 else "🟡" if x >= 60 else "🟠" if x >= 40 else "🔴"
-                )
+                    df_ef_display['🚦 Efectividad'] = df_ef_display['efectividad'].apply(
+                        lambda x: "🟢" if x >= 80 else "🟡" if x >= 60 else "🟠" if x >= 40 else "🔴"
+                    )
                 
-                # Formatear
-                df_ef_table = df_ef_display[[
-                    'agente', 'score', '🚦 Score', 'efectividad', '🚦 Efectividad',
-                    'dias_promedio', 'casos_criticos', 'pct_criticos', 'clientes', 'total'
-                ]].copy()
+                    # Formatear
+                    df_ef_table = df_ef_display[[
+                        'agente', 'score', '🚦 Score', 'efectividad', '🚦 Efectividad',
+                        'dias_promedio', 'casos_criticos', 'pct_criticos', 'clientes', 'total'
+                    ]].copy()
                 
-                df_ef_table['score'] = df_ef_table['score'].apply(lambda x: f"{x:.1f}")
-                df_ef_table['efectividad'] = df_ef_table['efectividad'].apply(lambda x: f"{x:.1f}%")
-                df_ef_table['dias_promedio'] = df_ef_table['dias_promedio'].apply(lambda x: f"{x:.0f} días")
-                df_ef_table['pct_criticos'] = df_ef_table['pct_criticos'].apply(lambda x: f"{x:.1f}%")
-                df_ef_table['total'] = df_ef_table['total'].apply(lambda x: f"${x:,.2f}")
+                    df_ef_table['score'] = df_ef_table['score'].apply(lambda x: f"{x:.1f}")
+                    df_ef_table['efectividad'] = df_ef_table['efectividad'].apply(lambda x: f"{x:.1f}%")
+                    df_ef_table['dias_promedio'] = df_ef_table['dias_promedio'].apply(lambda x: f"{x:.0f} días")
+                    df_ef_table['pct_criticos'] = df_ef_table['pct_criticos'].apply(lambda x: f"{x:.1f}%")
+                    df_ef_table['total'] = df_ef_table['total'].apply(lambda x: f"${x:,.2f}")
                 
-                df_ef_table.columns = [
-                    'Agente', 'Score', '🚦 Score', 'Efectividad', '🚦 Efectividad',
-                    'Días Prom.', 'Casos >90d', '% Críticos', 'Clientes', 'Cartera Total'
-                ]
+                    df_ef_table.columns = [
+                        'Agente', 'Score', '🚦 Score', 'Efectividad', '🚦 Efectividad',
+                        'Días Prom.', 'Casos >90d', '% Críticos', 'Clientes', 'Cartera Total'
+                    ]
                 
-                st.dataframe(df_ef_table, width='stretch', hide_index=True)
+                    st.dataframe(df_ef_table, width='stretch', hide_index=True)
                 
-                # Ranking y reconocimiento
-                st.write("### 🏆 Ranking de Eficiencia")
+                    # Ranking y reconocimiento
+                    st.write("### 🏆 Ranking de Eficiencia")
                 
-                col_rank1, col_rank2, col_rank3 = st.columns(3)
+                    col_rank1, col_rank2, col_rank3 = st.columns(3)
                 
-                if len(df_eficiencia) >= 1:
-                    mejor_agente = df_eficiencia.iloc[0]
-                    col_rank1.success(f"🥇 **Mejor Eficiencia**\n\n{mejor_agente['agente']}\n\nScore: {mejor_agente['score']:.1f}/100")
+                    if len(df_eficiencia) >= 1:
+                        mejor_agente = df_eficiencia.iloc[0]
+                        col_rank1.success(f"🥇 **Mejor Eficiencia**\n\n{mejor_agente['agente']}\n\nScore: {mejor_agente['score']:.1f}/100")
                 
-                if len(df_eficiencia) >= 2:
-                    segundo_agente = df_eficiencia.iloc[1]
-                    col_rank2.info(f"🥈 **Segunda Posición**\n\n{segundo_agente['agente']}\n\nScore: {segundo_agente['score']:.1f}/100")
+                    if len(df_eficiencia) >= 2:
+                        segundo_agente = df_eficiencia.iloc[1]
+                        col_rank2.info(f"🥈 **Segunda Posición**\n\n{segundo_agente['agente']}\n\nScore: {segundo_agente['score']:.1f}/100")
                 
-                if len(df_eficiencia) >= 3:
-                    tercer_agente = df_eficiencia.iloc[2]
-                    col_rank3.info(f"🥉 **Tercera Posición**\n\n{tercer_agente['agente']}\n\nScore: {tercer_agente['score']:.1f}/100")
+                    if len(df_eficiencia) >= 3:
+                        tercer_agente = df_eficiencia.iloc[2]
+                        col_rank3.info(f"🥉 **Tercera Posición**\n\n{tercer_agente['agente']}\n\nScore: {tercer_agente['score']:.1f}/100")
                 
-                # Agentes que necesitan mejora
-                agentes_mejora = df_eficiencia[df_eficiencia['score'] < 40]
+                    # Agentes que necesitan mejora
+                    agentes_mejora = df_eficiencia[df_eficiencia['score'] < 40]
                 
-                if len(agentes_mejora) > 0:
-                    st.warning("⚠️ **Agentes que Requieren Capacitación/Apoyo:**")
-                    for _, agente_m in agentes_mejora.iterrows():
-                        problemas = []
-                        if agente_m['efectividad'] < 60:
-                            problemas.append(f"Efectividad baja: {agente_m['efectividad']:.1f}%")
-                        if agente_m['dias_promedio'] > 60:
-                            problemas.append(f"Días promedio alto: {agente_m['dias_promedio']:.0f}")
-                        if agente_m['pct_criticos'] > 20:
-                            problemas.append(f"Casos críticos: {agente_m['pct_criticos']:.1f}%")
+                    if len(agentes_mejora) > 0:
+                        st.warning("⚠️ **Agentes que Requieren Capacitación/Apoyo:**")
+                        for _, agente_m in agentes_mejora.iterrows():
+                            problemas = []
+                            if agente_m['efectividad'] < 60:
+                                problemas.append(f"Efectividad baja: {agente_m['efectividad']:.1f}%")
+                            if agente_m['dias_promedio'] > 60:
+                                problemas.append(f"Días promedio alto: {agente_m['dias_promedio']:.0f}")
+                            if agente_m['pct_criticos'] > 20:
+                                problemas.append(f"Casos críticos: {agente_m['pct_criticos']:.1f}%")
                         
-                        st.write(f"- **{agente_m['agente']}** (Score: {agente_m['score']:.1f}): {' | '.join(problemas)}")
+                            st.write(f"- **{agente_m['agente']}** (Score: {agente_m['score']:.1f}): {' | '.join(problemas)}")
+                    else:
+                        st.success("✅ Todos los agentes mantienen niveles aceptables de eficiencia")
+
                 else:
-                    st.success("✅ Todos los agentes mantienen niveles aceptables de eficiencia")
+                    st.warning("ℹ️ No se pudo calcular la antigüedad (días vencidos) para los agentes")
 
-            else:
-                st.warning("ℹ️ No se pudo calcular la antigüedad (días vencidos) para los agentes")
-
-                # Fallback: resumen simple por agente sin segmentación de antigüedad
-                resumen_simple = (
-                    df_deudas.groupby('vendedor', dropna=False)['saldo_adeudado']
-                    .sum()
-                    .sort_values(ascending=False)
-                    .reset_index()
-                )
-                resumen_simple.columns = ['Agente', 'Cartera Total']
-                resumen_simple['Cartera Total'] = resumen_simple['Cartera Total'].apply(lambda x: f"${x:,.2f}")
-                st.dataframe(resumen_simple, width='stretch', hide_index=True)
+                    # Fallback: resumen simple por agente sin segmentación de antigüedad
+                    resumen_simple = (
+                        df_deudas.groupby('vendedor', dropna=False)['saldo_adeudado']
+                        .sum()
+                        .sort_values(ascending=False)
+                        .reset_index()
+                    )
+                    resumen_simple.columns = ['Agente', 'Cartera Total']
+                    resumen_simple['Cartera Total'] = resumen_simple['Cartera Total'].apply(lambda x: f"${x:,.2f}")
+                    st.dataframe(resumen_simple, width='stretch', hide_index=True)
         else:
-            st.warning("ℹ️ No se encontró información de agentes (vendedores)")
+            st.warning("ℹ️ No se encontró columna de vendedor/agente en el archivo CxC")
+            st.info(f"📋 **Columnas disponibles:** {', '.join(df_deudas.columns.tolist())}")
+            st.caption(
+                "💡 **Tip:** El análisis por vendedor requiere una columna llamada: "
+                "'vendedor', 'agente', 'ejecutivo', 'seller', o 'rep'"
+            )
 
         # Desglose detallado por deudor (CLIENTE - COLUMNA F)
         st.subheader("🔍 Detalle Completo por Deudor (Columna Cliente)")
