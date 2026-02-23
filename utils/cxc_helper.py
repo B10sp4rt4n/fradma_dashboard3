@@ -170,6 +170,19 @@ def preparar_datos_cxc(df: pd.DataFrame) -> tuple:
     """
     df_prep = df.copy()
     
+    # Normalizar columna de saldo → siempre usar 'saldo_adeudado'
+    if 'saldo_adeudado' not in df_prep.columns:
+        for candidato in ['saldo', 'saldo_adeudo', 'adeudo', 'importe', 'monto', 'total', 'saldo_usd']:
+            if candidato in df_prep.columns:
+                df_prep = df_prep.rename(columns={candidato: 'saldo_adeudado'})
+                break
+    if 'saldo_adeudado' in df_prep.columns:
+        saldo_txt = df_prep['saldo_adeudado'].astype(str)
+        saldo_txt = saldo_txt.str.replace(',', '', regex=False).str.replace('$', '', regex=False)
+        df_prep['saldo_adeudado'] = pd.to_numeric(saldo_txt, errors='coerce').fillna(0)
+    else:
+        df_prep['saldo_adeudado'] = 0
+    
     # Calcular dias_overdue
     df_prep['dias_overdue'] = calcular_dias_overdue(df_prep)
     
