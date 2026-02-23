@@ -924,9 +924,22 @@ def run():
     alertas_vend = []
     for _, row in df_cruce.iterrows():
         if row["pct_vencida"] > 40:
+            # Construir desglose de composición de deuda vencida
+            composicion_parts = []
+            if row["pct_1_30"] > 0:
+                composicion_parts.append(f"1-30d: {row['pct_1_30']:.1f}%")
+            if row["pct_31_60"] > 0:
+                composicion_parts.append(f"31-60d: {row['pct_31_60']:.1f}%")
+            if row["pct_61_90"] > 0:
+                composicion_parts.append(f"61-90d: {row['pct_61_90']:.1f}%")
+            if row["pct_mas_90"] > 0:
+                composicion_parts.append(f">90d: {row['pct_mas_90']:.1f}%")
+            
+            composicion_str = " | ".join(composicion_parts) if composicion_parts else "Sin desglose"
+            
             alertas_vend.append(
                 f"🔴 **{row['vendedor']}**: {row['pct_vencida']:.1f}% de su cartera está vencida "
-                f"(${row['cartera_vencida']:,.0f})"
+                f"(${row['cartera_vencida']:,.0f}) — Composición: {composicion_str}"
             )
         elif row["ratio_deuda_ventas"] > 20:
             alertas_vend.append(
