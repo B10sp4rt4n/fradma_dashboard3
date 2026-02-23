@@ -1154,9 +1154,36 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                     linea_data = df_lineas[df_lineas[col_linea] == linea]
                     total_linea = linea_data['saldo_adeudado'].sum()
                     
-                    # Calcular morosidad alineada (días de atraso > 0)
-                    vencido_linea = linea_data[linea_data['dias_overdue'] > 0]['saldo_adeudado'].sum()
-                    pct_morosidad = (vencido_linea / total_linea * 100) if total_linea > 0 else 0
+                    # Calcular índice de morosidad ponderado por antigüedad
+                    # En lugar de binario (vencido/no vencido), usar escala basada en gravedad
+                    if total_linea > 0:
+                        # Segmentar cartera por antigüedad
+                        vigente = linea_data[linea_data['dias_overdue'] <= 0]['saldo_adeudado'].sum()
+                        dias_1_30 = linea_data[(linea_data['dias_overdue'] > 0) & (linea_data['dias_overdue'] <= 30)]['saldo_adeudado'].sum()
+                        dias_31_60 = linea_data[(linea_data['dias_overdue'] > 30) & (linea_data['dias_overdue'] <= 60)]['saldo_adeudado'].sum()
+                        dias_61_90 = linea_data[(linea_data['dias_overdue'] > 60) & (linea_data['dias_overdue'] <= 90)]['saldo_adeudado'].sum()
+                        dias_mas_90 = linea_data[linea_data['dias_overdue'] > 90]['saldo_adeudado'].sum()
+                        
+                        # Calcular porcentajes
+                        pct_vigente = (vigente / total_linea * 100)
+                        pct_1_30 = (dias_1_30 / total_linea * 100)
+                        pct_31_60 = (dias_31_60 / total_linea * 100)
+                        pct_61_90 = (dias_61_90 / total_linea * 100)
+                        pct_mas_90 = (dias_mas_90 / total_linea * 100)
+                        
+                        # Índice de morosidad ponderado (0-100)
+                        # Vigente: 0 puntos, 1-30: 15 puntos, 31-60: 40 puntos, 61-90: 70 puntos, >90: 100 puntos
+                        pct_morosidad = (
+                            pct_vigente * 0 +
+                            pct_1_30 * 15 +
+                            pct_31_60 * 40 +
+                            pct_61_90 * 70 +
+                            pct_mas_90 * 100
+                        ) / 100
+                    else:
+                        pct_morosidad = 0
+                        pct_mas_90 = 0
+                    
                     alto_riesgo_linea = linea_data[linea_data['dias_overdue'] > 90]['saldo_adeudado'].sum()
                     pct_alto_riesgo = (alto_riesgo_linea / total_linea * 100) if total_linea > 0 else 0
                     
