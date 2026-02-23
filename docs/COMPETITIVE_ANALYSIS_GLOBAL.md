@@ -382,13 +382,297 @@ Excel   |                              |
 
 ---
 
+---
+
+## 🏰 Estrategia de Moat — Cómo Hacer el Gap Insalvable
+
+### Principio central
+> La ventaja competitiva no se construye solo con features — se construye con **activos que se acumulan con el tiempo y que el dinero no puede comprar rápido**.
+
+El objetivo no es ser mejor que Power BI. Es ser **irremplazable para el segmento PYME B2B México** antes de que alguien decida atacarlo.
+
+---
+
+### Por qué los grandes no pueden copiarte (inercia estructural)
+
+| Factor | Power BI / Tableau | Fradma |
+|---|---|---|
+| **Modelo de pricing** | Por asiento — bajar precio canibaliza enterprise ($500K/año por cliente) | Sin ese peso |
+| **Propuesta de valor histórica** | "100% personalizable" — simplificar mata features que enterprise usa hoy | Nació simple |
+| **Canal de distribución** | Partners/consultores cobran $100-200/hr implementando — frenan activamente la simplificación | Sin canal que defender |
+| **Velocidad de release** | Feature nueva: roadmap → spec → diseño → eng → QA → release = 3 meses mínimo | Horas a producción |
+| **Conocimiento local** | CFDI 4.0, SAT, Aspel, ContPAQi son irrelevantes globalmente — nunca los priorizarán | Nativo |
+
+**Conclusión:** La inercia de Microsoft/Salesforce es tu aliado gratuito los próximos 24-36 meses. El trabajo es usar ese tiempo para construir activos que no se compran.
+
+---
+
+### Los 5 Moats a construir (ordenados por impacto)
+
+#### 🥇 Moat 1 — Datos de Benchmarks de Industria
+**Qué es:** Con cada cliente acumulas datos anónimos: Score CxC promedio por vertical, % morosidad normal en distribución ferretera vs alimentos, días promedio de cobranza por tamaño de empresa.
+
+**Por qué es insalvable:** No se compra. Solo se construye con clientes reales en el tiempo.
+
+**Monetización:** *"Tu Score CxC es 73 — la mediana de distribuidoras similares en México es 68. Estás en el top 30%."* Eso vale más que cualquier gráfica genérica.
+
+**Umbral:** 50 clientes = dato útil. 200 clientes = ventaja defensible. 500 = nadie te alcanza.
+
+---
+
+#### 🥈 Moat 2 — Canal con PACs y Mayoristas (antes que nadie)
+
+**La jugada:** No construir canal propio — montarse en canales que ya tienen la conversación con el CFO de cada PYME mexicana.
+
+**PACs (Finkok, SW Sapien, Edicom, etc.):**
+- Ya tienen relación de confianza con CFO/contador de cada empresa
+- Cada empresa renueva PAC anualmente — conversación garantizada
+- El CFO que pregunta *"¿cómo analizo lo que facturé?"* ya existe, no hay que crearla
+- Tu producto es complementario — no les quitas revenue, les da upsell
+
+**Synnex / Ingram Micro:**
+- Su red de resellers ya vende al mismo perfil PYME (Aspel, ContPAQi, licencias Office)
+- Necesitan márgenes en software para compensar compresión en hardware
+- SaaS con 30-40% comisión recurrente es más atractivo que vender servidores
+
+**Estructura que funciona (lo que NO es un PDF de producto):**
+
+| Elemento | Detalle |
+|---|---|
+| Demo 8 minutos | El reseller la hace solo, sin ti. Más de 8 min = no venden |
+| Caso de uso por vertical | "Para tu cliente distribuidor ferretero, muéstrale esto" |
+| Precio con margen explícito | "$99/mes, tú te quedas $30, yo facturo al cliente" |
+| Co-marketing | Tú pagas el webinar, ellos ponen la lista de sus clientes |
+| Spiff por activación | Bono por primer cliente activado — les da razón de hablar de ti esta semana |
+
+**Ángulo de entrada con PAC:**
+> *"¿Cuántos de tus clientes te preguntan cómo analizar lo que facturaron? Te doy una herramienta que puedes recomendar con tu marca encima, te queda el 35% recurrente, y refuerza que eres más que solo timbrar."*
+
+El PAC lo ve como **retención y upsell de su propio cliente**, no como vender algo ajeno.
+
+**Secuencia de entrada:**
+```
+Paso 1 — Piloto con 1 PAC mediano (no el más grande — tienen burocracia)
+         → 3 meses, 10 clientes compartidos, documentar conversión real
+
+Paso 2 — Con ese caso ir a Synnex/Ingram
+         → "Tenemos X% conversión con PAC Y, queremos replicar en tu red"
+
+Paso 3 — Acuerdo marco con 2-3 mayoristas
+         → Volumen predecible, CAC ~$0, equipo interno focalizado en producto
+```
+
+**Moat que construye:** Cuando tienes acuerdo con Ingram + 3 PACs, un copycat con $500K de funding no puede comprarte ese canal — ya está tomado. Es el mismo playbook que usó Aspel en los 90s con distribuidores de cómputo. Cuando Microsiga quiso entrar a México 10 años después, el canal ya era de Aspel.
+
+---
+
+#### 🥉 Moat 3 — Integraciones Nativas ERPs Mexicanos
+
+**Prioridad:** Aspel SAE (30% mercado PYME MX) → ContPAQi (25%) → COI → Bind ERP
+
+**Por qué:** Ningún player global va a priorizar Aspel — es irrelevante en su roadmap. Tú llegas primero, defines el estándar, y el cliente Aspel te ve por default antes que a cualquier otro BI.
+
+**Efecto:** Cada empresa Aspel que se conecta tiene **switching cost real** — configuraron el conector, entrenaron al equipo, tienen historial. Cambiar significa empezar de cero.
+
+---
+
+#### 4 — Regulación SAT/CFDI como foso permanente
+
+Nadie en USA va a construir validación nativa de CFDI 4.0, complemento de pagos, régimen fiscal mexicano, cancelaciones SAT. Cada año el SAT cambia reglas — tú las implementas en días, un player global ni sabe que existen. Este foso se auto-refuerza solo con el tiempo.
+
+---
+
+#### 5 — Comunidad Vertical B2B México
+
+Un espacio (Slack/Discord/WhatsApp) donde CFOs de distribuidoras comparten templates, configuraciones, "cómo configuro esto para abarrotero". Power BI tiene foros en inglés con preguntas genéricas. La comunidad vertical en español con contexto mexicano es imposible de comprar — solo se construye con usuarios reales.
+
+---
+
+### El riesgo real: el copycat mexicano con funding
+
+Los grandes no son la amenaza inmediata — su inercia los protege de moverse rápido. El riesgo real es alguien que vea este mercado, levante $500K-1M, contrate 4 devs y clone exactamente lo que haces en 6 meses.
+
+**Defensa contra copycat:**
+- **Moat 1 (benchmarks):** no se clona con dinero, solo con tiempo y clientes
+- **Moat 2 (canal):** si ya firmaste con Ingram y 2 PACs, el canal está tomado
+- **Velocidad:** tú sigues siendo más rápido — ellos empiezan de cero mientras tú tienes 12 meses de ventaja de producto
+
+---
+
+### Horizonte de ejecución
+
+| Fase | Período | Foco | Meta |
+|---|---|---|---|
+| **Validación** | Q1-Q2 2026 | Producto estable + primeros 30 clientes pagando | NPS > 50, churn < 5% |
+| **Canal** | Q2-Q3 2026 | Piloto PAC mediano + caso documentado | 10 clientes via canal |
+| **Escala** | Q3-Q4 2026 | Acuerdo Synnex/Ingram + conector Aspel beta | 100 clientes, $10K MRR |
+| **Moat** | 2027 | Benchmarks industria + comunidad + LATAM | 300+ clientes, datos propietarios |
+
+---
+
+### Métrica de éxito del moat
+
+> Cuando un cliente te diga: *"Lo usamos porque tiene los benchmarks de mi industria y está integrado con Aspel, y cambiarnos costaría más que lo que pagamos al año"* — ese es el moat funcionando.
+
 **Última actualización:** 23 febrero 2026  
-**Próxima revisión:** Trimestral (Q2 2026)  
+**Próxima revisión:** Q2 2026  
 **Responsable:** @B10sp4rt4n
+
+
+---
+
+## 🛡️ Estrategia de Moat — Cómo Hacer el Gap Insalcanzable
+
+### **Principio:** Features se copian. Activos acumulados no.
+
+Los competidores pueden replicar una feature en 3-6 meses.  
+No pueden replicar 3 años de datos de industria, integraciones específicas o efectos de red.
+
+---
+
+### **Nivel 1 — Profundidad México (difícil de copiar: 12-18 meses)**
+
+#### 1.1 Conectores directos a ERPs mexicanos
+Power BI/Tableau nunca priorizarán Aspel y ContPAQi —  el mercado es "demasiado pequeño" para ellos globalmente, pero es el **90% del PYME Mexico**.
+
+| ERP | Market share PYME MX | Prioridad |
+|-----|---------------------|-----------|
+| Aspel SAE | ~32% | 🔴 Alta |
+| ContPAQi / COI | ~25% | 🔴 Alta |
+| AdminPAQ | ~15% | 🟡 Media |
+| Microsip | ~10% | 🟡 Media |
+
+**Ventaja:** Una vez que el cliente conecta su ERP, migrar a Power BI requiere reconectar todo. **Switching cost real.**
+
+---
+
+#### 1.2 Integración SAT/CFDI
+Reconciliación automática factura → cobro → CFDI emitido. Nadie global lo hace porque requiere:
+- Conocer la estructura XML del CFDI 4.0
+- Interactuar con los webservices del SAT
+- Entender el régimen fiscal mexicano
+
+**Ventaja:** Elimina 100% el trabajo manual de cuadrar facturas vs SAT. Imposible de ofrecer por Power BI/Tableau.
+
+---
+
+#### 1.3 Alertas por WhatsApp Business
+México tiene 90%+ penetración de WhatsApp. Un email de alerta tiene 20% open rate. Un WhatsApp tiene 98%.
+
+Ejemplo:
+> 📊 *Fradma Alert* — Cliente *ABC Ferretería* lleva **92 días** vencido · Saldo: $45,200 USD
+> 👉 [Ver detalle] [Marcar en gestión] [Snooze 7 días]
+
+**Ventaja:** Power BI/Tableau tienen alertas por email/Teams. Nadie tiene alertas por WhatsApp con contexto B2B México.
+
+---
+
+### **Nivel 2 — Efecto de Red (imposible de copiar sin clientes: 24-36 meses)**
+
+#### 2.1 Benchmarks sectoriales anónimos
+Con 200+ clientes en el mismo sector, puedes generar datos que **no existen en ningún otro lado**:
+
+> "Tu DSO (Days Sales Outstanding) es **47 días** vs promedio industria distribución México: **31 días** — estás 16 días por encima. Top 25% del sector tiene DSO < 22 días."
+
+Ningún competidor puede ofrecer esto sin la misma base de clientes.  
+**Cuanto más clientes, más preciso el benchmark → más valor → más clientes. Flywheel.**
+
+---
+
+#### 2.2 IA entrenada en datos B2B México
+GPT-4 genérico no sabe:
+- Que "quincena" afecta patrones de cobro los días 15 y último de mes
+- Que en puentes largos (semana santa, 15 sept) las ventas caen 30-40%
+- Que en distribución ferretera el Q4 es el más fuerte por construcción
+- Que en México los clientes pagan a 45-60 días aunque el crédito sea 30
+
+**Fine-tuning + RAG con datos propios** → IA que da recomendaciones que ningún modelo genérico puede dar.
+
+---
+
+### **Nivel 3 — Switching Costs (una vez implementado, no salen: día 1)**
+
+#### 3.1 Workflows de cobranza integrados
+No solo "ver" la cartera — **actuar** desde el dashboard:
+- Enviar recordatorio de cobro al cliente (email/WhatsApp)
+- Asignar factura a gestor de cobranza
+- Registrar promesa de pago con fecha
+- Escalar a dirección si no paga en X días
+
+Cuando el equipo empieza a registrar sus acciones en Fradma, los datos históricos de gestión quedan ahí. **No pueden migrar sin perder el historial de cobranza.**
+
+---
+
+#### 3.2 Reportes regulatorios automatizados
+- Reporte de cartera para bancos (líneas de crédito, factoraje)
+- Auxiliar de cuentas por cobrar formato SAT
+- Análisis de riesgo para aseguradoras de crédito (Atradius, Coface)
+
+Estos formatos son específicos de México y una vez que el contador los usa regularmente, cambiar de herramienta significa volver a configurar todo.
+
+---
+
+### **Scorecard de Moat — Qué tan difícil es copiar cada elemento**
+
+| Iniciativa | Tiempo para copiar | Costo para copiar | Valor para cliente | Prioridad |
+|------------|-------------------|-------------------|--------------------|-----------|
+| Conectores Aspel/ContPAQi | 12-18 meses | Alto | 🔴 Crítico | **#1** |
+| Alertas WhatsApp Business | 3-6 meses | Medio | 🔴 Crítico | **#2** |
+| Benchmarks sectoriales | 24-36 meses* | Muy alto* | 🔴 Crítico | **#3** |
+| Integración SAT/CFDI | 18-24 meses | Muy alto | 🟠 Alto | **#4** |
+| Workflows cobranza integrados | 6-12 meses | Medio | 🟠 Alto | **#5** |
+| IA fine-tuned B2B México | 24-36 meses* | Muy alto* | 🟠 Alto | **#6** |
+| Reportes regulatorios MX | 6-12 meses | Medio | 🟡 Medio | **#7** |
+
+*Requieren base de clientes grande, no solo desarrollo
+
+---
+
+### **Resumen ejecutivo — Las 3 apuestas principales**
+
+```
+HOY (ventaja de velocidad):
+└── Especialización + setup 5 min + precio → ganar clientes rápido
+
+6-12 MESES (ventaja de integración):
+└── Aspel/ContPAQi + WhatsApp alerts → switching cost real
+
+24-36 MESES (ventaja de datos):  
+└── Benchmarks sectoriales + IA mexicana → imposible de replicar sin clientes
+```
+
+**La ventana crítica:** Capturar 300-500 clientes antes de que un competidor decida atacar el segmento. Con esa base de datos, el moat se vuelve defensible permanentemente.
 
 ---
 
 ## 🆕 Estado Actual vs Competencia — Febrero 2026
+
+### **Mejoras implementadas esta semana (build feb-23-2026)**
+
+| Feature | Estado Anterior | Estado Actual | Impacto Competitivo |
+|---------|----------------|---------------|---------------------|
+| **CxC Score - % Vigente** | ❌ Siempre mostraba 0% | ✅ Correcto (73.7% vigente) | Paridad con NetSuite/SAP |
+| **Multi-sheet Excel (VIGENTES + VENCIDAS)** | ❌ Leía hoja incorrecta | ✅ Prioriza hojas específicas | Ventaja vs Excel manual |
+| **Análisis IA contexto** | ❌ Global en sidebar (todas las vistas) | ✅ Solo en Reporte Ejecutivo | Experiencia limpia vs Tableau Pulse |
+| **Período análisis IA** | ❌ Fijo al período visible | ✅ Configurable: mes/trimestre/año/histórico/personalizado | Igual que Power BI Copilot |
+| **Comparación YoY en IA** | ❌ Usaba delta de 16 días (incorrecto) | ✅ YoY real: período actual vs mismo período año anterior | Paridad con Tableau/Qlik |
+| **Transparencia cálculo IA** | ❌ Caja negra | ✅ Expander "Detalle del cálculo" con montos y método | **Ventaja única vs todos** |
+| **Dirigido a** (perfil receptor) | ❌ No existía | ✅ CEO / CFO / Dir. Comercial / Gte. Cobranza | **Ventaja única vs todos** |
+
+### **Scorecard General Actualizado**
+
+| Dimensión | Fradma (antes) | **Fradma (hoy)** | Power BI | Tableau | Qlik |
+|-----------|---------------|-----------------|---------|---------|------|
+| **Precisión métricas CxC** | ⚠️ 6/10 | **✅ 9/10** | 7/10* | 7/10* | 7/10* |
+| **IA contextualizada por rol** | ⚠️ 5/10 | **✅ 9/10** | 4/10 | 4/10 | 5/10 |
+| **Período análisis IA configurable** | ❌ 2/10 | **✅ 9/10** | 7/10 | 6/10 | 6/10 |
+| **Transparencia / auditoría IA** | ❌ 1/10 | **✅ 9/10** | 3/10 | 3/10 | 4/10 |
+| **Setup time** | ✅ 10/10 | **✅ 10/10** | 3/10 | 2/10 | 3/10 |
+| **Especialización B2B México** | ✅ 10/10 | **✅ 10/10** | 3/10 | 3/10 | 3/10 |
+| **Precio/valor** | ✅ 10/10 | **✅ 10/10** | 5/10 | 4/10 | 4/10 |
+
+*requieren configuración manual para CxC
+
 
 ### **Mejoras implementadas esta semana (build feb-23-2026)**
 
