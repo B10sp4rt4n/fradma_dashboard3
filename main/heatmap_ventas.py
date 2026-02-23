@@ -339,8 +339,9 @@ def run(df):
             
             # Preparar datos para el pie chart
             if total_lineas_disponibles > top_n_lineas:
-                top_lineas_pie = ventas_linea.head(top_n_lineas).copy()
-                otros = ventas_linea.iloc[top_n_lineas:].sum()
+                # Tomar n-1 líneas para dejar espacio a "Otros" (total = n segmentos)
+                top_lineas_pie = ventas_linea.head(top_n_lineas - 1).copy()
+                otros = ventas_linea.iloc[top_n_lineas - 1:].sum()
                 # Agregar "Otros" como una nueva entrada
                 top_lineas_pie = pd.concat([top_lineas_pie, pd.Series({'Otros': otros})])
             else:
