@@ -31,8 +31,8 @@ gestor_cache = GestorCache()  # TTL se especifica en cada llamada a obtener_o_ca
 # Configuración de página con tema mejorado
 st.set_page_config(
     layout="wide",
-    page_title="Dashboard Analítico",
-    page_icon="📊",
+    page_title="Cima Analytics",
+    page_icon="�",
     initial_sidebar_state="expanded"
 )
 
@@ -61,9 +61,9 @@ if not st.session_state["app_autenticado"]:
         st.markdown(
             """
             <div style='text-align:center; margin-bottom:12px;'>
-                <span style='font-size:56px;'>📊</span><br>
-                <span style='font-size:28px; font-weight:700; color:#0b1f3a;'>Dashboard Analítico</span><br>
-                <span style='font-size:14px; color:#6b7280;'>Sistema Integrado de Análisis</span>
+                <span style='font-size:56px;'>�</span><br>
+                <span style='font-size:28px; font-weight:700; color:#0b1f3a;'>Cima Analytics</span><br>
+                <span style='font-size:14px; color:#6b7280;'>Plataforma de Análisis de Ventas y CxC</span>
             </div>
             """,
             unsafe_allow_html=True,
@@ -189,11 +189,11 @@ st.markdown("""
 col_logo, col_title = st.columns([1, 4])
 
 with col_logo:
-    st.markdown("# 📊")
+    st.markdown("# �")
 
 with col_title:
-    st.title("Dashboard Analítico")
-    st.caption("Sistema Integrado de Análisis de Ventas y CxC")
+    st.title("Cima Analytics")
+    st.caption("Plataforma de Análisis de Ventas y CxC")
 
 st.markdown("---")
 
