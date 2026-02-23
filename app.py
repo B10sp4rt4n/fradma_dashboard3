@@ -6,6 +6,11 @@ from unidecode import unidecode
 
 # Cargar variables de entorno desde .env (si existe)
 load_dotenv()
+
+# Logo por defecto (incluido en el repositorio)
+_LOGO_PATH = os.path.join(os.path.dirname(__file__), "Logo de CIMA Analytics y SynAppsSys.png")
+_DEFAULT_LOGO = open(_LOGO_PATH, "rb").read() if os.path.exists(_LOGO_PATH) else None
+
 from main import main_kpi, main_comparativo, heatmap_ventas
 from main import kpi_cpc, reporte_ejecutivo, ytd_lineas, reporte_consolidado
 from main import vendedores_cxc
@@ -58,11 +63,13 @@ if not st.session_state["app_autenticado"]:
     st.markdown("<br><br>", unsafe_allow_html=True)
     col_l, col_c, col_r = st.columns([1, 1.2, 1])
     with col_c:
+        if _DEFAULT_LOGO:
+            st.image(_DEFAULT_LOGO, use_container_width=True)
+        else:
+            st.markdown("<div style='text-align:center;font-size:56px;'>📈</div>", unsafe_allow_html=True)
         st.markdown(
             """
             <div style='text-align:center; margin-bottom:12px;'>
-                <span style='font-size:56px;'>�</span><br>
-                <span style='font-size:28px; font-weight:700; color:#0b1f3a;'>Cima Analytics</span><br>
                 <span style='font-size:14px; color:#6b7280;'>Plataforma de Análisis de Ventas y CxC</span>
             </div>
             """,
@@ -191,6 +198,8 @@ col_logo, col_title = st.columns([1, 4])
 with col_logo:
     if st.session_state.get("company_logo"):
         st.image(st.session_state["company_logo"], use_container_width=True)
+    elif _DEFAULT_LOGO:
+        st.image(_DEFAULT_LOGO, use_container_width=True)
     else:
         st.markdown("# 📈")
 
