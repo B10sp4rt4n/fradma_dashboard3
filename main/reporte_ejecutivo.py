@@ -1001,12 +1001,18 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
                             crecimiento_ia = variacion_ventas
                             debug_crec = {"metodo": f"EXCEPCION: {ex_crec}", "valor": variacion_ventas}
                     
-                    # DEBUG
-                    with st.expander("🔍 DEBUG tendencia IA", expanded=True):
-                        st.write(f"**periodo_seleccionado:** {periodo_seleccionado}")
-                        st.write(f"**df_ia filas:** {len(df_ia)}")
+                    # Detalle del cálculo — transparencia en la comparación
+                    with st.expander("📊 Detalle del cálculo de crecimiento", expanded=False):
+                        st.write(f"**Período seleccionado:** {periodo_seleccionado}")
+                        st.write(f"**Registros de ventas analizados:** {len(df_ia):,}")
                         for k, v in debug_crec.items():
-                            st.write(f"**{k}:** {v}")
+                            label = {"metodo": "Método de comparación", "ventas_actual": "Ventas período actual",
+                                     "ventas_anterior": "Ventas período anterior", "crecimiento_calculado": "Crecimiento YoY",
+                                     "valor": "Valor usado"}.get(k, k)
+                            if isinstance(v, float):
+                                st.write(f"**{label}:** {v:+.2f}%" if "crecimiento" in k or "valor" in k else f"**{label}:** ${v:,.0f}")
+                            else:
+                                st.write(f"**{label}:** {v}")
                     if len(df_ia) > 0 and 'linea_de_negocio' in df_ia.columns:
                         ventas_por_linea = df_ia.groupby('linea_de_negocio')['valor_usd'].sum()
                         top_linea_ventas = ventas_por_linea.idxmax() if len(ventas_por_linea) > 0 else "N/A"
