@@ -64,9 +64,7 @@ if not st.session_state["app_autenticado"]:
     col_l, col_c, col_r = st.columns([1, 1.2, 1])
     with col_c:
         if _DEFAULT_LOGO:
-            lc1, lc2, lc3 = st.columns([1, 1, 1])
-            with lc2:
-                st.image(_DEFAULT_LOGO, use_container_width=True)
+            st.image(_DEFAULT_LOGO, width=300)
         else:
             st.markdown("<div style='text-align:center;font-size:56px;'>📈</div>", unsafe_allow_html=True)
         st.markdown(
@@ -199,13 +197,9 @@ col_logo, col_title = st.columns([1, 4])
 
 with col_logo:
     if st.session_state.get("company_logo"):
-        hc1, hc2, hc3 = st.columns([1, 2, 0])
-        with hc1:
-            st.image(st.session_state["company_logo"], use_container_width=True)
+        st.image(st.session_state["company_logo"], width=120)
     elif _DEFAULT_LOGO:
-        hc1, hc2, hc3 = st.columns([1, 2, 0])
-        with hc1:
-            st.image(_DEFAULT_LOGO, use_container_width=True)
+        st.image(_DEFAULT_LOGO, width=120)
     else:
         st.markdown("# 📈")
 
