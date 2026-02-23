@@ -1087,28 +1087,47 @@ if menu == "🎯 Reporte Ejecutivo":
                 # Obtener datos de CxC
                 archivo_excel = st.session_state["archivo_excel"]
                 xls = pd.ExcelFile(archivo_excel)
+                hojas = xls.sheet_names
                 
-                # Buscar hoja de CxC
-                hoja_cxc = None
-                for nombre_hoja in xls.sheet_names:
-                    if "cxc" in nombre_hoja.lower() or "cuenta" in nombre_hoja.lower() or "cobrar" in nombre_hoja.lower():
-                        hoja_cxc = nombre_hoja
-                        break
-                
-                if hoja_cxc:
-                    df_cxc_raw = pd.read_excel(xls, sheet_name=hoja_cxc)
+                # Prioridad 1: Usar hojas específicas de CxC (igual que KPI CxC)
+                if "CXC VIGENTES" in hojas and "CXC VENCIDAS" in hojas:
+                    df_vigentes = pd.read_excel(xls, sheet_name='CXC VIGENTES')
+                    df_vencidas = pd.read_excel(xls, sheet_name='CXC VENCIDAS')
                     
-                    # Normalizar columnas
-                    df_cxc = df_cxc_raw.copy()
-                    nuevas_columnas = []
-                    for col in df_cxc.columns:
-                        col_str = str(col).lower().strip().replace(" ", "_")
-                        col_str = unidecode(col_str)
-                        nuevas_columnas.append(col_str)
-                    df_cxc.columns = nuevas_columnas
+                    # Normalizar columnas para ambas hojas
+                    for df_temp in [df_vigentes, df_vencidas]:
+                        nuevas_columnas = []
+                        for col in df_temp.columns:
+                            col_str = str(col).lower().strip().replace(" ", "_")
+                            col_str = unidecode(col_str)
+                            nuevas_columnas.append(col_str)
+                        df_temp.columns = nuevas_columnas
+                    
+                    # Combinar ambas hojas
+                    df_cxc = pd.concat([df_vigentes, df_vencidas], ignore_index=True, sort=False)
+                    
+                # Prioridad 2: Buscar hoja genérica de CxC
                 else:
-                    # Si no hay hoja específica, crear DataFrame vacío
-                    df_cxc = pd.DataFrame(columns=['cliente', 'saldo_adeudado', 'dias_vencido'])
+                    hoja_cxc = None
+                    for nombre_hoja in hojas:
+                        if "cxc" in nombre_hoja.lower() or "cuenta" in nombre_hoja.lower() or "cobrar" in nombre_hoja.lower():
+                            hoja_cxc = nombre_hoja
+                            break
+                    
+                    if hoja_cxc:
+                        df_cxc_raw = pd.read_excel(xls, sheet_name=hoja_cxc)
+                        
+                        # Normalizar columnas
+                        df_cxc = df_cxc_raw.copy()
+                        nuevas_columnas = []
+                        for col in df_cxc.columns:
+                            col_str = str(col).lower().strip().replace(" ", "_")
+                            col_str = unidecode(col_str)
+                            nuevas_columnas.append(col_str)
+                        df_cxc.columns = nuevas_columnas
+                    else:
+                        # Si no hay hoja específica, crear DataFrame vacío
+                        df_cxc = pd.DataFrame(columns=['cliente', 'saldo_adeudado', 'dias_vencido'])
                 
                 # Pasar parámetros de IA premium al módulo
                 ia_habilitada = st.session_state.get("ia_premium_activada", False)
@@ -1181,26 +1200,45 @@ elif menu == "📊 Reporte Consolidado":
                 # Obtener datos de CxC (misma lógica que Reporte Ejecutivo)
                 archivo_excel = st.session_state["archivo_excel"]
                 xls = pd.ExcelFile(archivo_excel)
+                hojas = xls.sheet_names
                 
-                # Buscar hoja de CxC
-                hoja_cxc = None
-                for nombre_hoja in xls.sheet_names:
-                    if "cxc" in nombre_hoja.lower() or "cuenta" in nombre_hoja.lower() or "cobrar" in nombre_hoja.lower():
-                        hoja_cxc = nombre_hoja
-                        break
-                
-                if hoja_cxc:
-                    df_cxc_raw = pd.read_excel(xls, sheet_name=hoja_cxc)
-                    # Normalizar columnas
-                    df_cxc = df_cxc_raw.copy()
-                    nuevas_columnas = []
-                    for col in df_cxc.columns:
-                        col_str = str(col).lower().strip().replace(" ", "_")
-                        col_str = unidecode(col_str)
-                        nuevas_columnas.append(col_str)
-                    df_cxc.columns = nuevas_columnas
+                # Prioridad 1: Usar hojas específicas de CxC (igual que KPI CxC)
+                if "CXC VIGENTES" in hojas and "CXC VENCIDAS" in hojas:
+                    df_vigentes = pd.read_excel(xls, sheet_name='CXC VIGENTES')
+                    df_vencidas = pd.read_excel(xls, sheet_name='CXC VENCIDAS')
+                    
+                    # Normalizar columnas para ambas hojas
+                    for df_temp in [df_vigentes, df_vencidas]:
+                        nuevas_columnas = []
+                        for col in df_temp.columns:
+                            col_str = str(col).lower().strip().replace(" ", "_")
+                            col_str = unidecode(col_str)
+                            nuevas_columnas.append(col_str)
+                        df_temp.columns = nuevas_columnas
+                    
+                    # Combinar ambas hojas
+                    df_cxc = pd.concat([df_vigentes, df_vencidas], ignore_index=True, sort=False)
+                    
+                # Prioridad 2: Buscar hoja genérica de CxC
                 else:
-                    df_cxc = pd.DataFrame()
+                    hoja_cxc = None
+                    for nombre_hoja in hojas:
+                        if "cxc" in nombre_hoja.lower() or "cuenta" in nombre_hoja.lower() or "cobrar" in nombre_hoja.lower():
+                            hoja_cxc = nombre_hoja
+                            break
+                    
+                    if hoja_cxc:
+                        df_cxc_raw = pd.read_excel(xls, sheet_name=hoja_cxc)
+                        # Normalizar columnas
+                        df_cxc = df_cxc_raw.copy()
+                        nuevas_columnas = []
+                        for col in df_cxc.columns:
+                            col_str = str(col).lower().strip().replace(" ", "_")
+                            col_str = unidecode(col_str)
+                            nuevas_columnas.append(col_str)
+                        df_cxc.columns = nuevas_columnas
+                    else:
+                        df_cxc = pd.DataFrame()
                 
                 # Pasar parámetros de IA premium al módulo
                 ia_habilitada = st.session_state.get("ia_premium_activada", False)
