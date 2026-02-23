@@ -973,12 +973,12 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
                                 st.caption("No disponible")
                         
                         st.caption(f"🤖 Análisis generado por OpenAI GPT-4o-mini · Dirigido a: {tipo_receptor}")
-                else:
-                    st.warning("⚠️ No se pudo generar el análisis de IA")
+                    else:
+                        st.warning("⚠️ No se pudo generar el análisis de IA")
                     
-            except Exception as e:
-                st.error(f"❌ Error al generar insights ejecutivos de IA: {str(e)}")
-                logger.error(f"Error en análisis de IA ejecutivo: {e}", exc_info=True)
+                except Exception as e:
+                    st.error(f"❌ Error al generar insights ejecutivos de IA: {str(e)}")
+                    logger.error(f"Error en análisis de IA ejecutivo: {e}", exc_info=True)
         
         st.markdown("---")
     
