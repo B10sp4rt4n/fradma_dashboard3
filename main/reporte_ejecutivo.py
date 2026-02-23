@@ -940,47 +940,73 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
                     if periodo_seleccionado == "Personalizado" and fecha_desde_ia and fecha_hasta_ia:
                         periodo_etiqueta = f"{fecha_desde_ia} → {fecha_hasta_ia}"
                     
-                    # Calcular tendencia real: pendiente de regresión lineal mensual
-                    # Esto refleja lo que muestra la gráfica de evolución de ventas
+                    # Calcular crecimiento real: período seleccionado vs mismo período año anterior
                     crecimiento_ia = variacion_ventas  # fallback
-                    ventas_mensuales_debug = None
-                    pendiente_debug = None
-                    y_mean_debug = None
+                    debug_crec = {"metodo": "fallback (variacion_ventas)", "valor": variacion_ventas}
                     if "fecha" in df_ia.columns and "valor_usd" in df_ia.columns and len(df_ia) > 0:
                         try:
-                            ventas_mensuales = (
-                                df_ia.groupby(df_ia["fecha"].dt.to_period("M"))["valor_usd"]
-                                .sum()
-                                .reset_index()
-                            )
-                            ventas_mensuales.columns = ["mes", "ventas"]
-                            ventas_mensuales_debug = ventas_mensuales.copy()
-                            if len(ventas_mensuales) >= 3:
-                                x = range(len(ventas_mensuales))
-                                y = ventas_mensuales["ventas"].values
-                                n = len(x)
-                                x_mean = sum(x) / n
-                                y_mean = sum(y) / n
-                                y_mean_debug = y_mean
-                                pendiente = sum((xi - x_mean) * (yi - y_mean) for xi, yi in zip(x, y)) / \
-                                            sum((xi - x_mean) ** 2 for xi in x)
-                                pendiente_debug = pendiente
-                                if y_mean > 0:
-                                    crecimiento_ia = (pendiente / y_mean) * 100
-                        except Exception as ex_tend:
+                            hoy_ts = pd.Timestamp.today().normalize()
+                            ventas_periodo = df_ia["valor_usd"].sum()
+                            
+                            if periodo_seleccionado == "Año actual":
+                                # YTD 2026 vs YTD 2025 (mismo rango de fechas)
+                                inicio_ytd = pd.Timestamp(hoy_ts.year, 1, 1)
+                                inicio_ytd_ant = pd.Timestamp(hoy_ts.year - 1, 1, 1)
+                                fin_ytd_ant = hoy_ts - pd.DateOffset(years=1)
+                                ventas_ant = df_ventas[
+                                    (df_ventas["fecha"] >= inicio_ytd_ant) &
+                                    (df_ventas["fecha"] <= fin_ytd_ant)
+                                ]["valor_usd"].sum()
+                                debug_crec = {"metodo": f"YTD {hoy_ts.year} vs YTD {hoy_ts.year-1}",
+                                              "ventas_actual": ventas_periodo, "ventas_anterior": ventas_ant}
+                                
+                            elif periodo_seleccionado == "Último mes":
+                                # Mes actual vs mismo mes año anterior
+                                inicio_mes_ant = hoy_ts.replace(year=hoy_ts.year - 1, day=1)
+                                fin_mes_ant = hoy_ts - pd.DateOffset(years=1)
+                                ventas_ant = df_ventas[
+                                    (df_ventas["fecha"] >= inicio_mes_ant) &
+                                    (df_ventas["fecha"] <= fin_mes_ant)
+                                ]["valor_usd"].sum()
+                                debug_crec = {"metodo": "mes actual vs mismo mes año anterior",
+                                              "ventas_actual": ventas_periodo, "ventas_anterior": ventas_ant}
+                                
+                            elif periodo_seleccionado == "Último trimestre":
+                                # Últimos 3 meses vs mismos 3 meses año anterior
+                                inicio_trim_ant = hoy_ts - pd.DateOffset(months=15)
+                                fin_trim_ant = hoy_ts - pd.DateOffset(months=12)
+                                ventas_ant = df_ventas[
+                                    (df_ventas["fecha"] >= inicio_trim_ant) &
+                                    (df_ventas["fecha"] <= fin_trim_ant)
+                                ]["valor_usd"].sum()
+                                debug_crec = {"metodo": "trimestre actual vs mismo trimestre año anterior",
+                                              "ventas_actual": ventas_periodo, "ventas_anterior": ventas_ant}
+                                
+                            elif periodo_seleccionado in ("Todo el historial", "Personalizado"):
+                                # Comparar año completo más reciente vs año anterior
+                                anio_max = df_ia["fecha"].dt.year.max()
+                                ventas_anio_actual = df_ia[df_ia["fecha"].dt.year == anio_max]["valor_usd"].sum()
+                                ventas_anio_ant = df_ia[df_ia["fecha"].dt.year == anio_max - 1]["valor_usd"].sum()
+                                ventas_periodo = ventas_anio_actual
+                                ventas_ant = ventas_anio_ant
+                                debug_crec = {"metodo": f"año {anio_max} vs año {anio_max-1}",
+                                              "ventas_actual": ventas_anio_actual, "ventas_anterior": ventas_anio_ant}
+                            else:
+                                ventas_ant = 0
+                            
+                            if ventas_ant > 0:
+                                crecimiento_ia = ((ventas_periodo - ventas_ant) / ventas_ant) * 100
+                                debug_crec["crecimiento_calculado"] = crecimiento_ia
+                        except Exception as ex_crec:
                             crecimiento_ia = variacion_ventas
-                            pendiente_debug = f"EXCEPCION: {ex_tend}"
+                            debug_crec = {"metodo": f"EXCEPCION: {ex_crec}", "valor": variacion_ventas}
                     
-                    # DEBUG — mostrar internos del cálculo
+                    # DEBUG
                     with st.expander("🔍 DEBUG tendencia IA", expanded=True):
                         st.write(f"**periodo_seleccionado:** {periodo_seleccionado}")
                         st.write(f"**df_ia filas:** {len(df_ia)}")
-                        st.write(f"**variacion_ventas (fallback):** {variacion_ventas:.2f}%")
-                        st.write(f"**y_mean (venta mensual media):** {y_mean_debug}")
-                        st.write(f"**pendiente (USD/mes):** {pendiente_debug}")
-                        st.write(f"**crecimiento_ia FINAL:** {crecimiento_ia:.2f}%")
-                        if ventas_mensuales_debug is not None:
-                            st.dataframe(ventas_mensuales_debug.astype(str))
+                        for k, v in debug_crec.items():
+                            st.write(f"**{k}:** {v}")
                     if len(df_ia) > 0 and 'linea_de_negocio' in df_ia.columns:
                         ventas_por_linea = df_ia.groupby('linea_de_negocio')['valor_usd'].sum()
                         top_linea_ventas = ventas_por_linea.idxmax() if len(ventas_por_linea) > 0 else "N/A"
