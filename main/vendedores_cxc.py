@@ -921,41 +921,51 @@ def run():
     # ── Alertas automáticas ───────────────────────────────────────────────────
     st.subheader("🚨 Alertas de Vendedores")
 
-    alertas_vend = []
+    hay_alertas = False
     for _, row in df_cruce.iterrows():
         if row["pct_vencida"] > 40:
-            # Construir desglose de composición de deuda vencida
-            composicion_parts = []
-            if row["pct_1_30"] > 0:
-                composicion_parts.append(f"1-30d: {row['pct_1_30']:.1f}%")
-            if row["pct_31_60"] > 0:
-                composicion_parts.append(f"31-60d: {row['pct_31_60']:.1f}%")
-            if row["pct_61_90"] > 0:
-                composicion_parts.append(f"61-90d: {row['pct_61_90']:.1f}%")
-            if row["pct_mas_90"] > 0:
-                composicion_parts.append(f">90d: {row['pct_mas_90']:.1f}%")
-            
-            composicion_str = " | ".join(composicion_parts) if composicion_parts else "Sin desglose"
-            
-            alertas_vend.append(
+            hay_alertas = True
+            st.markdown(
                 f"🔴 **{row['vendedor']}**: {row['pct_vencida']:.1f}% de su cartera está vencida "
-                f"(${row['cartera_vencida']:,.0f}) — Composición: {composicion_str}"
+                f"(${row['cartera_vencida']:,.0f})"
             )
+            
+            # Construir tabla de composición
+            composicion_data = []
+            if row["pct_vigente"] > 0:
+                composicion_data.append({"Categoría": "Vigente (≤0 días)", "Porcentaje": f"{row['pct_vigente']:.1f}%"})
+            if row["pct_1_30"] > 0:
+                composicion_data.append({"Categoría": "1-30 días", "Porcentaje": f"{row['pct_1_30']:.1f}%"})
+            if row["pct_31_60"] > 0:
+                composicion_data.append({"Categoría": "31-60 días", "Porcentaje": f"{row['pct_31_60']:.1f}%"})
+            if row["pct_61_90"] > 0:
+                composicion_data.append({"Categoría": "61-90 días", "Porcentaje": f"{row['pct_61_90']:.1f}%"})
+            if row["pct_mas_90"] > 0:
+                composicion_data.append({"Categoría": ">90 días (Crítica)", "Porcentaje": f"{row['pct_mas_90']:.1f}%"})
+            
+            if composicion_data:
+                df_comp = pd.DataFrame(composicion_data)
+                st.dataframe(df_comp, hide_index=True, use_container_width=False)
+            
+            st.write("")  # Espacio entre alertas
+            
         elif row["ratio_deuda_ventas"] > 20:
-            alertas_vend.append(
+            hay_alertas = True
+            st.markdown(
                 f"🟠 **{row['vendedor']}**: ratio deuda/ventas de {row['ratio_deuda_ventas']:.1f}% "
                 f"— posible aceptación de clientes de alto riesgo"
             )
+            st.write("")
+            
         elif row["dias_max"] > 120:
-            alertas_vend.append(
+            hay_alertas = True
+            st.markdown(
                 f"🟡 **{row['vendedor']}**: factura más vencida con {row['dias_max']:.0f} días — "
                 "revisar cliente específico"
             )
+            st.write("")
 
-    if alertas_vend:
-        for a in alertas_vend:
-            st.markdown(a)
-    else:
+    if not hay_alertas:
         st.success("✅ Todos los vendedores tienen indicadores dentro de rangos normales.")
 
     # ── Descarga CSV ──────────────────────────────────────────────────────────
