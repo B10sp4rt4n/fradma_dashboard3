@@ -258,7 +258,22 @@ def _calcular_metricas_cxc(df_cxc):
         # IMPORTANTE: Usar preparar_datos_cxc para excluir registros pagados
         # calcular_metricas_basicas espera recibir SOLO registros no pagados (df_np)
         from utils.cxc_helper import preparar_datos_cxc
-        _, df_cxc_no_pagados, _ = preparar_datos_cxc(df_cxc)
+        import streamlit as st
+        _, df_cxc_no_pagados, mask_pagado = preparar_datos_cxc(df_cxc)
+        
+        with st.expander("🔍 DEBUG CxC", expanded=True):
+            st.write(f"**df_cxc filas:** {len(df_cxc)}")
+            st.write(f"**columnas:** {list(df_cxc.columns)}")
+            st.write(f"**pagados excluidos:** {mask_pagado.sum()}")
+            st.write(f"**df_np filas:** {len(df_cxc_no_pagados)}")
+            if 'saldo_adeudado' in df_cxc_no_pagados.columns:
+                st.write(f"**saldo_adeudado total:** {df_cxc_no_pagados['saldo_adeudado'].sum():,.2f}")
+                st.write(f"**dias_overdue muestra:** {df_cxc_no_pagados['dias_overdue'].describe().to_dict()}")
+                vigente = df_cxc_no_pagados[df_cxc_no_pagados['dias_overdue'] <= 0]['saldo_adeudado'].sum()
+                st.write(f"**vigente calculado:** {vigente:,.2f}")
+            else:
+                st.write("⚠️ NO EXISTE saldo_adeudado")
+                st.write(f"columnas en df_np: {list(df_cxc_no_pagados.columns)}")
         
         # Ahora calcular métricas sobre datos no pagados
         metricas = calcular_metricas_basicas(df_cxc_no_pagados)
