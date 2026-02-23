@@ -382,6 +382,46 @@ Excel   |                              |
 
 ---
 
-**Última actualización:** 19 febrero 2026  
+**Última actualización:** 23 febrero 2026  
 **Próxima revisión:** Trimestral (Q2 2026)  
 **Responsable:** @B10sp4rt4n
+
+---
+
+## 🆕 Estado Actual vs Competencia — Febrero 2026
+
+### **Mejoras implementadas esta semana (build feb-23-2026)**
+
+| Feature | Estado Anterior | Estado Actual | Impacto Competitivo |
+|---------|----------------|---------------|---------------------|
+| **CxC Score - % Vigente** | ❌ Siempre mostraba 0% | ✅ Correcto (73.7% vigente) | Paridad con NetSuite/SAP |
+| **Multi-sheet Excel (VIGENTES + VENCIDAS)** | ❌ Leía hoja incorrecta | ✅ Prioriza hojas específicas | Ventaja vs Excel manual |
+| **Análisis IA contexto** | ❌ Global en sidebar (todas las vistas) | ✅ Solo en Reporte Ejecutivo | Experiencia limpia vs Tableau Pulse |
+| **Período análisis IA** | ❌ Fijo al período visible | ✅ Configurable: mes/trimestre/año/histórico/personalizado | Igual que Power BI Copilot |
+| **Comparación YoY en IA** | ❌ Usaba delta de 16 días (incorrecto) | ✅ YoY real: período actual vs mismo período año anterior | Paridad con Tableau/Qlik |
+| **Transparencia cálculo IA** | ❌ Caja negra | ✅ Expander "Detalle del cálculo" con montos y método | **Ventaja única vs todos** |
+| **Dirigido a** (perfil receptor) | ❌ No existía | ✅ CEO / CFO / Dir. Comercial / Gte. Cobranza | **Ventaja única vs todos** |
+
+### **Scorecard General Actualizado**
+
+| Dimensión | Fradma (antes) | **Fradma (hoy)** | Power BI | Tableau | Qlik |
+|-----------|---------------|-----------------|---------|---------|------|
+| **Precisión métricas CxC** | ⚠️ 6/10 | **✅ 9/10** | 7/10* | 7/10* | 7/10* |
+| **IA contextualizada por rol** | ⚠️ 5/10 | **✅ 9/10** | 4/10 | 4/10 | 5/10 |
+| **Período análisis IA configurable** | ❌ 2/10 | **✅ 9/10** | 7/10 | 6/10 | 6/10 |
+| **Transparencia / auditoría IA** | ❌ 1/10 | **✅ 9/10** | 3/10 | 3/10 | 4/10 |
+| **Setup time** | ✅ 10/10 | **✅ 10/10** | 3/10 | 2/10 | 3/10 |
+| **Especialización B2B México** | ✅ 10/10 | **✅ 10/10** | 3/10 | 3/10 | 3/10 |
+| **Precio/valor** | ✅ 10/10 | **✅ 10/10** | 5/10 | 4/10 | 4/10 |
+
+*requieren configuración manual para CxC
+
+### **Diferenciador nuevo único: Análisis IA con auditoría**
+
+Ningún competidor muestra cómo calculó el crecimiento que le pasó a la IA:
+- **Power BI Copilot:** caja negra, no explica qué períodos compara
+- **Tableau Pulse:** caja negra, genera alertas sin mostrar el cálculo
+- **Fradma:** expander "📊 Detalle del cálculo" → muestra método, ventas período actual, ventas período anterior, % resultante
+
+Esto elimina el problema de "la IA inventó los resultados" — el usuario puede auditar el dato antes de tomar decisiones.
+
