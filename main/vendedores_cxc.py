@@ -921,51 +921,58 @@ def run():
     # ── Alertas automáticas ───────────────────────────────────────────────────
     st.subheader("🚨 Alertas de Vendedores")
 
-    hay_alertas = False
+    # Vendedores con alta morosidad (>40% vencida)
+    vendedores_alerta = df_cruce[df_cruce["pct_vencida"] > 40].copy()
+    
+    if len(vendedores_alerta) > 0:
+        st.markdown("🔴 **Vendedores con alta morosidad (>40% de cartera vencida)**")
+        
+        # Crear tabla de composición
+        tabla_alertas = vendedores_alerta[[
+            'vendedor', 'cartera_vencida', 'pct_vencida',
+            'pct_vigente', 'pct_1_30', 'pct_31_60', 'pct_61_90', 'pct_mas_90'
+        ]].copy()
+        
+        # Ordenar por % vencida descendente
+        tabla_alertas = tabla_alertas.sort_values('pct_vencida', ascending=False)
+        
+        # Formatear para display
+        tabla_alertas['cartera_vencida'] = tabla_alertas['cartera_vencida'].apply(lambda x: f"${x:,.0f}")
+        tabla_alertas['pct_vencida'] = tabla_alertas['pct_vencida'].apply(lambda x: f"{x:.1f}%")
+        tabla_alertas['pct_vigente'] = tabla_alertas['pct_vigente'].apply(lambda x: f"{x:.1f}%")
+        tabla_alertas['pct_1_30'] = tabla_alertas['pct_1_30'].apply(lambda x: f"{x:.1f}%")
+        tabla_alertas['pct_31_60'] = tabla_alertas['pct_31_60'].apply(lambda x: f"{x:.1f}%")
+        tabla_alertas['pct_61_90'] = tabla_alertas['pct_61_90'].apply(lambda x: f"{x:.1f}%")
+        tabla_alertas['pct_mas_90'] = tabla_alertas['pct_mas_90'].apply(lambda x: f"{x:.1f}%")
+        
+        # Renombrar columnas
+        tabla_alertas.columns = [
+            'Vendedor', 'Monto Vencido', '% Vencida Total',
+            'Vigente', '1-30 días', '31-60 días', '61-90 días', '>90 días'
+        ]
+        
+        st.dataframe(tabla_alertas, hide_index=True, use_container_width=True)
+        st.write("")
+    
+    # Otras alertas
+    otras_alertas = []
     for _, row in df_cruce.iterrows():
-        if row["pct_vencida"] > 40:
-            hay_alertas = True
-            st.markdown(
-                f"🔴 **{row['vendedor']}**: {row['pct_vencida']:.1f}% de su cartera está vencida "
-                f"(${row['cartera_vencida']:,.0f})"
-            )
-            
-            # Construir tabla de composición
-            composicion_data = []
-            if row["pct_vigente"] > 0:
-                composicion_data.append({"Categoría": "Vigente (≤0 días)", "Porcentaje": f"{row['pct_vigente']:.1f}%"})
-            if row["pct_1_30"] > 0:
-                composicion_data.append({"Categoría": "1-30 días", "Porcentaje": f"{row['pct_1_30']:.1f}%"})
-            if row["pct_31_60"] > 0:
-                composicion_data.append({"Categoría": "31-60 días", "Porcentaje": f"{row['pct_31_60']:.1f}%"})
-            if row["pct_61_90"] > 0:
-                composicion_data.append({"Categoría": "61-90 días", "Porcentaje": f"{row['pct_61_90']:.1f}%"})
-            if row["pct_mas_90"] > 0:
-                composicion_data.append({"Categoría": ">90 días (Crítica)", "Porcentaje": f"{row['pct_mas_90']:.1f}%"})
-            
-            if composicion_data:
-                df_comp = pd.DataFrame(composicion_data)
-                st.dataframe(df_comp, hide_index=True, use_container_width=False)
-            
-            st.write("")  # Espacio entre alertas
-            
-        elif row["ratio_deuda_ventas"] > 20:
-            hay_alertas = True
-            st.markdown(
+        if row["pct_vencida"] <= 40 and row["ratio_deuda_ventas"] > 20:
+            otras_alertas.append(
                 f"🟠 **{row['vendedor']}**: ratio deuda/ventas de {row['ratio_deuda_ventas']:.1f}% "
                 f"— posible aceptación de clientes de alto riesgo"
             )
-            st.write("")
-            
-        elif row["dias_max"] > 120:
-            hay_alertas = True
-            st.markdown(
+        elif row["pct_vencida"] <= 40 and row["dias_max"] > 120:
+            otras_alertas.append(
                 f"🟡 **{row['vendedor']}**: factura más vencida con {row['dias_max']:.0f} días — "
                 "revisar cliente específico"
             )
-            st.write("")
-
-    if not hay_alertas:
+    
+    if otras_alertas:
+        for a in otras_alertas:
+            st.markdown(a)
+    
+    if len(vendedores_alerta) == 0 and len(otras_alertas) == 0:
         st.success("✅ Todos los vendedores tienen indicadores dentro de rangos normales.")
 
     # ── Descarga CSV ──────────────────────────────────────────────────────────
