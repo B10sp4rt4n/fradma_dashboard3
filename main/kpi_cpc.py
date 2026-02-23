@@ -41,6 +41,20 @@ MAPA_COLORES_RIESGO = {
     '>180 días': '#B71C1C'        # Rojo oscuro - Crítico severo
 }
 
+
+def _detectar_col_vendedor(df: pd.DataFrame) -> str | None:
+    """
+    Detecta la columna de vendedor/agente/ejecutivo en el dataframe.
+    Retorna el nombre original de la columna encontrada o None.
+    """
+    # Búsqueda case-insensitive
+    for col in df.columns:
+        col_lower = str(col).lower()
+        if col_lower in ("vendedor", "agente", "ejecutivo", "seller", "rep", "representante"):
+            return col
+    return None
+
+
 def run(archivo, habilitar_ia=False, openai_api_key=None):
     """
     Función principal del módulo KPI CxC (Cuentas por Cobrar).
@@ -91,10 +105,15 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
             elif 'razon_social' in df.columns:
                 df.rename(columns={'razon_social': 'deudor'}, inplace=True)
             
+            # 3. Detectar y normalizar columna de vendedor/agente
+            col_vendedor = _detectar_col_vendedor(df)
+            if col_vendedor and col_vendedor != 'vendedor':
+                df.rename(columns={col_vendedor: 'vendedor'}, inplace=True)
+                logger.info(f"Columna '{col_vendedor}' renombrada a 'vendedor'")
+            
             # Renombrar otras columnas importantes
             column_rename = {
                 'linea_de_negocio': 'linea_negocio',
-                'vendedor': 'vendedor',
                 'saldo': 'saldo_adeudado',
                 'saldo_usd': 'saldo_adeudado',
                 'estatus': 'estatus',
