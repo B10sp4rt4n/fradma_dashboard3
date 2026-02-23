@@ -940,24 +940,29 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
                     if periodo_seleccionado == "Personalizado" and fecha_desde_ia and fecha_hasta_ia:
                         periodo_etiqueta = f"{fecha_desde_ia} → {fecha_hasta_ia}"
                     
-                    # Calcular crecimiento real del período seleccionado vs período anterior equivalente
-                    # NO usar variacion_ventas del reporte (que compara días parciales del mes actual)
+                    # Calcular tendencia real: pendiente de regresión lineal mensual
+                    # Esto refleja lo que muestra la gráfica de evolución de ventas
                     crecimiento_ia = variacion_ventas  # fallback
-                    if "fecha" in df_ventas.columns and "valor_usd" in df_ventas.columns and len(df_ia) > 0:
+                    if "fecha" in df_ia.columns and "valor_usd" in df_ia.columns and len(df_ia) > 0:
                         try:
-                            fecha_inicio_ia = df_ia["fecha"].min()
-                            fecha_fin_ia = df_ia["fecha"].max()
-                            duracion = fecha_fin_ia - fecha_inicio_ia
-                            # Período anterior de igual duración
-                            fecha_inicio_ant = fecha_inicio_ia - duracion - pd.Timedelta(days=1)
-                            fecha_fin_ant = fecha_inicio_ia - pd.Timedelta(days=1)
-                            df_ant = df_ventas[
-                                (df_ventas["fecha"] >= fecha_inicio_ant) &
-                                (df_ventas["fecha"] <= fecha_fin_ant)
-                            ]
-                            ventas_ant = df_ant["valor_usd"].sum()
-                            if ventas_ant > 0:
-                                crecimiento_ia = ((total_ventas_periodo - ventas_ant) / ventas_ant) * 100
+                            ventas_mensuales = (
+                                df_ia.groupby(df_ia["fecha"].dt.to_period("M"))["valor_usd"]
+                                .sum()
+                                .reset_index()
+                            )
+                            ventas_mensuales.columns = ["mes", "ventas"]
+                            if len(ventas_mensuales) >= 3:
+                                x = range(len(ventas_mensuales))
+                                y = ventas_mensuales["ventas"].values
+                                # Pendiente vía regresión lineal simple
+                                n = len(x)
+                                x_mean = sum(x) / n
+                                y_mean = sum(y) / n
+                                pendiente = sum((xi - x_mean) * (yi - y_mean) for xi, yi in zip(x, y)) / \
+                                            sum((xi - x_mean) ** 2 for xi in x)
+                                # Expresar como % de crecimiento mensual promedio respecto a la media
+                                if y_mean > 0:
+                                    crecimiento_ia = (pendiente / y_mean) * 100
                         except Exception:
                             crecimiento_ia = variacion_ventas
                     if len(df_ia) > 0 and 'linea_de_negocio' in df_ia.columns:
