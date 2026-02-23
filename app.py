@@ -31,7 +31,7 @@ gestor_cache = GestorCache()  # TTL se especifica en cada llamada a obtener_o_ca
 # Configuración de página con tema mejorado
 st.set_page_config(
     layout="wide",
-    page_title="Fradma Dashboard",
+    page_title="Dashboard Analítico",
     page_icon="📊",
     initial_sidebar_state="expanded"
 )
@@ -62,7 +62,7 @@ if not st.session_state["app_autenticado"]:
             """
             <div style='text-align:center; margin-bottom:12px;'>
                 <span style='font-size:56px;'>📊</span><br>
-                <span style='font-size:28px; font-weight:700; color:#0b1f3a;'>Fradma Dashboard</span><br>
+                <span style='font-size:28px; font-weight:700; color:#0b1f3a;'>Dashboard Analítico</span><br>
                 <span style='font-size:14px; color:#6b7280;'>Sistema Integrado de Análisis</span>
             </div>
             """,
@@ -192,7 +192,7 @@ with col_logo:
     st.markdown("# 📊")
 
 with col_title:
-    st.title("Fradma Dashboard")
+    st.title("Dashboard Analítico")
     st.caption("Sistema Integrado de Análisis de Ventas y CxC")
 
 st.markdown("---")

@@ -171,9 +171,9 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
         df_deudas, df_np, mask_pagado = preparar_datos_cxc(df_deudas)
 
         # ---------------------------------------------------------------------
-        # REPORTE DE DEUDAS A FRADMA (USANDO COLUMNA CORRECTA)
+        # REPORTE DE CUENTAS POR COBRAR (USANDO COLUMNA CORRECTA)
         # ---------------------------------------------------------------------
-        st.header("📊 Reporte de Deudas a Fradma")
+        st.header("📊 Reporte de Cuentas por Cobrar")
         
         # KPIs principales usando función helper
         metricas = calcular_metricas_basicas(df_np)
@@ -186,7 +186,7 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
         
         # Métricas principales en columnas
         col1, col2, col3 = st.columns(3)
-        col1.metric("💰 Total Adeudado a Fradma", f"${total_adeudado:,.2f}")
+        col1.metric("💰 Total Adeudado", f"${total_adeudado:,.2f}")
         col2.metric("✅ Cartera Vigente", f"${vigente:,.2f}", 
                    delta=f"{(vigente/total_adeudado*100):.1f}%")
         col3.metric("⚠️ Deuda Vencida", f"${vencida:,.2f}", 
@@ -1999,7 +1999,7 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
             st.download_button(
                 label="📥 Descargar Reporte Excel",
                 data=buffer.getvalue(),
-                file_name=f"reporte_cxc_fradma_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                file_name=f"reporte_cxc_{datetime.now().strftime('%Y%m%d')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 help="Descarga reporte completo con todas las hojas de análisis"
             )
@@ -2066,7 +2066,7 @@ De acuerdo con nuestros registros, el saldo pendiente corresponde a facturas ven
 **DATOS DE CONTACTO:**
 
 - Departamento: Crédito y Cobranza
-- Email: cobranza@fradma.com
+- Email: cobranza@empresa.com
 - Teléfono: (XXX) XXX-XXXX
 - Horario: Lunes a Viernes, 9:00 AM - 6:00 PM
 
@@ -2074,7 +2074,6 @@ Agradecemos su pronta atención y quedamos a su disposición para cualquier acla
 
 Atentamente,
 
-**FRADMA**
 Departamento de Crédito y Cobranza
 
 ---
@@ -2130,7 +2129,7 @@ Departamento de Crédito y Cobranza
             st.caption(f"${deuda_alto_riesgo:,.2f}")
         
         st.write("**Observaciones Clave:**")
-        st.write(f"- Fradma tiene **${total_adeudado:,.2f}** en cuentas por cobrar")
+        st.write(f"- Total en cuentas por cobrar: **${total_adeudado:,.2f}**")
         st.write(f"- El principal deudor es **{top_deudores.index[0]}** con **${top_deudores.iloc[0]:,.2f}** ({(top_deudores.iloc[0]/total_adeudado*100):.1f}% del total)")
         
         if 'dias_vencido' in df_deudas.columns:
