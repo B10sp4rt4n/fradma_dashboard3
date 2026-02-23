@@ -26,9 +26,14 @@ from utils.filters import (
 )
 from utils.export_helper import crear_excel_metricas_cxc, crear_reporte_html
 from utils.cache_helper import GestorCache, decorador_medicion_tiempo
+from utils.auth import AuthManager, UserRole, get_current_user
+from utils.admin_panel import mostrar_info_usuario, mostrar_panel_usuarios, mostrar_panel_configuracion
 
 # Configurar logger de la aplicación
 logger = configurar_logger("dashboard_app", nivel="INFO")
+
+# Inicializar gestor de autenticación
+auth_manager = AuthManager()
 
 # Inicializar gestor de caché
 gestor_cache = GestorCache()  # TTL se especifica en cada llamada a obtener_o_calcular()
@@ -42,15 +47,14 @@ st.set_page_config(
 )
 
 # =====================================================================
-# PANTALLA DE ACCESO — LOGIN GATE
+# PANTALLA DE LOGIN — MULTI-USUARIO
 # =====================================================================
 
-APP_PASSWORD = os.getenv("APP_PASSWORD", "fradma2026")
+if "user" not in st.session_state:
+    st.session_state["user"] = None
 
-if "app_autenticado" not in st.session_state:
-    st.session_state["app_autenticado"] = False
-
-if not st.session_state["app_autenticado"]:
+if st.session_state["user"] is None:
+    # Ocultar sidebar y menús en pantalla de login
     st.markdown("""
     <style>
         [data-testid="stSidebar"] { display: none !important; }
@@ -62,29 +66,76 @@ if not st.session_state["app_autenticado"]:
 
     st.markdown("<br><br>", unsafe_allow_html=True)
     col_l, col_c, col_r = st.columns([1, 1.2, 1])
+    
     with col_c:
+        # Logo
         if _DEFAULT_LOGO:
             import base64
             b64 = base64.b64encode(_DEFAULT_LOGO).decode()
-            st.markdown(f'<div style="display:flex;justify-content:center;"><img src="data:image/png;base64,{b64}" width="300"></div>', unsafe_allow_html=True)
+            st.markdown(
+                f'<div style="display:flex;justify-content:center;">' 
+                f'<img src="data:image/png;base64,{b64}" width="300"></div>',
+                unsafe_allow_html=True
+            )
         else:
             st.markdown("<div style='text-align:center;font-size:56px;'>📈</div>", unsafe_allow_html=True)
+        
         st.markdown(
             """
-            <div style='text-align:center; margin-bottom:12px;'>
-                <span style='font-size:14px; color:#6b7280;'>Plataforma de Análisis de Ventas y CxC</span>
+            <div style='text-align:center; margin:20px 0;'>
+                <h3>Cima Analytics</h3>
+                <p style='font-size:14px; color:#6b7280;'>Plataforma de Análisis de Ventas y CxC</p>
             </div>
             """,
-            unsafe_allow_html=True,
+            unsafe_allow_html=True
         )
-        pwd = st.text_input("Contraseña", type="password", key="login_pwd", label_visibility="collapsed",
-                            placeholder="Contraseña de acceso")
-        if st.button("Ingresar →", use_container_width=True, type="primary"):
-            if pwd == APP_PASSWORD:
-                st.session_state["app_autenticado"] = True
-                st.rerun()
-            else:
-                st.error("Contraseña incorrecta. Intenta de nuevo.")
+        
+        # Formulario de login
+        with st.form("login_form", clear_on_submit=False):
+            username = st.text_input(
+                "Usuario",
+                placeholder="Tu usuario",
+                label_visibility="collapsed",
+                key="login_username"
+            )
+            
+            password = st.text_input(
+                "Contraseña",
+                type="password",
+                placeholder="Tu contraseña",
+                label_visibility="collapsed",
+                key="login_password"
+            )
+            
+            submitted = st.form_submit_button(
+                "Ingresar →",
+                use_container_width=True,
+                type="primary"
+            )
+            
+            if submitted:
+                if not username or not password:
+                    st.error("❌ Ingresa usuario y contraseña")
+                else:
+                    user = auth_manager.authenticate(username, password)
+                    
+                    if user:
+                        st.session_state["user"] = user
+                        logger.info(f"Login exitoso: {user.username} ({user.role})")
+                        st.success(f"¡Bienvenido, {user.name}! 👋")
+                        st.rerun()
+                    else:
+                        logger.warning(f"Login fallido para: {username}")
+                        st.error("❌ Usuario o contraseña incorrectos")
+        
+        # Ayuda
+        st.markdown("""
+        <div style='text-align:center; margin-top:30px; font-size:12px; color:#999;'>
+            💡 Primer acceso: usuario <code>admin</code>, password por defecto<br>
+            ¿Problemas? Contacta al administrador
+        </div>
+        """, unsafe_allow_html=True)
+    
     st.stop()
 
 # =====================================================================
@@ -458,15 +509,9 @@ def validar_columnas_requeridas(df):
 # SIDEBAR: CARGA DE ARCHIVO Y FILTROS GLOBALES
 # =====================================================================
 
-# Botón cerrar sesión (parte superior del sidebar)
+# Info de usuario y panel de administración en sidebar
 with st.sidebar:
-    col_user, col_logout = st.columns([3, 2])
-    with col_user:
-        st.markdown("<small style='color:#aaa;'>🔒 Sesión activa</small>", unsafe_allow_html=True)
-    with col_logout:
-        if st.button("Salir", key="btn_logout", use_container_width=True):
-            st.session_state["app_autenticado"] = False
-            st.rerun()
+    mostrar_info_usuario()  # Muestra info del usuario + botón logout + panel admin
 
     # ----------------------------------------------------------------
     # CONFIGURACIÓN: logo de empresa
@@ -1031,18 +1076,30 @@ else:
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🧭 Navegación")
 
+# Opciones de menú base
+opciones_menu = [
+    "🎯 Reporte Ejecutivo",
+    "📊 Reporte Consolidado",
+    "📈 KPIs Generales",
+    "📊 Comparativo Año vs Año",
+    "📉 YTD por Línea de Negocio",
+    "🔥 Heatmap Ventas",
+    "💳 KPI Cartera CxC",
+    "👥 Vendedores + CxC"
+]
+
+# Si el usuario es admin, agregar opciones de administración
+user = get_current_user()
+if user and user.can_manage_users():
+    opciones_menu.extend([
+        "---",  # Separador visual
+        "⚙️ Gestión de Usuarios",
+        "🔧 Configuración"
+    ])
+
 menu = st.sidebar.radio(
     "Selecciona una vista:",
-    [
-        "🎯 Reporte Ejecutivo",
-        "📊 Reporte Consolidado",
-        "📈 KPIs Generales",
-        "📊 Comparativo Año vs Año",
-        "📉 YTD por Línea de Negocio",
-        "🔥 Heatmap Ventas",
-        "💳 KPI Cartera CxC",
-        "👥 Vendedores + CxC"
-    ],
+    opciones_menu,
     help="Selecciona el módulo de análisis que deseas visualizar"
 )
 
@@ -1122,6 +1179,25 @@ with st.sidebar.expander("ℹ️ Acerca de esta vista"):
         - Score de calidad de cartera
         - Ranking mixto volumen + calidad
         - Alertas automáticas por vendedor
+        """)
+    elif menu == "⚙️ Gestión de Usuarios":
+        st.markdown("""
+        **Panel de administración de usuarios** (Solo Admin)
+        
+        - Crear nuevos usuarios
+        - Modificar roles y permisos
+        - Resetear contraseñas
+        - Ver historial de accesos
+        - Activar/desactivar usuarios
+        """)
+    elif menu == "🔧 Configuración":
+        st.markdown("""
+        **Configuración del sistema** (Solo Admin)
+        
+        - Umbrales de CxC
+        - Parámetros de alertas
+        - Configuración de reportes
+        - Ajustes generales
         """)
 
 # =====================================================================
@@ -1319,3 +1395,19 @@ elif menu == "📊 Reporte Consolidado":
         reporte_consolidado.run(st.session_state["df"], None, habilitar_ia=ia_habilitada, openai_api_key=api_key)
     else:
         st.warning("⚠️ Primero sube un archivo para visualizar el Reporte Consolidado.")
+
+elif menu == "⚙️ Gestión de Usuarios":
+    user = get_current_user()
+    if user and user.can_manage_users():
+        mostrar_panel_usuarios()
+    else:
+        st.error("❌ No tienes permisos para acceder a esta sección")
+        st.info("💡 Solo los administradores pueden gestionar usuarios")
+
+elif menu == "🔧 Configuración":
+    user = get_current_user()
+    if user and user.can_manage_users():
+        mostrar_panel_configuracion()
+    else:
+        st.error("❌ No tienes permisos para acceder a esta sección")
+        st.info("💡 Solo los administradores pueden modificar la configuración del sistema")

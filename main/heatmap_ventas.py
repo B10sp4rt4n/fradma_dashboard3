@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 import io
 import unicodedata
+from utils.auth import get_current_user
 
 def run(df):
     st.title("📊 Heatmap de Ventas (Entrada Genérica)")
@@ -383,14 +384,21 @@ def run(df):
                 df_lineas_tabla['% del Total'] = df_lineas_tabla['% del Total'].apply(lambda x: f"{x:.2f}%")
                 st.dataframe(df_lineas_tabla, use_container_width=True, hide_index=True)
 
-        buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-            df_filtered.to_excel(writer, sheet_name='Heatmap_Filtrado')
-        buffer.seek(0)
+        user = get_current_user()
+        puede_exportar = user and user.can_export()
+        
+        if puede_exportar:        
+            buffer = io.BytesIO()
+            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                df_filtered.to_excel(writer, sheet_name='Heatmap_Filtrado')
+            buffer.seek(0)
 
-        st.download_button(
-            label="📥 Descargar tabla filtrada como Excel",
-            data=buffer.getvalue(),
-            file_name="heatmap_filtrado.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+            st.download_button(
+                label="📥 Descargar tabla filtrada como Excel",
+                data=buffer.getvalue(),
+                file_name="heatmap_filtrado.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+        else:
+            st.warning("⚠️ Las funciones de exportación están disponibles solo para usuarios con rol **Analyst** o **Admin**")
+            st.info("💡 Contacta al administrador para solicitar acceso")

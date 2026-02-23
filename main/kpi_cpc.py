@@ -27,6 +27,7 @@ from utils.data_normalizer import normalizar_columnas
 from utils.ai_helper import generar_resumen_ejecutivo_cxc, validar_api_key
 from utils.filters_helper import obtener_lineas_filtradas, generar_contexto_filtros
 from utils.logger import configurar_logger
+from utils.auth import get_current_user
 
 # Configurar logger
 logger = configurar_logger("kpi_cpc", nivel="INFO")
@@ -659,7 +660,10 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
         # =====================================================================
         # FASE 2.5: ANÁLISIS EJECUTIVO CON IA - FUNCIÓN PREMIUM
         # =====================================================================
-        if habilitar_ia and openai_api_key:
+        user = get_current_user()
+        puede_usar_ia = user and user.can_use_ai()
+        
+        if habilitar_ia and openai_api_key and puede_usar_ia:
             st.header("🤖 Análisis Ejecutivo con IA Premium")
             
             # Obtener filtros configurados
@@ -826,6 +830,9 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                 st.caption("👆 Presiona el botón para generar análisis personalizado según tus filtros")
             
             st.write("---")
+        elif habilitar_ia and openai_api_key and not puede_usar_ia:
+            st.warning("⚠️ El análisis con IA está disponible solo para usuarios con rol **Analyst** o **Admin**")
+            st.info("💡 Contacta al administrador para solicitar acceso a funciones de IA")
         
         # =====================================================================
         # FASE 3: ALERTAS INTELIGENTES Y PRIORIDADES DE COBRANZA
@@ -1071,41 +1078,50 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
         # ── Descarga Excel semanal ───────────────────────────────────────────
         st.write("---")
         st.write("### 📥 Exportar Lista de Cobranza Semanal")
-        col_dl1, col_dl2 = st.columns([2, 3])
+        
+        user = get_current_user()
+        puede_exportar = user and user.can_export()
+        
+        if puede_exportar:
+            col_dl1, col_dl2 = st.columns([2, 3])
 
-        with col_dl1:
-            nivel_export = st.multiselect(
-                "Incluir niveles en el Excel:",
-                options=["🔴 URGENTE", "🟠 ALTA", "🟡 MEDIA", "🟢 BAJA"],
-                default=["🔴 URGENTE", "🟠 ALTA"],
-                key="nivel_export_cobranza",
-            )
+            with col_dl1:
+                nivel_export = st.multiselect(
+                    "Incluir niveles en el Excel:",
+                    options=["🔴 URGENTE", "🟠 ALTA", "🟡 MEDIA", "🟢 BAJA"],
+                    default=["🔴 URGENTE", "🟠 ALTA"],
+                    key="nivel_export_cobranza",
+                )
 
-        with col_dl2:
-            st.write("")
-            st.write("")
-            if nivel_export:
-                df_export_cobranza = df_prioridades[
-                    df_prioridades['nivel'].isin(nivel_export)
-                ].copy()
-                try:
-                    excel_bytes = crear_excel_cobranza_semanal(df_export_cobranza)
-                    fecha_archivo = datetime.now().strftime("%Y%m%d")
-                    st.download_button(
-                        label=f"⬇️ Descargar Excel ({len(df_export_cobranza)} clientes)",
-                        data=excel_bytes,
-                        file_name=f"cobranza_semanal_{fecha_archivo}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True,
-                    )
-                    st.caption(
-                        "El Excel incluye: semáforo de colores por prioridad, "
-                        "acción recomendada y columnas vacías para Gestor, Notas y Fecha de Compromiso."
-                    )
-                except Exception as e:
-                    st.error(f"Error al generar Excel: {e}")
-            else:
-                st.info("Selecciona al menos un nivel para habilitar la descarga.")
+            with col_dl2:
+                st.write("")
+                st.write("")
+                if nivel_export:
+                    df_export_cobranza = df_prioridades[
+                        df_prioridades['nivel'].isin(nivel_export)
+                    ].copy()
+                    try:
+                        excel_bytes = crear_excel_cobranza_semanal(df_export_cobranza)
+                        fecha_archivo = datetime.now().strftime("%Y%m%d")
+                        st.download_button(
+                            label=f"⬇️ Descargar Excel ({len(df_export_cobranza)} clientes)",
+                            data=excel_bytes,
+                            file_name=f"cobranza_semanal_{fecha_archivo}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True,
+                        )
+                        st.caption(
+                            "El Excel incluye: semáforo de colores por prioridad, "
+                            "acción recomendada y columnas vacías para Gestor, Notas y Fecha de Compromiso."
+                        )
+                    except Exception as e:
+                        st.error(f"Error al generar Excel: {e}")
+                else:
+                    st.info("Selecciona al menos un nivel para habilitar la descarga.")
+        else:
+            st.warning("⚠️ Las funciones de exportación están disponibles solo para usuarios con rol **Analyst** o **Admin**")
+            st.info("💡 Contacta al administrador para solicitar acceso")
+
 
         st.write("---")
 
@@ -1996,13 +2012,19 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
             
             buffer.seek(0)
             
-            st.download_button(
-                label="📥 Descargar Reporte Excel",
-                data=buffer.getvalue(),
-                file_name=f"reporte_cxc_{datetime.now().strftime('%Y%m%d')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                help="Descarga reporte completo con todas las hojas de análisis"
-            )
+            user = get_current_user()
+            puede_exportar = user and user.can_export()
+            
+            if puede_exportar:
+                st.download_button(
+                    label="📥 Descargar Reporte Excel",
+                    data=buffer.getvalue(),
+                    file_name=f"reporte_cxc_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    help="Descarga reporte completo con todas las hojas de análisis"
+                )
+            else:
+                st.warning("⚠️ Solo usuarios con rol **Analyst** o **Admin** pueden exportar reportes")
         
         with col_export2:
             st.subheader("📄 Plantillas de Cobranza")
@@ -2088,12 +2110,18 @@ Departamento de Crédito y Cobranza
                 )
                 
                 # Botón para descargar carta en txt
-                st.download_button(
-                    label="📄 Descargar Carta (.txt)",
-                    data=carta,
-                    file_name=f"carta_cobranza_{cliente_carta.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.txt",
-                    mime="text/plain"
-                )
+                user = get_current_user()
+                puede_exportar = user and user.can_export()
+                
+                if puede_exportar:
+                    st.download_button(
+                        label="📄 Descargar Carta (.txt)",
+                        data=carta,
+                        file_name=f"carta_cobranza_{cliente_carta.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.txt",
+                        mime="text/plain"
+                    )
+                else:
+                    st.warning("⚠️ Solo usuarios con rol **Analyst** o **Admin** pueden exportar cartas")
         
         st.write("---")
 

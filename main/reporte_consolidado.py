@@ -23,10 +23,10 @@ from utils.filters_helper import obtener_lineas_filtradas, generar_contexto_filt
 from utils.cxc_helper import calcular_metricas_basicas, calcular_score_salud, clasificar_score_salud, calcular_dias_overdue
 from utils.data_normalizer import normalizar_datos_cxc, normalizar_columna_fecha, detectar_columnas_cxc
 from utils.constantes import DIAS_CREDITO_ESTANDAR
+from utils.auth import get_current_user
 
 # Configurar logger
 logger = configurar_logger("reporte_consolidado", nivel="INFO")
-
 
 def agrupar_por_periodo(df, tipo_periodo='mensual'):
     """
@@ -391,7 +391,17 @@ def _renderizar_analisis_ia(total_ventas, crecimiento_ventas_pct, metricas_cxc,
         lineas_filtrar: Lista de líneas de negocio filtradas o None
         config: Dict con configuración (habilitar_ia, api_key, tipo_periodo)
     """
+    # Verificar permisos de usuario
+    user = get_current_user()
+    puede_usar_ia = user and user.can_use_ai()
+    
     if not config['habilitar_ia'] or not config['api_key']:
+        return
+    
+    if not puede_usar_ia:
+        st.markdown("---")
+        st.warning("⚠️ El análisis con IA está disponible solo para usuarios con rol **Analyst** o **Admin**")
+        st.info("💡 Contacta al administrador para solicitar acceso a funciones de IA")
         return
     
     # Asegurar que lineas_filtrar sea siempre una lista

@@ -20,6 +20,7 @@ import io
 import os
 from utils.logger import configurar_logger
 from utils.ai_helper import generar_resumen_ejecutivo_ytd, validar_api_key
+from utils.auth import get_current_user
 
 # Configurar logger para este módulo
 logger = configurar_logger("ytd_lineas", nivel="INFO")
@@ -866,7 +867,10 @@ def run(df, habilitar_ia=False, openai_api_key=None):
     # =====================================================================
     # SECCIÓN 2.5: ANÁLISIS EJECUTIVO CON IA - FUNCIÓN PREMIUM
     # =====================================================================
-    if habilitar_ia and openai_api_key:
+    user = get_current_user()
+    puede_usar_ia = user and user.can_use_ai()
+    
+    if habilitar_ia and openai_api_key and puede_usar_ia:
         st.header("🤖 Análisis Ejecutivo con IA Premium")
         
         # Obtener filtros configurados
@@ -1027,6 +1031,9 @@ def run(df, habilitar_ia=False, openai_api_key=None):
             st.caption("👆 Presiona el botón para generar análisis personalizado según tus filtros")
         
         st.markdown("---")
+    elif habilitar_ia and openai_api_key and not puede_usar_ia:
+        st.warning("⚠️ El análisis con IA está disponible solo para usuarios con rol **Analyst** o **Admin**")
+        st.info("💡 Contacta al administrador para solicitar acceso a funciones de IA")
     
     # =====================================================================
     # SECCIÓN 3: VISUALIZACIONES PRINCIPALES
@@ -1370,43 +1377,50 @@ def run(df, habilitar_ia=False, openai_api_key=None):
     # =====================================================================
     # SECCIÓN 5: EXPORTACIÓN
     # =====================================================================
-    st.header("📥 Exportar Reporte")
+    user = get_current_user()
+    puede_exportar = user and user.can_export()
     
-    col_exp1, col_exp2 = st.columns(2)
-    
-    with col_exp1:
-        st.subheader("📊 Excel Completo")
-        comparativo_df_export = None
-        if año_anterior:
-            usar_año_completo = (modo_comparacion == "año_completo")
-            _, comparativo_df_export = crear_grafico_barras_comparativo(
-                df_filtrado, 
-                año_actual, 
-                año_anterior,
-                usar_año_completo_anterior=usar_año_completo
+    if puede_exportar:
+        st.header("📥 Exportar Reporte")
+        
+        col_exp1, col_exp2 = st.columns(2)
+        
+        with col_exp1:
+            st.subheader("📊 Excel Completo")
+            comparativo_df_export = None
+            if año_anterior:
+                usar_año_completo = (modo_comparacion == "año_completo")
+                _, comparativo_df_export = crear_grafico_barras_comparativo(
+                    df_filtrado, 
+                    año_actual, 
+                    año_anterior,
+                    usar_año_completo_anterior=usar_año_completo
+                )
+            
+            excel_buffer = exportar_excel_ytd(df_ytd_actual, año_actual, comparativo_df_export)
+            
+            st.download_button(
+                label="📥 Descargar Excel",
+                data=excel_buffer,
+                file_name=f"Reporte_YTD_{año_actual}_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
+            st.caption(f"Incluye: Resumen ejecutivo, desglose mensual, top productos y clientes")
         
-        excel_buffer = exportar_excel_ytd(df_ytd_actual, año_actual, comparativo_df_export)
-        
-        st.download_button(
-            label="📥 Descargar Excel",
-            data=excel_buffer,
-            file_name=f"Reporte_YTD_{año_actual}_{datetime.now().strftime('%Y%m%d')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-        st.caption(f"Incluye: Resumen ejecutivo, desglose mensual, top productos y clientes")
-    
-    with col_exp2:
-        st.subheader("📊 Datos Brutos")
-        csv_buffer = df_ytd_actual.to_csv(index=False).encode('utf-8')
-        
-        st.download_button(
-            label="📥 Descargar CSV",
-            data=csv_buffer,
-            file_name=f"Datos_YTD_{año_actual}_{datetime.now().strftime('%Y%m%d')}.csv",
-            mime="text/csv"
-        )
-        st.caption(f"Datos crudos YTD {año_actual} ({len(df_ytd_actual)} registros)")
+        with col_exp2:
+            st.subheader("📊 Datos Brutos")
+            csv_buffer = df_ytd_actual.to_csv(index=False).encode('utf-8')
+            
+            st.download_button(
+                label="📥 Descargar CSV",
+                data=csv_buffer,
+                file_name=f"Datos_YTD_{año_actual}_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv"
+            )
+            st.caption(f"Datos crudos YTD {año_actual} ({len(df_ytd_actual)} registros)")
+    else:
+        st.warning("⚠️ Las funciones de exportación están disponibles solo para usuarios con rol **Analyst** o **Admin**")
+        st.info("💡 Contacta al administrador para solicitar acceso a exportaciones")
     
     # Footer con información
     st.markdown("---")

@@ -5,6 +5,7 @@ import plotly.express as px
 from utils.ai_helper_premium import generar_insights_kpi_vendedores
 from utils.filters_helper import obtener_lineas_filtradas, generar_contexto_filtros
 from utils.logger import configurar_logger
+from utils.auth import get_current_user
 
 logger = configurar_logger("main_kpi", nivel="INFO")
 
@@ -337,7 +338,11 @@ def run(habilitar_ia=False, openai_api_key=None):
     # =====================================================================
     # ANÁLISIS PREMIUM CON IA - INSIGHTS ESTRATÉGICOS DE EQUIPO DE VENTAS
     # =====================================================================
-    if habilitar_ia and openai_api_key:
+    # Verificar que el usuario tenga permisos para usar IA
+    user = get_current_user()
+    puede_usar_ia = user and user.can_use_ai()
+    
+    if habilitar_ia and openai_api_key and puede_usar_ia:
         st.header("🤖 Insights Estratégicos Premium - Equipo de Ventas")
         
         # Obtener filtros configurados
@@ -482,6 +487,9 @@ def run(habilitar_ia=False, openai_api_key=None):
             st.caption("👆 Presiona el botón para generar insights estratégicos según tus filtros")
         
         st.markdown("---")
+    elif habilitar_ia and openai_api_key and not puede_usar_ia:
+        st.warning("⚠️ Esta función está disponible solo para usuarios con rol **Analyst** o **Admin**")
+        st.info("💡 Contacta al administrador para solicitar acceso a análisis con IA")
     
     # =====================================================================
     # PANEL DE DEFINICIONES Y FÓRMULAS

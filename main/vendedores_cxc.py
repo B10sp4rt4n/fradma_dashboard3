@@ -18,6 +18,7 @@ from unidecode import unidecode
 import re
 
 from utils.cxc_helper import preparar_datos_cxc, calcular_dias_overdue
+from utils.auth import get_current_user
 from utils.data_normalizer import normalizar_columnas
 from utils.logger import configurar_logger
 
@@ -995,10 +996,18 @@ def run():
 
     # ── Descarga CSV ──────────────────────────────────────────────────────────
     st.write("---")
-    csv_bytes = df_cruce.to_csv(index=False).encode("utf-8")
-    st.download_button(
-        label="⬇️ Descargar tabla completa (.csv)",
-        data=csv_bytes,
-        file_name=f"vendedores_cxc_{datetime.now().strftime('%Y%m%d')}.csv",
-        mime="text/csv",
-    )
+    
+    user = get_current_user()
+    puede_exportar = user and user.can_export()
+    
+    if puede_exportar:
+        csv_bytes = df_cruce.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            label="⬇️ Descargar tabla completa (.csv)",
+            data=csv_bytes,
+            file_name=f"vendedores_cxc_{datetime.now().strftime('%Y%m%d')}.csv",
+            mime="text/csv",
+        )
+    else:
+        st.warning("⚠️ Las funciones de exportación están disponibles solo para usuarios con rol **Analyst** o **Admin**")
+        st.info("💡 Contacta al administrador para solicitar acceso")
