@@ -940,7 +940,26 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
                     if periodo_seleccionado == "Personalizado" and fecha_desde_ia and fecha_hasta_ia:
                         periodo_etiqueta = f"{fecha_desde_ia} → {fecha_hasta_ia}"
                     
-                    # Calcular línea top en ventas del período filtrado
+                    # Calcular crecimiento real del período seleccionado vs período anterior equivalente
+                    # NO usar variacion_ventas del reporte (que compara días parciales del mes actual)
+                    crecimiento_ia = variacion_ventas  # fallback
+                    if "fecha" in df_ventas.columns and "valor_usd" in df_ventas.columns and len(df_ia) > 0:
+                        try:
+                            fecha_inicio_ia = df_ia["fecha"].min()
+                            fecha_fin_ia = df_ia["fecha"].max()
+                            duracion = fecha_fin_ia - fecha_inicio_ia
+                            # Período anterior de igual duración
+                            fecha_inicio_ant = fecha_inicio_ia - duracion - pd.Timedelta(days=1)
+                            fecha_fin_ant = fecha_inicio_ia - pd.Timedelta(days=1)
+                            df_ant = df_ventas[
+                                (df_ventas["fecha"] >= fecha_inicio_ant) &
+                                (df_ventas["fecha"] <= fecha_fin_ant)
+                            ]
+                            ventas_ant = df_ant["valor_usd"].sum()
+                            if ventas_ant > 0:
+                                crecimiento_ia = ((total_ventas_periodo - ventas_ant) / ventas_ant) * 100
+                        except Exception:
+                            crecimiento_ia = variacion_ventas
                     if len(df_ia) > 0 and 'linea_de_negocio' in df_ia.columns:
                         ventas_por_linea = df_ia.groupby('linea_de_negocio')['valor_usd'].sum()
                         top_linea_ventas = ventas_por_linea.idxmax() if len(ventas_por_linea) > 0 else "N/A"
@@ -964,7 +983,7 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
                     # Generar insights consolidados con IA
                     insights = generar_insights_ejecutivo_consolidado(
                         total_ventas_periodo=total_ventas_periodo,
-                        crecimiento_ventas_pct=variacion_ventas,
+                        crecimiento_ventas_pct=crecimiento_ia,
                         score_salud_cxc=score_salud_cxc,
                         pct_morosidad=pct_vencida_total,
                         top_linea_ventas=top_linea_ventas,
@@ -1002,7 +1021,7 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
                             else:
                                 st.caption("No disponible")
                         
-                        st.caption(f"🤖 Análisis generado por OpenAI GPT-4o-mini · Dirigido a: {tipo_receptor}")
+                        st.caption(f"🤖 Análisis generado por OpenAI GPT-4o-mini · Dirigido a: {tipo_receptor} · Crecimiento calculado: {crecimiento_ia:+.1f}%")
                     else:
                         st.warning("⚠️ No se pudo generar el análisis de IA")
                     
