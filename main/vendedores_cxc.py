@@ -524,22 +524,40 @@ def run():
     )
     df_cruce = df_cruce.sort_values("ventas_totales", ascending=False).reset_index(drop=True)
 
+    # ── Calcular cobertura de matching ────────────────────────────────────────
+    total_cartera_cxc = df_np["saldo_adeudado"].sum()
+    cartera_asociada_vendedores = df_cruce["cartera_total"].sum()
+    pct_cobertura = (cartera_asociada_vendedores / total_cartera_cxc * 100) if total_cartera_cxc > 0 else 0
+    cartera_sin_asociar = total_cartera_cxc - cartera_asociada_vendedores
+
     # ── UI: Resumen general ───────────────────────────────────────────────────
     st.subheader("📊 Resumen General")
+    
+    # Mostrar alerta de cobertura si es baja
+    if pct_cobertura < 80:
+        st.info(
+            f"ℹ️ **Cobertura de matching:** {pct_cobertura:.1f}% de la cartera CxC pudo asociarse a vendedores. "
+            f"${cartera_sin_asociar:,.0f} no se pudo asociar (posibles clientes sin match o sin vendedor)."
+        )
 
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("Vendedores analizados", len(df_cruce))
     col2.metric(
         "💰 Ventas Totales",
         f"${df_cruce['ventas_totales'].sum():,.0f}",
     )
     col3.metric(
-        "📋 Cartera Total CxC",
-        f"${df_cruce['cartera_total'].sum():,.0f}",
+        "📋 Cartera Asociada",
+        f"${cartera_asociada_vendedores:,.0f}",
+        delta=f"{pct_cobertura:.1f}% de CxC total"
+    )
+    col4.metric(
+        "📊 CxC Total Sistema",
+        f"${total_cartera_cxc:,.0f}",
     )
     mejor = df_cruce.loc[df_cruce["score_calidad"].idxmax()]
-    col4.metric(
-        "🏆 Mejor Calidad Cartera",
+    col5.metric(
+        "🏆 Mejor Calidad",
         mejor["vendedor"],
         delta=f"Score {mejor['score_calidad']:.0f}/100",
     )
