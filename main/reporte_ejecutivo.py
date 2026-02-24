@@ -988,14 +988,37 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
                                               "ventas_actual": ventas_periodo, "ventas_anterior": ventas_ant}
                                 
                             elif periodo_seleccionado in ("Todo el historial", "Personalizado"):
-                                # Comparar año completo más reciente vs año anterior
+                                # Comparar YTD del año más reciente vs mismo período año anterior
+                                # Esto asegura comparar manzanas con manzanas (mismo número de días)
                                 anio_max = df_ia["fecha"].dt.year.max()
+                                fecha_max_actual = df_ia["fecha"].max()
+                                dia_del_anio = fecha_max_actual.dayofyear
+                                
+                                # Ventas YTD año actual (hasta la fecha más reciente)
                                 ventas_anio_actual = df_ia[df_ia["fecha"].dt.year == anio_max]["valor_usd"].sum()
-                                ventas_anio_ant = df_ia[df_ia["fecha"].dt.year == anio_max - 1]["valor_usd"].sum()
+                                
+                                # Ventas YTD año anterior (mismo número de días del año)
+                                inicio_anio_ant = pd.Timestamp(anio_max - 1, 1, 1)
+                                # Calcular la fecha equivalente en el año anterior (mismo día del año)
+                                try:
+                                    fin_anio_ant = pd.Timestamp(anio_max - 1, 1, 1) + pd.Timedelta(days=dia_del_anio - 1)
+                                except:
+                                    # Fallback si hay problema con años bisiestos
+                                    fin_anio_ant = pd.Timestamp(anio_max - 1, fecha_max_actual.month, fecha_max_actual.day)
+                                
+                                ventas_anio_ant = df_ia[
+                                    (df_ia["fecha"].dt.year == anio_max - 1) &
+                                    (df_ia["fecha"] <= fin_anio_ant)
+                                ]["valor_usd"].sum()
+                                
                                 ventas_periodo = ventas_anio_actual
                                 ventas_ant = ventas_anio_ant
-                                debug_crec = {"metodo": f"año {anio_max} vs año {anio_max-1}",
-                                              "ventas_actual": ventas_anio_actual, "ventas_anterior": ventas_anio_ant}
+                                debug_crec = {
+                                    "metodo": f"YTD {anio_max} (hasta {fecha_max_actual.strftime('%d/%m')}) vs YTD {anio_max-1} (mismos días)",
+                                    "ventas_actual": ventas_anio_actual, 
+                                    "ventas_anterior": ventas_anio_ant,
+                                    "dias_comparados": dia_del_anio
+                                }
                             else:
                                 ventas_ant = 0
                             
@@ -1025,9 +1048,11 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
                         for k, v in debug_crec.items():
                             label = {"metodo": "Método de comparación", "ventas_actual": "Ventas período actual",
                                      "ventas_anterior": "Ventas período anterior", "crecimiento_calculado": "Crecimiento YoY",
-                                     "valor": "Valor usado"}.get(k, k)
+                                     "valor": "Valor usado", "dias_comparados": "Días del año comparados"}.get(k, k)
                             if isinstance(v, float):
                                 st.write(f"**{label}:** {v:+.2f}%" if "crecimiento" in k or "valor" in k else f"**{label}:** ${v:,.0f}")
+                            elif isinstance(v, int):
+                                st.write(f"**{label}:** {v:,}")
                             else:
                                 st.write(f"**{label}:** {v}")
                     if len(df_ia) > 0 and 'linea_de_negocio' in df_ia.columns:
