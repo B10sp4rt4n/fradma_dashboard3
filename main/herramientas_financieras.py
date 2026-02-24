@@ -7,6 +7,7 @@ Funcionalidad:
 - Conversor de monedas en tiempo real
 - Calculadora de descuento por pronto pago
 - Calculadora DSO (Days Sales Outstanding)
+- Digestor de facturas XML (CFDI)
 - Otras calculadoras financieras de uso frecuente
 """
 
@@ -15,6 +16,9 @@ import pandas as pd
 import requests
 from datetime import datetime, timedelta
 import json
+import xml.etree.ElementTree as ET
+from io import BytesIO
+import zipfile
 from utils.logger import configurar_logger
 
 logger = configurar_logger("herramientas_financieras", nivel="INFO")
@@ -1008,6 +1012,416 @@ def mostrar_indicadores_economicos():
         st.dataframe(df_ref, use_container_width=True, hide_index=True)
 
 # =====================================================================
+# DIGESTOR DE FACTURAS XML (CFDI)
+# =====================================================================
+
+def parsear_xml_cfdi(archivo_xml):
+    """
+    Parsea un archivo XML de factura CFDI (México).
+    
+    Args:
+        archivo_xml: Archivo XML subido
+        
+    Returns:
+        dict: Diccionario con la información extraída o None si hay error
+    """
+    try:
+        # Leer contenido del archivo
+        contenido = archivo_xml.read()
+        
+        # Parsear XML
+        root = ET.fromstring(contenido)
+        
+        # Namespaces comunes en CFDI
+        ns = {
+            'cfdi': 'http://www.sat.gob.mx/cfd/4',
+            'cfdi3': 'http://www.sat.gob.mx/cfd/3',
+            'tfd': 'http://www.sat.gob.mx/TimbreFiscalDigital'
+        }
+        
+        # Intentar con namespace 4.0 o 3.3
+        if root.tag.endswith('Comprobante'):
+            # Determinar namespace
+            if 'http://www.sat.gob.mx/cfd/4' in root.tag:
+                ns_cfdi = 'cfdi'
+            else:
+                ns_cfdi = 'cfdi3'
+        else:
+            return None
+        
+        # Extraer información del comprobante
+        datos = {}
+        
+        # Atributos del comprobante
+        datos['Fecha'] = root.get('Fecha', 'N/A')
+        datos['Folio'] = root.get('Folio', 'N/A')
+        datos['Serie'] = root.get('Serie', 'N/A')
+        datos['FormaPago'] = root.get('FormaPago', 'N/A')
+        datos['MetodoPago'] = root.get('MetodoPago', 'N/A')
+        datos['TipoDeComprobante'] = root.get('TipoDeComprobante', 'N/A')
+        datos['Moneda'] = root.get('Moneda', 'MXN')
+        datos['TipoCambio'] = root.get('TipoCambio', '1.0')
+        datos['SubTotal'] = float(root.get('SubTotal', '0'))
+        datos['Total'] = float(root.get('Total', '0'))
+        
+        # Emisor
+        emisor = root.find(f'{{{ns[ns_cfdi]}}}Emisor')
+        if emisor is not None:
+            datos['EmisorRFC'] = emisor.get('Rfc', 'N/A')
+            datos['EmisorNombre'] = emisor.get('Nombre', 'N/A')
+            datos['EmisorRegimenFiscal'] = emisor.get('RegimenFiscal', 'N/A')
+        else:
+            datos['EmisorRFC'] = 'N/A'
+            datos['EmisorNombre'] = 'N/A'
+            datos['EmisorRegimenFiscal'] = 'N/A'
+        
+        # Receptor
+        receptor = root.find(f'{{{ns[ns_cfdi]}}}Receptor')
+        if receptor is not None:
+            datos['ReceptorRFC'] = receptor.get('Rfc', 'N/A')
+            datos['ReceptorNombre'] = receptor.get('Nombre', 'N/A')
+            datos['ReceptorUsoCFDI'] = receptor.get('UsoCFDI', 'N/A')
+        else:
+            datos['ReceptorRFC'] = 'N/A'
+            datos['ReceptorNombre'] = 'N/A'
+            datos['ReceptorUsoCFDI'] = 'N/A'
+        
+        # Conceptos
+        conceptos = []
+        conceptos_elem = root.find(f'{{{ns[ns_cfdi]}}}Conceptos')
+        if conceptos_elem is not None:
+            for concepto in conceptos_elem.findall(f'{{{ns[ns_cfdi]}}}Concepto'):
+                conceptos.append({
+                    'Cantidad': concepto.get('Cantidad', '0'),
+                    'Unidad': concepto.get('Unidad', concepto.get('ClaveUnidad', 'N/A')),
+                    'Descripcion': concepto.get('Descripcion', 'N/A'),
+                    'ValorUnitario': float(concepto.get('ValorUnitario', '0')),
+                    'Importe': float(concepto.get('Importe', '0'))
+                })
+        datos['Conceptos'] = conceptos
+        
+        # Impuestos
+        impuestos = root.find(f'{{{ns[ns_cfdi]}}}Impuestos')
+        if impuestos is not None:
+            datos['TotalImpuestosTrasladados'] = float(impuestos.get('TotalImpuestosTrasladados', '0'))
+            datos['TotalImpuestosRetenidos'] = float(impuestos.get('TotalImpuestosRetenidos', '0'))
+        else:
+            datos['TotalImpuestosTrasladados'] = 0
+            datos['TotalImpuestosRetenidos'] = 0
+        
+        # Complemento - Timbre Fiscal Digital
+        complemento = root.find(f'{{{ns[ns_cfdi]}}}Complemento')
+        if complemento is not None:
+            timbre = complemento.find(f'{{{ns["tfd"]}}}TimbreFiscalDigital')
+            if timbre is not None:
+                datos['UUID'] = timbre.get('UUID', 'N/A')
+                datos['FechaTimbrado'] = timbre.get('FechaTimbrado', 'N/A')
+                datos['SelloCFD'] = timbre.get('SelloCFD', 'N/A')[:50] + '...'  # Truncar
+            else:
+                datos['UUID'] = 'N/A'
+                datos['FechaTimbrado'] = 'N/A'
+        else:
+            datos['UUID'] = 'N/A'
+            datos['FechaTimbrado'] = 'N/A'
+        
+        # Calcular IVA
+        datos['IVA'] = datos['TotalImpuestosTrasladados']
+        
+        return datos
+        
+    except Exception as e:
+        logger.error(f"Error al parsear XML: {e}")
+        return None
+
+def mostrar_digestor_xml():
+    """Muestra interfaz para digerir facturas XML (CFDI)."""
+    
+    st.header("📄 Digestor de Facturas XML (CFDI)")
+    st.markdown("Extrae información de facturas electrónicas en formato XML")
+    
+    st.markdown("---")
+    
+    # Información sobre CFDI
+    with st.expander("ℹ️ ¿Qué es un CFDI y cómo usar esta herramienta?"):
+        st.markdown("""
+        **CFDI (Comprobante Fiscal Digital por Internet)** es el formato oficial de facturación electrónica en México.
+        
+        **Esta herramienta te permite:**
+        - 📤 Subir uno o múltiples archivos XML
+        - 📊 Extraer automáticamente: RFC, montos, fechas, UUID, conceptos
+        - 📥 Exportar a Excel para análisis
+        - 💰 Calcular totales y resúmenes
+        
+        **Formatos soportados:**
+        - CFDI 4.0
+        - CFDI 3.3
+        - Archivos individuales (.xml)
+        - Archivos comprimidos (.zip con múltiples XMLs)
+        
+        **Información extraída:**
+        - Datos del emisor (RFC, nombre, régimen fiscal)
+        - Datos del receptor (RFC, nombre, uso CFDI)
+        - Montos (subtotal, IVA, total)
+        - Folio fiscal (UUID)
+        - Conceptos/partidas
+        - Forma y método de pago
+        """)
+    
+    st.markdown("### 📤 Cargar Archivos XML")
+    
+    # Opciones de carga
+    tipo_carga = st.radio(
+        "Tipo de carga:",
+        options=["Archivos individuales", "Archivo ZIP"],
+        horizontal=True,
+        help="Selecciona cómo quieres cargar las facturas"
+    )
+    
+    facturas_procesadas = []
+    
+    if tipo_carga == "Archivos individuales":
+        archivos_xml = st.file_uploader(
+            "Selecciona archivos XML de facturas",
+            type=['xml'],
+            accept_multiple_files=True,
+            help="Puedes seleccionar múltiples archivos XML a la vez"
+        )
+        
+        if archivos_xml:
+            with st.spinner(f"📊 Procesando {len(archivos_xml)} archivo(s)..."):
+                for archivo in archivos_xml:
+                    datos = parsear_xml_cfdi(archivo)
+                    if datos:
+                        datos['Archivo'] = archivo.name
+                        facturas_procesadas.append(datos)
+                    else:
+                        st.warning(f"⚠️ No se pudo procesar: {archivo.name}")
+    
+    else:  # ZIP
+        archivo_zip = st.file_uploader(
+            "Selecciona archivo ZIP con XMLs",
+            type=['zip'],
+            help="El ZIP debe contener archivos .xml"
+        )
+        
+        if archivo_zip:
+            with st.spinner("📦 Descomprimiendo y procesando..."):
+                try:
+                    with zipfile.ZipFile(BytesIO(archivo_zip.read())) as z:
+                        xml_files = [f for f in z.namelist() if f.lower().endswith('.xml')]
+                        
+                        st.info(f"📁 {len(xml_files)} archivos XML encontrados en el ZIP")
+                        
+                        for xml_file in xml_files:
+                            with z.open(xml_file) as f:
+                                # Crear un objeto similar a UploadedFile
+                                class FakeFile:
+                                    def __init__(self, content, name):
+                                        self.content = content
+                                        self.name = name
+                                    def read(self):
+                                        return self.content
+                                
+                                fake_file = FakeFile(f.read(), xml_file)
+                                datos = parsear_xml_cfdi(fake_file)
+                                
+                                if datos:
+                                    datos['Archivo'] = xml_file
+                                    facturas_procesadas.append(datos)
+                except Exception as e:
+                    st.error(f"❌ Error al procesar ZIP: {str(e)}")
+    
+    # Mostrar resultados
+    if facturas_procesadas:
+        st.markdown("---")
+        st.markdown(f"### ✅ {len(facturas_procesadas)} Factura(s) Procesada(s)")
+        
+        # Resumen general
+        col_res1, col_res2, col_res3, col_res4 = st.columns(4)
+        
+        total_subtotal = sum(f['SubTotal'] for f in facturas_procesadas)
+        total_iva = sum(f['IVA'] for f in facturas_procesadas)
+        total_general = sum(f['Total'] for f in facturas_procesadas)
+        
+        with col_res1:
+            st.metric(
+                label="📊 Total Facturas",
+                value=len(facturas_procesadas)
+            )
+        
+        with col_res2:
+            st.metric(
+                label="💵 Subtotal",
+                value=f"${total_subtotal:,.2f}"
+            )
+        
+        with col_res3:
+            st.metric(
+                label="💰 IVA",
+                value=f"${total_iva:,.2f}"
+            )
+        
+        with col_res4:
+            st.metric(
+                label="💸 Total General",
+                value=f"${total_general:,.2f}"
+            )
+        
+        st.markdown("---")
+        
+        # Tabs para diferentes vistas
+        tab_resumen, tab_detalle, tab_conceptos = st.tabs([
+            "📋 Resumen",
+            "📄 Detalle por Factura",
+            "📦 Conceptos"
+        ])
+        
+        with tab_resumen:
+            st.markdown("#### 📊 Tabla Resumen de Facturas")
+            
+            # Crear DataFrame resumen
+            df_resumen = pd.DataFrame([
+                {
+                    'Archivo': f['Archivo'],
+                    'Fecha': f['Fecha'][:10] if len(f['Fecha']) > 10 else f['Fecha'],
+                    'Folio': f['Folio'],
+                    'Serie': f['Serie'],
+                    'Emisor RFC': f['EmisorRFC'],
+                    'Emisor': f['EmisorNombre'][:30] + '...' if len(f['EmisorNombre']) > 30 else f['EmisorNombre'],
+                    'UUID': f['UUID'][:20] + '...' if len(f['UUID']) > 20 else f['UUID'],
+                    'Subtotal': f['SubTotal'],
+                    'IVA': f['IVA'],
+                    'Total': f['Total'],
+                    'Moneda': f['Moneda']
+                }
+                for f in facturas_procesadas
+            ])
+            
+            st.dataframe(
+                df_resumen.style.format({
+                    'Subtotal': '${:,.2f}',
+                    'IVA': '${:,.2f}',
+                    'Total': '${:,.2f}'
+                }),
+                use_container_width=True,
+                hide_index=True
+            )
+            
+            # Botón de exportación
+            if st.button("📥 Exportar Resumen a Excel", type="primary"):
+                # Crear archivo Excel
+                output = BytesIO()
+                with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                    df_resumen.to_excel(writer, sheet_name='Resumen', index=False)
+                    
+                    # Hoja adicional con totales
+                    df_totales = pd.DataFrame([{
+                        'Concepto': 'Total Facturas',
+                        'Cantidad': len(facturas_procesadas)
+                    }, {
+                        'Concepto': 'Subtotal',
+                        'Cantidad': f'${total_subtotal:,.2f}'
+                    }, {
+                        'Concepto': 'IVA',
+                        'Cantidad': f'${total_iva:,.2f}'
+                    }, {
+                        'Concepto': 'Total General',
+                        'Cantidad': f'${total_general:,.2f}'
+                    }])
+                    df_totales.to_excel(writer, sheet_name='Totales', index=False)
+                
+                output.seek(0)
+                
+                st.download_button(
+                    label="⬇️ Descargar Excel",
+                    data=output,
+                    file_name=f"facturas_resumen_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+        
+        with tab_detalle:
+            st.markdown("#### 📄 Detalle Completo por Factura")
+            
+            # Selector de factura
+            factura_seleccionada = st.selectbox(
+                "Selecciona una factura para ver detalle:",
+                options=range(len(facturas_procesadas)),
+                format_func=lambda i: f"{facturas_procesadas[i]['Archivo']} - {facturas_procesadas[i]['EmisorNombre'][:40]}"
+            )
+            
+            factura = facturas_procesadas[factura_seleccionada]
+            
+            # Información completa
+            col_det1, col_det2 = st.columns(2)
+            
+            with col_det1:
+                st.markdown("**📋 Información General**")
+                st.write(f"**Archivo:** {factura['Archivo']}")
+                st.write(f"**Fecha:** {factura['Fecha']}")
+                st.write(f"**Folio:** {factura['Folio']}")
+                st.write(f"**Serie:** {factura['Serie']}")
+                st.write(f"**Tipo:** {factura['TipoDeComprobante']}")
+                st.write(f"**Forma Pago:** {factura['FormaPago']}")
+                st.write(f"**Método Pago:** {factura['MetodoPago']}")
+                
+                st.markdown("**👤 Emisor**")
+                st.write(f"**RFC:** {factura['EmisorRFC']}")
+                st.write(f"**Nombre:** {factura['EmisorNombre']}")
+                st.write(f"**Régimen:** {factura['EmisorRegimenFiscal']}")
+            
+            with col_det2:
+                st.markdown("**👥 Receptor**")
+                st.write(f"**RFC:** {factura['ReceptorRFC']}")
+                st.write(f"**Nombre:** {factura['ReceptorNombre']}")
+                st.write(f"**Uso CFDI:** {factura['ReceptorUsoCFDI']}")
+                
+                st.markdown("**💰 Montos**")
+                st.write(f"**Moneda:** {factura['Moneda']}")
+                st.write(f"**Subtotal:** ${factura['SubTotal']:,.2f}")
+                st.write(f"**IVA:** ${factura['IVA']:,.2f}")
+                st.write(f"**Total:** ${factura['Total']:,.2f}")
+                
+                st.markdown("**🔐 Timbre Fiscal**")
+                st.write(f"**UUID:** {factura['UUID']}")
+                st.write(f"**Fecha Timbrado:** {factura.get('FechaTimbrado', 'N/A')}")
+        
+        with tab_conceptos:
+            st.markdown("#### 📦 Conceptos / Partidas")
+            
+            # Consolidar todos los conceptos
+            todos_conceptos = []
+            for idx, factura in enumerate(facturas_procesadas):
+                for concepto in factura['Conceptos']:
+                    todos_conceptos.append({
+                        'Factura': factura['Archivo'],
+                        'Folio': factura['Folio'],
+                        'Cantidad': concepto['Cantidad'],
+                        'Unidad': concepto['Unidad'],
+                        'Descripción': concepto['Descripcion'],
+                        'Valor Unitario': concepto['ValorUnitario'],
+                        'Importe': concepto['Importe']
+                    })
+            
+            if todos_conceptos:
+                df_conceptos = pd.DataFrame(todos_conceptos)
+                
+                st.dataframe(
+                    df_conceptos.style.format({
+                        'Valor Unitario': '${:,.2f}',
+                        'Importe': '${:,.2f}'
+                    }),
+                    use_container_width=True,
+                    hide_index=True
+                )
+                
+                st.info(f"📦 Total de conceptos: {len(todos_conceptos)}")
+            else:
+                st.warning("⚠️ No se encontraron conceptos en las facturas")
+    
+    else:
+        st.info("👆 Sube archivos XML para comenzar")
+
+# =====================================================================
 # FUNCIÓN PRINCIPAL
 # =====================================================================
 
@@ -1019,12 +1433,13 @@ def run():
     st.markdown("---")
     
     # Tabs para las diferentes herramientas
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "💱 Conversor de Monedas",
         "🧮 Descuento Pronto Pago",
         "📈 Calculadora DSO",
         "💰 Interés Moratorio",
-        "📊 Indicadores Económicos"
+        "📊 Indicadores Económicos",
+        "📄 Digestor CFDI/XML"
     ])
     
     with tab1:
@@ -1041,3 +1456,6 @@ def run():
     
     with tab5:
         mostrar_indicadores_economicos()
+    
+    with tab6:
+        mostrar_digestor_xml()
