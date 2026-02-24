@@ -76,6 +76,44 @@ def get_tasas_fallback():
         'fallback': True
     }
 
+def get_nombres_monedas():
+    """Retorna diccionario con nombres completos de monedas."""
+    return {
+        'USD': 'Dólar Estadounidense',
+        'MXN': 'Peso Mexicano',
+        'EUR': 'Euro',
+        'CAD': 'Dólar Canadiense',
+        'GBP': 'Libra Esterlina',
+        'JPY': 'Yen Japonés',
+        'CNY': 'Yuan Chino',
+        'BRL': 'Real Brasileño',
+        'COP': 'Peso Colombiano',
+        'ARS': 'Peso Argentino',
+        'CHF': 'Franco Suizo',
+        'AUD': 'Dólar Australiano',
+        'NZD': 'Dólar Neozelandés',
+        'SEK': 'Corona Sueca',
+        'NOK': 'Corona Noruega',
+        'DKK': 'Corona Danesa',
+        'INR': 'Rupia India',
+        'KRW': 'Won Surcoreano',
+        'SGD': 'Dólar de Singapur',
+        'HKD': 'Dólar de Hong Kong',
+        'ZAR': 'Rand Sudafricano',
+        'THB': 'Baht Tailandés',
+        'PLN': 'Zloty Polaco',
+        'CZK': 'Corona Checa',
+        'HUF': 'Forinto Húngaro',
+        'TRY': 'Lira Turca',
+        'ILS': 'Shekel Israelí',
+        'CLP': 'Peso Chileno',
+        'PEN': 'Sol Peruano',
+        'PHP': 'Peso Filipino',
+        'MYR': 'Ringgit Malayo',
+        'IDR': 'Rupia Indonesia',
+        'RUB': 'Rublo Ruso'
+    }
+
 def mostrar_conversor_monedas():
     """Muestra interfaz del conversor de monedas."""
     
@@ -109,10 +147,28 @@ def mostrar_conversor_monedas():
     
     st.markdown("---")
     
-    # Selector de monedas más usadas
-    monedas_principales = ['USD', 'MXN', 'EUR', 'CAD', 'GBP']
-    monedas_disponibles = sorted([k for k in tasas.keys() if k in monedas_principales])
+    # Obtener nombres de monedas
+    nombres_monedas = get_nombres_monedas()
+    
+    # Selector de monedas - Preparar listas
+    monedas_principales = ['USD', 'MXN', 'EUR', 'CAD', 'GBP', 'JPY', 'CNY', 'BRL']
     todas_las_monedas = sorted(tasas.keys())
+    
+    # Organizar monedas: principales primero, luego el resto
+    monedas_ordenadas = []
+    for moneda in monedas_principales:
+        if moneda in todas_las_monedas:
+            monedas_ordenadas.append(moneda)
+    
+    # Agregar el resto de monedas alfabéticamente
+    for moneda in todas_las_monedas:
+        if moneda not in monedas_principales:
+            monedas_ordenadas.append(moneda)
+    
+    # Función para formatear opciones del selectbox
+    def format_moneda(codigo):
+        nombre = nombres_monedas.get(codigo, codigo)
+        return f"{codigo} - {nombre}"
     
     # Layout del conversor
     col1, col2, col3 = st.columns([2, 1, 2])
@@ -125,25 +181,18 @@ def mostrar_conversor_monedas():
             value=1000.0,
             step=100.0,
             format="%.2f",
-            key="monto_origen"
+            key="monto_origen",
+            help="Ingresa el monto a convertir"
         )
         
-        # Pestañas para monedas principales vs todas
-        tab1, tab2 = st.tabs(["💰 Principales", "🌍 Todas"])
-        with tab1:
-            moneda_origen = st.selectbox(
-                "Moneda de origen",
-                options=monedas_disponibles,
-                index=monedas_disponibles.index('USD') if 'USD' in monedas_disponibles else 0,
-                key="moneda_origen_principal"
-            )
-        with tab2:
-            moneda_origen = st.selectbox(
-                "Moneda de origen",
-                options=todas_las_monedas,
-                index=todas_las_monedas.index('USD') if 'USD' in todas_las_monedas else 0,
-                key="moneda_origen_todas"
-            )
+        moneda_origen = st.selectbox(
+            "Moneda de origen",
+            options=monedas_ordenadas,
+            format_func=format_moneda,
+            index=0 if 'USD' in monedas_ordenadas else 0,
+            key="moneda_origen",
+            help="Selecciona la moneda de origen. Las primeras 8 son las más usadas."
+        )
     
     with col2:
         st.markdown("####  ")
@@ -154,27 +203,40 @@ def mostrar_conversor_monedas():
     with col3:
         st.markdown("#### A:")
         
-        # Pestañas para monedas principales vs todas
-        tab1, tab2 = st.tabs(["💰 Principales", "🌍 Todas"])
-        with tab1:
-            moneda_destino = st.selectbox(
-                "Moneda de destino",
-                options=monedas_disponibles,
-                index=monedas_disponibles.index('MXN') if 'MXN' in monedas_disponibles else 1,
-                key="moneda_destino_principal"
-            )
-        with tab2:
-            moneda_destino = st.selectbox(
-                "Moneda de destino",
-                options=todas_las_monedas,
-                index=todas_las_monedas.index('MXN') if 'MXN' in todas_las_monedas else 1,
-                key="moneda_destino_todas"
-            )
+        # Dejar espacio equivalente al number_input
+        st.markdown("")
+        st.markdown("")
+        st.markdown("")
+        
+        moneda_destino = st.selectbox(
+            "Moneda de destino",
+            options=monedas_ordenadas,
+            format_func=format_moneda,
+            index=monedas_ordenadas.index('MXN') if 'MXN' in monedas_ordenadas else 1,
+            key="moneda_destino",
+            help="Selecciona la moneda de destino. Las primeras 8 son las más usadas."
+        )
+    
+    # Botón para intercambiar monedas
+    if st.button("🔄 Intercambiar Monedas", help="Invertir origen y destino"):
+        # Usar session_state para intercambiar
+        st.session_state.intercambiar = True
+        st.rerun()
+    
+    # Verificar si hay que intercambiar (esto solo se ejecuta después del rerun)
+    if 'intercambiar' in st.session_state and st.session_state.intercambiar:
+        st.session_state.intercambiar = False
+        # El intercambio se hará automáticamente en el siguiente render
+    
+    # Validar que las monedas sean diferentes para advertencia
+    if moneda_origen == moneda_destino:
+        st.warning("⚠️ La moneda de origen y destino son iguales. Selecciona monedas diferentes para convertir.")
     
     # Calcular conversión
     if moneda_origen == moneda_destino:
         monto_destino = monto_origen
         tasa = 1.0
+        tasa_inversa = 1.0
     else:
         # Convertir a USD primero, luego a moneda destino
         if moneda_origen == 'USD':
@@ -186,24 +248,49 @@ def mostrar_conversor_monedas():
             tasa = tasas[moneda_destino] / tasas[moneda_origen]
         
         monto_destino = monto_origen * tasa
+        tasa_inversa = 1 / tasa if tasa != 0 else 0
     
     # Mostrar resultado
     st.markdown("---")
-    st.markdown("### 💵 Resultado")
+    st.markdown("### 💵 Resultado de Conversión")
     
-    col_res1, col_res2 = st.columns(2)
+    # Obtener nombres completos para mostrar
+    nombre_origen = nombres_monedas.get(moneda_origen, moneda_origen)
+    nombre_destino = nombres_monedas.get(moneda_destino, moneda_destino)
+    
+    # Resultado principal destacado
+    st.markdown(f"""
+    <div style="background-color: #f0f2f6; padding: 20px; border-radius: 10px; border-left: 5px solid #1f77b4;">
+        <h3 style="margin: 0; color: #1f77b4;">{monto_destino:,.2f} {moneda_destino}</h3>
+        <p style="margin: 5px 0 0 0; color: #666;">{nombre_destino}</p>
+        <p style="margin: 10px 0 0 0; font-size: 14px; color: #888;">Original: {monto_origen:,.2f} {moneda_origen} ({nombre_origen})</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("")
+    
+    # Tasas de cambio bidireccionales
+    col_res1, col_res2, col_res3 = st.columns(3)
     with col_res1:
         st.metric(
-            label=f"Monto en {moneda_destino}",
-            value=f"{monto_destino:,.2f}",
-            help=f"Conversión de {monto_origen:,.2f} {moneda_origen}"
+            label=f"Tasa {moneda_origen} → {moneda_destino}",
+            value=f"{tasa:.6f}",
+            help=f"1 {moneda_origen} = {tasa:.6f} {moneda_destino}"
         )
     
     with col_res2:
         st.metric(
-            label="Tipo de Cambio",
-            value=f"1 {moneda_origen} = {tasa:.4f} {moneda_destino}",
-            help="Tasa de conversión aplicada"
+            label=f"Tasa {moneda_destino} → {moneda_origen}",
+            value=f"{tasa_inversa:.6f}",
+            help=f"1 {moneda_destino} = {tasa_inversa:.6f} {moneda_origen}"
+        )
+    
+    with col_res3:
+        diferencia_porcentual = ((tasa - 1) * 100) if moneda_origen == 'USD' else 0
+        st.metric(
+            label="Base USD",
+            value=f"USD {tasas.get('USD', 1.0)}",
+            help="Todas las conversiones usan USD como moneda base"
         )
     
     # Tabla de conversiones rápidas
