@@ -156,14 +156,30 @@ def mostrar_conversor_monedas():
     
     # Organizar monedas: principales primero, luego el resto
     monedas_ordenadas = []
+    
+    # Primero agregar las principales que existan
     for moneda in monedas_principales:
         if moneda in todas_las_monedas:
             monedas_ordenadas.append(moneda)
     
-    # Agregar el resto de monedas alfabéticamente
+    # Luego agregar todas las demás alfabéticamente
     for moneda in todas_las_monedas:
-        if moneda not in monedas_principales:
+        if moneda not in monedas_principales and moneda not in monedas_ordenadas:
             monedas_ordenadas.append(moneda)
+    
+    # Log para debug
+    logger.info(f"Total monedas disponibles en API: {len(todas_las_monedas)}")
+    logger.info(f"Total monedas en lista ordenada: {len(monedas_ordenadas)}")
+    logger.info(f"Primeras 10 monedas: {monedas_ordenadas[:10]}")
+    
+    # Debug visual: Mostrar cuántas monedas están disponibles
+    with st.expander("ℹ️ Información de Monedas Disponibles", expanded=False):
+        st.caption(f"**Total de monedas:** {len(monedas_ordenadas)} disponibles")
+        st.caption(f"**Principales:** {', '.join(monedas_ordenadas[:8])}")
+        st.caption(f"**Primeras 20:** {', '.join(monedas_ordenadas[:20])}")
+        if st.button("🔄 Limpiar caché y recargar"):
+            st.cache_data.clear()
+            st.rerun()
     
     # Función para formatear opciones del selectbox
     def format_moneda(codigo):
