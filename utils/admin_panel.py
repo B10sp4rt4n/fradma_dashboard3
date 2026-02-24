@@ -366,14 +366,14 @@ def mostrar_panel_configuracion():
             
             dias_critico = st.number_input(
                 "Días Vencido (Crítico)",
-                value=UmbralesCxC.DIAS_VENCIDO_CRITICO,
+                value=UmbralesCxC.DIAS_ALTO_RIESGO,
                 min_value=0,
                 help="A partir de cuántos días de vencimiento se considera crítico"
             )
             
             pct_morosidad_critico = st.number_input(
                 "% Morosidad (Crítico)",
-                value=UmbralesCxC.PCT_MOROSIDAD_CRITICO * 100,
+                value=float(UmbralesCxC.MOROSIDAD_ALTA),
                 min_value=0.0,
                 max_value=100.0,
                 step=1.0,
@@ -382,7 +382,7 @@ def mostrar_panel_configuracion():
             
             pct_concentracion_critico = st.number_input(
                 "% Concentración (Crítico)",
-                value=UmbralesCxC.PCT_CONCENTRACION_CRITICO * 100,
+                value=float(UmbralesCxC.CONCENTRACION_ALTA),
                 min_value=0.0,
                 max_value=100.0,
                 step=1.0,
@@ -394,14 +394,14 @@ def mostrar_panel_configuracion():
             
             dias_advertencia = st.number_input(
                 "Días Vencido (Advertencia)",
-                value=UmbralesCxC.DIAS_VENCIDO_ADVERTENCIA,
+                value=UmbralesCxC.DIAS_VENCIDO_60_90,
                 min_value=0,
                 help="A partir de cuántos días se alerta"
             )
             
             pct_morosidad_advertencia = st.number_input(
                 "% Morosidad (Advertencia)",
-                value=UmbralesCxC.PCT_MOROSIDAD_ADVERTENCIA * 100,
+                value=float(UmbralesCxC.MOROSIDAD_MEDIA),
                 min_value=0.0,
                 max_value=100.0,
                 step=1.0
@@ -409,7 +409,7 @@ def mostrar_panel_configuracion():
             
             pct_alto_riesgo = st.number_input(
                 "% Alto Riesgo",
-                value=UmbralesCxC.PCT_ALTO_RIESGO * 100,
+                value=float(UmbralesCxC.RIESGO_ALTO),
                 min_value=0.0,
                 max_value=100.0,
                 step=1.0,
