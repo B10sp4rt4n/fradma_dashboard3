@@ -602,6 +602,412 @@ def mostrar_calculadora_dso():
             """)
 
 # =====================================================================
+# CALCULADORA DE INTERÉS MORATORIO
+# =====================================================================
+
+def mostrar_calculadora_interes_moratorio():
+    """Calculadora de interés moratorio por pagos vencidos."""
+    
+    st.header("💰 Calculadora de Interés Moratorio")
+    st.markdown("Calcula intereses por mora sobre facturas vencidas")
+    
+    st.markdown("---")
+    
+    # Información sobre interés moratorio
+    with st.expander("ℹ️ ¿Qué es el interés moratorio y cómo se calcula?"):
+        st.markdown("""
+        **Interés Moratorio** es el cargo adicional que se cobra al cliente por pagar después del plazo convenido.
+        
+        **Métodos de cálculo:**
+        
+        1. **Interés Simple:**
+           ```
+           Interés = Capital × (Tasa Anual / 365) × Días de Mora
+           ```
+        
+        2. **Interés Compuesto:**
+           ```
+           Monto Final = Capital × (1 + Tasa Diaria)^Días
+           Interés = Monto Final - Capital
+           ```
+        
+        **Tasas de referencia en México:**
+        - TIIE + X puntos porcentuales
+        - Tasa moratoria típica: 24% - 36% anual
+        - Límite legal: Generalmente no más del doble de la tasa ordinaria
+        
+        **Ejemplo:** 
+        - Factura: $10,000
+        - Mora: 30 días
+        - Tasa: 24% anual
+        - Interés simple: $10,000 × (0.24/365) × 30 = $197.26
+        """)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("#### 📋 Datos de la Factura")
+        
+        monto_principal = st.number_input(
+            "Monto Original de la Factura (USD)",
+            min_value=0.0,
+            value=10000.0,
+            step=100.0,
+            format="%.2f",
+            help="Monto original adeudado (antes de intereses)"
+        )
+        
+        fecha_vencimiento = st.date_input(
+            "Fecha de Vencimiento Original",
+            value=datetime.now().date() - timedelta(days=30),
+            help="Fecha en que la factura debió pagarse"
+        )
+        
+        fecha_calculo = st.date_input(
+            "Fecha de Cálculo / Pago",
+            value=datetime.now().date(),
+            help="Fecha hasta la cual calcular el interés (hoy o fecha proyectada de pago)"
+        )
+        
+        # Calcular días de mora
+        dias_mora = (fecha_calculo - fecha_vencimiento).days
+        
+        if dias_mora < 0:
+            st.warning("⚠️ La fecha de cálculo es anterior al vencimiento. No hay mora.")
+            dias_mora = 0
+        else:
+            st.info(f"📅 **Días de mora:** {dias_mora} días")
+    
+    with col2:
+        st.markdown("#### ⚙️ Parámetros de Cálculo")
+        
+        tasa_moratoria_anual = st.number_input(
+            "Tasa Moratoria Anual (%)",
+            min_value=0.0,
+            value=24.0,
+            step=0.5,
+            format="%.2f",
+            help="Tasa de interés moratorio anual (típicamente 24%-36%)"
+        )
+        
+        metodo_calculo = st.radio(
+            "Método de Cálculo",
+            options=["Simple", "Compuesto"],
+            index=0,
+            help="Simple: Interés sobre capital original. Compuesto: Interés sobre interés"
+        )
+        
+        incluir_iva_interes = st.checkbox(
+            "Incluir IVA sobre Interés",
+            value=True,
+            help="En México, el interés moratorio causa IVA (16%)"
+        )
+        
+        st.markdown("")
+        st.info("💡 **Tip Legal:** Consulta con legal antes de cobrar intereses. Algunos contratos no los permiten.")
+    
+    st.markdown("---")
+    
+    # Cálculos
+    if dias_mora > 0 and monto_principal > 0:
+        tasa_diaria = tasa_moratoria_anual / 100 / 365
+        
+        if metodo_calculo == "Simple":
+            interes_moratorio = monto_principal * tasa_diaria * dias_mora
+        else:  # Compuesto
+            monto_final = monto_principal * ((1 + tasa_diaria) ** dias_mora)
+            interes_moratorio = monto_final - monto_principal
+        
+        # IVA sobre interés (México: 16%)
+        iva_interes = interes_moratorio * 0.16 if incluir_iva_interes else 0
+        interes_total = interes_moratorio + iva_interes
+        
+        total_a_cobrar = monto_principal + interes_total
+        
+        # Tasa efectiva anual
+        if dias_mora > 0:
+            factor_anual = 365 / dias_mora
+            tasa_efectiva = ((total_a_cobrar / monto_principal) ** factor_anual - 1) * 100
+        else:
+            tasa_efectiva = 0
+        
+        # Mostrar resultados
+        st.markdown("### 📊 Resultado del Cálculo")
+        
+        col_r1, col_r2, col_r3, col_r4 = st.columns(4)
+        
+        with col_r1:
+            st.metric(
+                label="💰 Interés Moratorio",
+                value=f"${interes_moratorio:,.2f}",
+                help=f"Interés calculado por {dias_mora} días de mora"
+            )
+        
+        with col_r2:
+            if incluir_iva_interes:
+                st.metric(
+                    label="📊 IVA sobre Interés",
+                    value=f"${iva_interes:,.2f}",
+                    help="IVA 16% sobre el interés moratorio"
+                )
+            else:
+                st.metric(
+                    label="📊 IVA sobre Interés",
+                    value="$0.00",
+                    help="IVA no aplicado"
+                )
+        
+        with col_r3:
+            st.metric(
+                label="💵 Interés Total",
+                value=f"${interes_total:,.2f}",
+                help="Interés + IVA (si aplica)"
+            )
+        
+        with col_r4:
+            st.metric(
+                label="💸 Total a Cobrar",
+                value=f"${total_a_cobrar:,.2f}",
+                delta=f"+${interes_total:,.2f}",
+                help="Capital + Interés + IVA"
+            )
+        
+        st.markdown("---")
+        
+        # Desglose detallado
+        col_det1, col_det2 = st.columns(2)
+        
+        with col_det1:
+            st.markdown("### 📝 Desglose del Cobro")
+            
+            desglose_data = {
+                'Concepto': [
+                    'Capital Original',
+                    f'Interés Moratorio ({metodo_calculo})',
+                    'IVA sobre Interés (16%)' if incluir_iva_interes else 'IVA sobre Interés',
+                    'TOTAL A COBRAR'
+                ],
+                'Monto': [
+                    f"${monto_principal:,.2f}",
+                    f"${interes_moratorio:,.2f}",
+                    f"${iva_interes:,.2f}",
+                    f"${total_a_cobrar:,.2f}"
+                ]
+            }
+            
+            df_desglose = pd.DataFrame(desglose_data)
+            st.dataframe(df_desglose, use_container_width=True, hide_index=True)
+        
+        with col_det2:
+            st.markdown("### 📈 Información Adicional")
+            
+            st.write(f"**Método:** {metodo_calculo}")
+            st.write(f"**Tasa Moratoria Anual:** {tasa_moratoria_anual:.2f}%")
+            st.write(f"**Tasa Diaria:** {tasa_diaria*100:.4f}%")
+            st.write(f"**Días de Mora:** {dias_mora} días")
+            st.write(f"**Tasa Efectiva Anual:** {tasa_efectiva:.2f}%")
+            
+            # Interés promedio por día
+            interes_diario = interes_total / dias_mora if dias_mora > 0 else 0
+            st.write(f"**Interés Promedio/Día:** ${interes_diario:,.2f}")
+        
+        # Proyección de intereses futuros
+        with st.expander("📅 Proyección de Intereses Futuros"):
+            st.markdown("#### ¿Cuánto costará si no paga pronto?")
+            
+            dias_proyeccion = [7, 15, 30, 60, 90]
+            proyecciones = []
+            
+            for dias_extra in dias_proyeccion:
+                dias_total = dias_mora + dias_extra
+                
+                if metodo_calculo == "Simple":
+                    int_proyectado = monto_principal * tasa_diaria * dias_total
+                else:
+                    monto_proy = monto_principal * ((1 + tasa_diaria) ** dias_total)
+                    int_proyectado = monto_proy - monto_principal
+                
+                iva_proy = int_proyectado * 0.16 if incluir_iva_interes else 0
+                int_total_proy = int_proyectado + iva_proy
+                total_proy = monto_principal + int_total_proy
+                
+                proyecciones.append({
+                    'Días Adicionales': f"+{dias_extra}",
+                    'Total Días Mora': dias_total,
+                    'Interés Total': f"${int_total_proy:,.2f}",
+                    'Total a Pagar': f"${total_proy:,.2f}"
+                })
+            
+            df_proy = pd.DataFrame(proyecciones)
+            st.dataframe(df_proy, use_container_width=True, hide_index=True)
+            
+            st.caption(f"💡 Cada día adicional cuesta aproximadamente ${interes_diario:,.2f} en intereses")
+    
+    else:
+        st.info("👆 Ingresa los datos de la factura para calcular el interés moratorio")
+
+# =====================================================================
+# PANEL DE INDICADORES ECONÓMICOS
+# =====================================================================
+
+@st.cache_data(ttl=3600)  # Cache por 1 hora
+def obtener_indicadores_economicos():
+    """
+    Obtiene indicadores económicos básicos.
+    Por ahora usa el tipo de cambio de la API existente.
+    """
+    try:
+        # Obtener tipo de cambio
+        tasas_data = obtener_tasas_cambio()
+        
+        if tasas_data:
+            usd_mxn = tasas_data['rates'].get('MXN', 17.20)
+            fecha = tasas_data['date']
+            
+            return {
+                'usd_mxn': usd_mxn,
+                'fecha': fecha,
+                'success': True
+            }
+        else:
+            return {
+                'usd_mxn': 17.20,
+                'fecha': datetime.now().strftime('%Y-%m-%d'),
+                'success': False
+            }
+    except Exception as e:
+        logger.error(f"Error al obtener indicadores: {e}")
+        return {
+            'usd_mxn': 17.20,
+            'fecha': datetime.now().strftime('%Y-%m-%d'),
+            'success': False
+        }
+
+def mostrar_indicadores_economicos():
+    """Muestra panel con indicadores económicos de referencia."""
+    
+    st.header("📊 Indicadores Económicos")
+    st.markdown("Información económica y financiera de referencia")
+    
+    st.markdown("---")
+    
+    # Obtener indicadores
+    indicadores = obtener_indicadores_economicos()
+    
+    # Estado de actualización
+    col_status = st.columns([3, 1])
+    with col_status[0]:
+        if indicadores['success']:
+            st.caption(f"✅ Última actualización: {indicadores['fecha']}")
+        else:
+            st.caption("⚠️ Usando valores de referencia")
+    
+    with col_status[1]:
+        if st.button("🔄 Actualizar", key="refresh_indicadores"):
+            st.cache_data.clear()
+            st.rerun()
+    
+    st.markdown("---")
+    
+    # Tipo de Cambio USD/MXN
+    st.markdown("### 💱 Tipo de Cambio")
+    
+    col1, col2, col3 = st.columns([2, 2, 2])
+    
+    with col1:
+        usd_mxn = indicadores['usd_mxn']
+        st.metric(
+            label="USD/MXN",
+            value=f"${usd_mxn:.2f}",
+            help="Pesos mexicanos por dólar estadounidense"
+        )
+    
+    with col2:
+        # Calcular inverso (cuántos dólares por peso)
+        mxn_usd = 1 / usd_mxn if usd_mxn > 0 else 0
+        st.metric(
+            label="MXN/USD",
+            value=f"${mxn_usd:.4f}",
+            help="Dólares por peso mexicano"
+        )
+    
+    with col3:
+        # Referencia de 1000 USD
+        mil_usd_en_mxn = 1000 * usd_mxn
+        st.metric(
+            label="1,000 USD =",
+            value=f"${mil_usd_en_mxn:,.2f} MXN",
+            help="Equivalencia de mil dólares en pesos"
+        )
+    
+    st.markdown("---")
+    
+    # Tasas de Interés de Referencia
+    st.markdown("### 📈 Tasas de Interés de Referencia")
+    
+    st.info("""
+    **💡 Tasas de referencia comunes en México (2026):**
+    
+    - **TIIE 28 días:** ~10.50% - 11.50% (referencia interbancaria)
+    - **Tasa Objetivo Banxico:** ~11.00%
+    - **Tasa Pasiva (ahorro):** ~8.00% - 10.00%
+    - **Tasa Activa (préstamos empresariales):** ~14.00% - 18.00%
+    - **Tarjetas de crédito:** ~35.00% - 50.00%
+    
+    *Nota: Estas son tasas de referencia. Consulta con tu banco para tasas actuales.*
+    """)
+    
+    st.markdown("---")
+    
+    # Calculadora rápida de equivalencias
+    st.markdown("### 🔢 Calculadora Rápida de Equivalencias")
+    
+    col_calc1, col_calc2 = st.columns(2)
+    
+    with col_calc1:
+        monto_convertir = st.number_input(
+            "Monto a convertir",
+            min_value=0.0,
+            value=1000.0,
+            step=100.0,
+            key="monto_equiv"
+        )
+    
+    with col_calc2:
+        direccion = st.radio(
+            "Dirección",
+            options=["USD → MXN", "MXN → USD"],
+            horizontal=True,
+            key="direccion_equiv"
+        )
+    
+    if direccion == "USD → MXN":
+        resultado = monto_convertir * usd_mxn
+        st.success(f"**${monto_convertir:,.2f} USD** = **${resultado:,.2f} MXN**")
+    else:
+        resultado = monto_convertir / usd_mxn
+        st.success(f"**${monto_convertir:,.2f} MXN** = **${resultado:,.2f} USD**")
+    
+    st.markdown("---")
+    
+    # Tabla de referencia rápida
+    with st.expander("📋 Tabla de Referencia Rápida USD ↔ MXN"):
+        montos_ref = [100, 500, 1000, 5000, 10000, 50000, 100000]
+        
+        tabla_ref = []
+        for monto in montos_ref:
+            tabla_ref.append({
+                'USD': f"${monto:,}",
+                'MXN': f"${monto * usd_mxn:,.2f}",
+                '←': '→',
+                'MXN ': f"${monto:,}",
+                'USD ': f"${monto / usd_mxn:,.2f}"
+            })
+        
+        df_ref = pd.DataFrame(tabla_ref)
+        st.dataframe(df_ref, use_container_width=True, hide_index=True)
+
+# =====================================================================
 # FUNCIÓN PRINCIPAL
 # =====================================================================
 
@@ -613,10 +1019,12 @@ def run():
     st.markdown("---")
     
     # Tabs para las diferentes herramientas
-    tab1, tab2, tab3 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "💱 Conversor de Monedas",
         "🧮 Descuento Pronto Pago",
-        "📈 Calculadora DSO"
+        "📈 Calculadora DSO",
+        "💰 Interés Moratorio",
+        "📊 Indicadores Económicos"
     ])
     
     with tab1:
@@ -627,3 +1035,9 @@ def run():
     
     with tab3:
         mostrar_calculadora_dso()
+    
+    with tab4:
+        mostrar_calculadora_interes_moratorio()
+    
+    with tab5:
+        mostrar_indicadores_economicos()
