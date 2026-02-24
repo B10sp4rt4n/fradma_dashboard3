@@ -1177,7 +1177,9 @@ def mostrar_digestor_xml():
         help="Selecciona cómo quieres cargar las facturas"
     )
     
-    facturas_procesadas = []
+    # Variables para almacenar archivos cargados
+    archivos_disponibles = []
+    contenidos_archivos = {}
     
     if tipo_carga == "Archivos individuales":
         archivos_xml = st.file_uploader(
@@ -1188,14 +1190,10 @@ def mostrar_digestor_xml():
         )
         
         if archivos_xml:
-            with st.spinner(f"📊 Procesando {len(archivos_xml)} archivo(s)..."):
-                for archivo in archivos_xml:
-                    datos = parsear_xml_cfdi(archivo)
-                    if datos:
-                        datos['Archivo'] = archivo.name
-                        facturas_procesadas.append(datos)
-                    else:
-                        st.warning(f"⚠️ No se pudo procesar: {archivo.name}")
+            st.success(f"✅ {len(archivos_xml)} archivo(s) cargado(s)")
+            for archivo in archivos_xml:
+                archivos_disponibles.append(archivo.name)
+                contenidos_archivos[archivo.name] = archivo
     
     else:  # ZIP
         archivo_zip = st.file_uploader(
@@ -1205,31 +1203,90 @@ def mostrar_digestor_xml():
         )
         
         if archivo_zip:
-            with st.spinner("📦 Descomprimiendo y procesando..."):
-                try:
-                    with zipfile.ZipFile(BytesIO(archivo_zip.read())) as z:
-                        xml_files = [f for f in z.namelist() if f.lower().endswith('.xml')]
+            try:
+                with zipfile.ZipFile(BytesIO(archivo_zip.read())) as z:
+                    xml_files = [f for f in z.namelist() if f.lower().endswith('.xml')]
+                    
+                    st.success(f"✅ {len(xml_files)} archivos XML encontrados en el ZIP")
+                    
+                    for xml_file in xml_files:
+                        archivos_disponibles.append(xml_file)
+                        with z.open(xml_file) as f:
+                            # Crear un objeto similar a UploadedFile
+                            class FakeFile:
+                                def __init__(self, content, name):
+                                    self.content = content
+                                    self.name = name
+                                def read(self):
+                                    return self.content
+                            
+                            contenidos_archivos[xml_file] = FakeFile(f.read(), xml_file)
+            except Exception as e:
+                st.error(f"❌ Error al leer ZIP: {str(e)}")
+    
+    # Selector de archivos a procesar
+    facturas_procesadas = []
+    
+    if archivos_disponibles:
+        st.markdown("---")
+        st.markdown("### 🎯 Selección de Archivos a Procesar")
+        
+        col_sel1, col_sel2 = st.columns([3, 1])
+        
+        with col_sel1:
+            # Opción para procesar todos o seleccionar
+            modo_procesamiento = st.radio(
+                "Modo de procesamiento:",
+                options=["Procesar todos", "Seleccionar archivos específicos"],
+                horizontal=True,
+                help="Elige si procesar todos los archivos o seleccionar cuáles procesar"
+            )
+        
+        with col_sel2:
+            st.metric("Archivos disponibles", len(archivos_disponibles))
+        
+        # Selección de archivos
+        archivos_seleccionados = []
+        
+        if modo_procesamiento == "Seleccionar archivos específicos":
+            archivos_seleccionados = st.multiselect(
+                "Selecciona los archivos XML que deseas procesar:",
+                options=archivos_disponibles,
+                default=[],
+                help="Mantén presionada la tecla Ctrl/Cmd para seleccionar múltiples archivos"
+            )
+            
+            if archivos_seleccionados:
+                st.info(f"📋 {len(archivos_seleccionados)} archivo(s) seleccionado(s)")
+        else:
+            archivos_seleccionados = archivos_disponibles
+            st.info(f"📋 Se procesarán todos los {len(archivos_seleccionados)} archivos")
+        
+        # Botón para procesar
+        if archivos_seleccionados:
+            if st.button("🚀 Procesar Archivos Seleccionados", type="primary"):
+                with st.spinner(f"📊 Procesando {len(archivos_seleccionados)} archivo(s)..."):
+                    progress_bar = st.progress(0)
+                    
+                    for idx, nombre_archivo in enumerate(archivos_seleccionados):
+                        archivo_obj = contenidos_archivos[nombre_archivo]
+                        datos = parsear_xml_cfdi(archivo_obj)
                         
-                        st.info(f"📁 {len(xml_files)} archivos XML encontrados en el ZIP")
+                        if datos:
+                            datos['Archivo'] = nombre_archivo
+                            facturas_procesadas.append(datos)
+                        else:
+                            st.warning(f"⚠️ No se pudo procesar: {nombre_archivo}")
                         
-                        for xml_file in xml_files:
-                            with z.open(xml_file) as f:
-                                # Crear un objeto similar a UploadedFile
-                                class FakeFile:
-                                    def __init__(self, content, name):
-                                        self.content = content
-                                        self.name = name
-                                    def read(self):
-                                        return self.content
-                                
-                                fake_file = FakeFile(f.read(), xml_file)
-                                datos = parsear_xml_cfdi(fake_file)
-                                
-                                if datos:
-                                    datos['Archivo'] = xml_file
-                                    facturas_procesadas.append(datos)
-                except Exception as e:
-                    st.error(f"❌ Error al procesar ZIP: {str(e)}")
+                        # Actualizar barra de progreso
+                        progress_bar.progress((idx + 1) / len(archivos_seleccionados))
+                    
+                    progress_bar.empty()
+                    
+                    if facturas_procesadas:
+                        st.success(f"✅ {len(facturas_procesadas)} factura(s) procesada(s) exitosamente")
+        else:
+            st.warning("⚠️ Selecciona al menos un archivo para procesar")
     
     # Mostrar resultados
     if facturas_procesadas:

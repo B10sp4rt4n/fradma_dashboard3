@@ -50,9 +50,15 @@ Esta fase separa a Fradma de cualquier competidor genérico global, haciéndolo 
 *   **Impacto:** Permite generar insights de altísimo valor: *"Tu tiempo de cobro es de 45 días. El promedio de las empresas de manufactura en México es de 32 días. Estás perdiendo liquidez"*. **Ningún competidor global puede ofrecer este nivel de contexto local.**
 
 ### 3. Digestor Masivo de CFDI (Conexión SAT)
-*   **El Problema:** El digestor XML actual requiere carga manual de archivos o ZIPs.
-*   **La Solución:** Conectarse al **Webservice del SAT** (o usar un proveedor como *Descarga Masiva*) para extraer automáticamente todas las facturas emitidas y recibidas cada noche.
-*   **Impacto:** Elimina por completo la necesidad de que el usuario suba archivos. El dashboard se alimenta solo, garantizando que la información financiera sea 100% precisa y auditable.
+*   **El Problema Anterior:** El digestor XML requería carga y procesamiento automático de todos los archivos sin opción de selección.
+*   **✅ IMPLEMENTADO (Feb 2026):** Procesamiento selectivo de archivos XML - El usuario ahora puede:
+    *   Cargar archivos individuales o ZIPs sin procesarlos automáticamente
+    *   Ver la lista completa de archivos disponibles
+    *   Elegir entre "Procesar todos" o "Seleccionar archivos específicos"
+    *   Usar multiselect para elegir exactamente qué XMLs procesar
+    *   Procesar bajo demanda con barra de progreso visual
+*   **Próximo Paso:** Conectarse al **Webservice del SAT** (o usar un proveedor como *Descarga Masiva*) para extraer automáticamente todas las facturas emitidas y recibidas cada noche.
+*   **Impacto Futuro:** Elimina por completo la necesidad de que el usuario suba archivos. El dashboard se alimenta solo, garantizando que la información financiera sea 100% precisa y auditable.
 
 ---
 
