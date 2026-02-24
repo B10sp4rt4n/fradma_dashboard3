@@ -940,6 +940,11 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
                     if periodo_seleccionado == "Personalizado" and fecha_desde_ia and fecha_hasta_ia:
                         periodo_etiqueta = f"{fecha_desde_ia} → {fecha_hasta_ia}"
                     
+                    # Alerta si no hay datos en el período seleccionado
+                    if len(df_ia) == 0:
+                        st.warning(f"⚠️ No hay datos de ventas en el período seleccionado: **{periodo_etiqueta}**")
+                        st.info("💡 Prueba seleccionar un período diferente o verifica que el archivo contenga datos para este rango de fechas.")
+                    
                     # Calcular crecimiento real: período seleccionado vs mismo período año anterior
                     crecimiento_ia = variacion_ventas  # fallback
                     debug_crec = {"metodo": "fallback (variacion_ventas)", "valor": variacion_ventas}
@@ -1005,6 +1010,18 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
                     with st.expander("📊 Detalle del cálculo de crecimiento", expanded=False):
                         st.write(f"**Período seleccionado:** {periodo_seleccionado}")
                         st.write(f"**Registros de ventas analizados:** {len(df_ia):,}")
+                        
+                        # Mostrar rango de fechas real del período analizado
+                        if len(df_ia) > 0 and "fecha" in df_ia.columns:
+                            fecha_min = df_ia["fecha"].min()
+                            fecha_max = df_ia["fecha"].max()
+                            if pd.notna(fecha_min) and pd.notna(fecha_max):
+                                st.write(f"**Rango de fechas analizado:** {fecha_min.strftime('%d/%m/%Y')} → {fecha_max.strftime('%d/%m/%Y')}")
+                            else:
+                                st.write("**Rango de fechas analizado:** No disponible (fechas inválidas)")
+                        else:
+                            st.write("**Rango de fechas analizado:** No disponible (sin datos o sin columna de fecha)")
+                        
                         for k, v in debug_crec.items():
                             label = {"metodo": "Método de comparación", "ventas_actual": "Ventas período actual",
                                      "ventas_anterior": "Ventas período anterior", "crecimiento_calculado": "Crecimiento YoY",
