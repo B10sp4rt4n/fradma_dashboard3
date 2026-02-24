@@ -1369,6 +1369,8 @@ def mostrar_digestor_xml():
                         
                         if datos:
                             datos['Archivo'] = nombre_archivo
+                            # LOG: Verificar longitud del nombre JUSTO DESPUÉS del parseo
+                            logger.info(f"Parseado '{nombre_archivo}': EmisorNombre='{datos['EmisorNombre']}' (longitud: {len(datos['EmisorNombre'])} caracteres)")
                             facturas_procesadas.append(datos)
                         else:
                             st.warning(f"⚠️ No se pudo procesar: {nombre_archivo}")
@@ -1450,6 +1452,12 @@ def mostrar_digestor_xml():
             ])
             
             # Crear DataFrame completo para EXPORTACIÓN (sin truncar)
+            # DEBUG: Verificar datos originales antes de crear DataFrame
+            if len(facturas_procesadas) > 0:
+                emisor_original = facturas_procesadas[0]['EmisorNombre']
+                logger.info(f"ANTES de crear DataFrame: facturas_procesadas[0]['EmisorNombre'] = '{emisor_original}' (longitud: {len(emisor_original)})")
+                st.warning(f"🔍 DEBUG PRE-DATAFRAME: Emisor original tiene {len(emisor_original)} caracteres: '{emisor_original}'")
+            
             df_resumen_completo = pd.DataFrame([
                 {
                     'Archivo': f['Archivo'],
@@ -1474,8 +1482,11 @@ def mostrar_digestor_xml():
             # Debug: Verificar longitudes de nombres en DataFrame
             if len(df_resumen_completo) > 0:
                 primer_emisor = df_resumen_completo.iloc[0]['Emisor Nombre']
-                logger.info(f"Excel export: Primera factura emisor='{primer_emisor}' (longitud: {len(primer_emisor)} caracteres)")
+                logger.info(f"DESPUÉS de crear DataFrame: df['Emisor Nombre'] = '{primer_emisor}' (longitud: {len(primer_emisor)})")
                 st.caption(f"ℹ️ Debug: Primera factura tiene emisor con {len(primer_emisor)} caracteres")
+                
+                if len(primer_emisor) < 40:
+                    st.error(f"🚨 ERROR DETECTADO: El nombre se truncó al crear el DataFrame! Original vs DataFrame: {len(facturas_procesadas[0]['EmisorNombre'])} vs {len(primer_emisor)}")
 
             
             # Mostrar resumen en pantalla (versión truncada)
