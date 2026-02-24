@@ -1121,8 +1121,14 @@ def parsear_xml_cfdi(archivo_xml):
         dict: Diccionario con la información extraída o None si hay error
     """
     try:
+        # Asegurar que el archivo esté al inicio del buffer
+        if hasattr(archivo_xml, 'seek'):
+            archivo_xml.seek(0)
+        
         # Leer contenido del archivo
         contenido = archivo_xml.read()
+        # DEBUG: Verificar cuántos bytes se leyeron
+        logger.info(f"📄 Archivo XML leído: {len(contenido)} bytes")
         
         # Parsear XML
         root = ET.fromstring(contenido)
@@ -1163,7 +1169,10 @@ def parsear_xml_cfdi(archivo_xml):
         emisor = root.find(f'{{{ns[ns_cfdi]}}}Emisor')
         if emisor is not None:
             datos['EmisorRFC'] = emisor.get('Rfc', 'N/A')
-            datos['EmisorNombre'] = emisor.get('Nombre', 'N/A')
+            nombre_emisor_raw = emisor.get('Nombre', 'N/A')
+            # DEBUG: Log del contenido RAW del XML
+            logger.info(f"🔍 XML RAW - Nombre del Emisor encontrado: '{nombre_emisor_raw}' (longitud: {len(nombre_emisor_raw)} caracteres)")
+            datos['EmisorNombre'] = nombre_emisor_raw
             datos['EmisorRegimenFiscal'] = emisor.get('RegimenFiscal', 'N/A')
         else:
             datos['EmisorRFC'] = 'N/A'
