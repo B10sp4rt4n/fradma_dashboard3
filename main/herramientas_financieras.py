@@ -133,11 +133,11 @@ def mostrar_conversor_monedas():
     fecha_actualizacion = tasas_data['date']
     
     # Barra de información en la parte superior - SIEMPRE VISIBLE
-    st.markdown(f"""
-    **Tipos de cambio** | 📅 {fecha_actualizacion} | 
-    {'⚠️ Modo Fallback (limitado)' if es_fallback else f'✅ API Conectada'} | 
-    **{len(tasas)} monedas disponibles**
-    """)
+    if len(tasas) < 20:
+        st.error(f"🚨 PROBLEMA: Solo {len(tasas)} monedas disponibles (se esperan 166)")
+        st.warning(f"Modo: {'FALLBACK' if es_fallback else 'API'} | Fecha: {fecha_actualizacion}")
+    else:
+        st.success(f"✅ {len(tasas)} monedas disponibles | Fecha: {fecha_actualizacion} | API Conectada")
     
     col_btn1, col_btn2 = st.columns([6, 1])
     with col_btn2:
@@ -169,6 +169,9 @@ def mostrar_conversor_monedas():
     
     # Log para debug en consola
     logger.info(f"Conversor: {len(todas_las_monedas)} monedas de API, {len(monedas_ordenadas)} en lista final, fallback={es_fallback}")
+    
+    # MOSTRAR DEBUG MUY VISIBLE
+    st.info(f"📊 Debug: {len(monedas_ordenadas)} monedas en selectores | Primeras 10: {', '.join(monedas_ordenadas[:10])}")
     
     # Función para formatear opciones del selectbox
     def format_moneda(codigo):
