@@ -1471,6 +1471,13 @@ def mostrar_digestor_xml():
                 for f in facturas_procesadas
             ])
             
+            # Debug: Verificar longitudes de nombres en DataFrame
+            if len(df_resumen_completo) > 0:
+                primer_emisor = df_resumen_completo.iloc[0]['Emisor Nombre']
+                logger.info(f"Excel export: Primera factura emisor='{primer_emisor}' (longitud: {len(primer_emisor)} caracteres)")
+                st.caption(f"ℹ️ Debug: Primera factura tiene emisor con {len(primer_emisor)} caracteres")
+
+            
             # Mostrar resumen en pantalla (versión truncada)
             st.dataframe(
                 df_resumen_display.style.format({
@@ -1494,20 +1501,39 @@ def mostrar_digestor_xml():
                 # Formato de moneda
                 money_format = workbook.add_format({'num_format': '$#,##0.00'})
                 
-                # Ajustar anchos de columnas
-                worksheet.set_column('A:A', 35)  # Archivo
-                worksheet.set_column('B:B', 12)  # Fecha
-                worksheet.set_column('C:D', 10)  # Folio, Serie
-                worksheet.set_column('E:E', 15)  # Emisor RFC
-                worksheet.set_column('F:F', 50)  # Emisor Nombre (ANCHO AMPLIO)
-                worksheet.set_column('G:G', 15)  # Receptor RFC
-                worksheet.set_column('H:H', 50)  # Receptor Nombre (ANCHO AMPLIO)
-                worksheet.set_column('I:I', 40)  # UUID (ANCHO COMPLETO)
-                worksheet.set_column('J:K', 15)  # Forma Pago, Método Pago
-                worksheet.set_column('L:N', 15)  # Subtotal, IVA, Total
-                worksheet.set_column('O:O', 10)  # Moneda
+                # Formato para encabezados con ajuste de texto
+                header_format = workbook.add_format({
+                    'bold': True,
+                    'text_wrap': True,
+                    'valign': 'top',
+                    'bg_color': '#D7E4BD',
+                    'border': 1
+                })
                 
-                # Aplicar formato de moneda a columnas numéricas
+                # Formato para celdas de texto con ajuste
+                text_format = workbook.add_format({
+                    'text_wrap': False,  # No wrap para que se vea todo en una línea
+                    'valign': 'vcenter'
+                })
+                
+                # Ajustar anchos de columnas (AUMENTADOS significativamente)
+                worksheet.set_column('A:A', 40, text_format)   # Archivo
+                worksheet.set_column('B:B', 12, text_format)   # Fecha
+                worksheet.set_column('C:C', 10, text_format)   # Folio
+                worksheet.set_column('D:D', 10, text_format)   # Serie
+                worksheet.set_column('E:E', 15, text_format)   # Emisor RFC
+                worksheet.set_column('F:F', 70, text_format)   # Emisor Nombre (MUY AMPLIO para nombres largos)
+                worksheet.set_column('G:G', 15, text_format)   # Receptor RFC
+                worksheet.set_column('H:H', 70, text_format)   # Receptor Nombre (MUY AMPLIO)
+                worksheet.set_column('I:I', 45, text_format)   # UUID (UUID completo visible)
+                worksheet.set_column('J:J', 18, text_format)   # Forma Pago
+                worksheet.set_column('K:K', 18, text_format)   # Método Pago
+                worksheet.set_column('L:L', 15, money_format)  # Subtotal
+                worksheet.set_column('M:M', 15, money_format)  # IVA
+                worksheet.set_column('N:N', 15, money_format)  # Total
+                worksheet.set_column('O:O', 10, text_format)   # Moneda
+                
+                # Aplicar formato de moneda a columnas numéricas (sobrescribir los valores)
                 for row in range(1, len(df_resumen_completo) + 1):
                     worksheet.write(row, 11, df_resumen_completo.iloc[row-1]['Subtotal'], money_format)
                     worksheet.write(row, 12, df_resumen_completo.iloc[row-1]['IVA'], money_format)
@@ -1530,6 +1556,9 @@ def mostrar_digestor_xml():
                 df_totales.to_excel(writer, sheet_name='Totales', index=False)
             
             output.seek(0)
+            
+            # Mensaje informativo sobre el Excel
+            st.info("💡 **Nota:** El Excel contiene los nombres completos. Las columnas están pre-ajustadas a 70 caracteres de ancho. Si ves texto cortado, es solo la visualización de Excel - haz doble clic en la celda para ver el contenido completo.")
             
             # Botón de descarga directo
             st.download_button(
