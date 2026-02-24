@@ -404,6 +404,113 @@ def crear_treemap_participacion(df_ytd):
     
     return fig
 
+def crear_grafico_comparativo_anos_completos(df, años_disponibles):
+    """
+    Crea gráfico de barras comparando ventas totales de años completos.
+    
+    Args:
+        df: DataFrame con datos de ventas
+        años_disponibles: Lista de años disponibles en los datos
+    
+    Returns:
+        Figura de Plotly con comparativo de años completos
+    """
+    # Filtrar solo los últimos 5 años para no sobrecargar el gráfico
+    años_a_mostrar = sorted(años_disponibles, reverse=True)[:5]
+    años_a_mostrar = sorted(años_a_mostrar)  # Ordenar ascendente para el gráfico
+    
+    # Calcular ventas totales por año
+    ventas_por_año = []
+    for año in años_a_mostrar:
+        df_año = df[df['fecha'].dt.year == año]
+        total_año = df_año['ventas_usd'].sum()
+        ventas_por_año.append({
+            'año': str(año),
+            'ventas': total_año
+        })
+    
+    df_años = pd.DataFrame(ventas_por_año)
+    
+    # Calcular crecimiento año a año
+    crecimiento = []
+    for i in range(len(df_años)):
+        if i == 0:
+            crecimiento.append(None)
+        else:
+            venta_actual = df_años.iloc[i]['ventas']
+            venta_anterior = df_años.iloc[i-1]['ventas']
+            if venta_anterior > 0:
+                crec_pct = ((venta_actual - venta_anterior) / venta_anterior) * 100
+                crecimiento.append(crec_pct)
+            else:
+                crecimiento.append(None)
+    
+    df_años['crecimiento'] = crecimiento
+    
+    # Crear gráfico de barras
+    fig = go.Figure()
+    
+    # Añadir barras con colores según crecimiento
+    colores = []
+    for i, row in df_años.iterrows():
+        if row['crecimiento'] is None or pd.isna(row['crecimiento']):
+            colores.append('#808080')  # Gris para primer año
+        elif row['crecimiento'] > 0:
+            colores.append('#2ca02c')  # Verde para crecimiento positivo
+        else:
+            colores.append('#d62728')  # Rojo para decrecimiento
+    
+    fig.add_trace(go.Bar(
+        x=df_años['año'],
+        y=df_años['ventas'],
+        marker_color=colores,
+        text=df_años['ventas'],
+        texttemplate='$%{text:,.0f}',
+        textposition='outside',
+        hovertemplate='<b>Año %{x}</b><br>' +
+                     'Ventas Totales: $%{y:,.2f}<br>' +
+                     '<extra></extra>'
+    ))
+    
+    # Añadir etiquetas de crecimiento
+    for i, row in df_años.iterrows():
+        if row['crecimiento'] is not None and not pd.isna(row['crecimiento']):
+            fig.add_annotation(
+                x=row['año'],
+                y=row['ventas'] / 2,
+                text=f"{row['crecimiento']:+.1f}%",
+                showarrow=False,
+                font=dict(size=14, color='white', family='Arial Black'),
+                bgcolor='rgba(0,0,0,0.6)',
+                borderpad=4
+            )
+    
+    fig.update_layout(
+        title={
+            'text': '<b>Comparativo de Ventas Totales por Año Completo</b>',
+            'x': 0.5,
+            'xanchor': 'center',
+            'font': {'size': 20}
+        },
+        xaxis_title='Año',
+        yaxis_title='Ventas USD Totales',
+        height=450,
+        template=None,
+        paper_bgcolor='white',
+        plot_bgcolor='white',
+        showlegend=False,
+        xaxis=dict(
+            gridcolor='lightgray',
+            showgrid=True
+        ),
+        yaxis=dict(
+            gridcolor='lightgray',
+            showgrid=True
+        )
+    )
+    
+    return fig
+
 def crear_tabla_top_productos(df_ytd, n=10):
     """Crea tabla con top productos del período."""
     
@@ -1043,6 +1150,14 @@ def run(df, habilitar_ia=False, openai_api_key=None):
     # Gráfico de líneas acumulado
     fig_lineas = crear_grafico_lineas_acumulado(df_filtrado, año_actual, año_anterior)
     st.plotly_chart(fig_lineas, use_container_width=True)
+    
+    # Gráfico comparativo de años completos
+    if len(años_disponibles) >= 2:
+        st.subheader("📊 Comparativo Histórico de Años Completos")
+        st.caption("Ventas totales anuales con crecimiento año a año")
+        fig_años_completos = crear_grafico_comparativo_anos_completos(df_filtrado, años_disponibles)
+        st.plotly_chart(fig_años_completos, use_container_width=True)
+        st.markdown("---")
     
     # Layout de dos columnas
     col_left, col_right = st.columns([6, 4])
