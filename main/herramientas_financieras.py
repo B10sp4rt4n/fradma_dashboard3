@@ -120,11 +120,18 @@ def mostrar_conversor_monedas():
     st.header("💱 Conversor de Monedas")
     st.markdown("Tipos de cambio actualizados en tiempo real")
     
+    # Botón para forzar actualización de tasas
+    col_titulo1, col_titulo2 = st.columns([3, 1])
+    with col_titulo2:
+        if st.button("🔄 Actualizar Tasas", help="Forzar actualización de tipos de cambio"):
+            st.cache_data.clear()
+            st.rerun()
+    
     # Obtener tasas de cambio
     tasas_data = obtener_tasas_cambio()
     
     if tasas_data is None:
-        st.warning("⚠️ No se pudieron obtener tasas en tiempo real. Usando valores de referencia.")
+        st.error("❌ No se pudieron obtener tasas de la API. Usando valores de referencia limitados.")
         tasas_data = get_tasas_fallback()
         es_fallback = True
     else:
@@ -133,17 +140,23 @@ def mostrar_conversor_monedas():
     tasas = tasas_data['rates']
     fecha_actualizacion = tasas_data['date']
     
-    # Mostrar info de actualización
-    col_info1, col_info2 = st.columns([3, 1])
+    # Mostrar info de actualización con más detalle
+    col_info1, col_info2, col_info3 = st.columns([2, 1, 1])
     with col_info1:
         if es_fallback:
-            st.caption("⚠️ Tasas de referencia (no en tiempo real)")
+            st.error(f"⚠️ Modo OFFLINE - Solo {len(tasas)} monedas disponibles (fallback)")
         else:
-            st.caption(f"✅ Última actualización: {fecha_actualizacion}")
+            st.success(f"✅ Conectado a API - {len(tasas)} monedas disponibles")
+    
     with col_info2:
-        if st.button("🔄 Actualizar", help="Actualizar tasas de cambio"):
-            st.cache_data.clear()
-            st.rerun()
+        st.caption(f"📅 {fecha_actualizacion}")
+    
+    with col_info3:
+        if st.button("ℹ️ Debug", help="Ver información de debug"):
+            st.info(f"Monedas cargadas: {len(tasas)}")
+            st.code(f"Primeras 20: {list(tasas.keys())[:20]}")
+            st.code(f"Es fallback: {es_fallback}")
+            st.code(f"Total en tasas_data: {len(tasas_data.get('rates', {}))}")
     
     st.markdown("---")
     
@@ -171,15 +184,31 @@ def mostrar_conversor_monedas():
     logger.info(f"Total monedas disponibles en API: {len(todas_las_monedas)}")
     logger.info(f"Total monedas en lista ordenada: {len(monedas_ordenadas)}")
     logger.info(f"Primeras 10 monedas: {monedas_ordenadas[:10]}")
+    logger.info(f"Usando fallback: {es_fallback}")
     
-    # Debug visual: Mostrar cuántas monedas están disponibles
-    with st.expander("ℹ️ Información de Monedas Disponibles", expanded=False):
-        st.caption(f"**Total de monedas:** {len(monedas_ordenadas)} disponibles")
-        st.caption(f"**Principales:** {', '.join(monedas_ordenadas[:8])}")
-        st.caption(f"**Primeras 20:** {', '.join(monedas_ordenadas[:20])}")
-        if st.button("🔄 Limpiar caché y recargar"):
-            st.cache_data.clear()
-            st.rerun()
+    # Debug visual expandible
+    with st.expander("🔍 Debug: Información de Monedas", expanded=False):
+        st.write(f"**Estado de conexión:** {'⚠️ FALLBACK (sin API)' if es_fallback else '✅ API Conectada'}")
+        st.write(f"**Total monedas cargadas:** {len(todas_las_monedas)}")
+        st.write(f"**Total en lista ordenada:** {len(monedas_ordenadas)}")
+        st.write(f"**Monedas principales:** {', '.join(monedas_ordenadas[:8])}")
+        
+        if len(monedas_ordenadas) < 20:
+            st.error(f"❌ ERROR: Solo hay {len(monedas_ordenadas)} monedas. Se esperaban 100+")
+            st.write("**Todas las monedas disponibles:**")
+            st.code(', '.join(monedas_ordenadas))
+        else:
+            st.success(f"✅ Sistema correcto: {len(monedas_ordenadas)} monedas disponibles")
+            st.write(f"**Primeras 30:** {', '.join(monedas_ordenadas[:30])}")
+        
+        st.write("---")
+        st.write("**Datos de tasas_data:**")
+        st.json({
+            'total_rates': len(tasas),
+            'es_fallback': es_fallback,
+            'fecha': fecha_actualizacion,
+            'primeras_10_keys': list(tasas.keys())[:10]
+        })
     
     # Función para formatear opciones del selectbox
     def format_moneda(codigo):
