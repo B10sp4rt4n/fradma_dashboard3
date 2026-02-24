@@ -1459,37 +1459,38 @@ def mostrar_digestor_xml():
                 hide_index=True
             )
             
-            # Botón de exportación
-            if st.button("📥 Exportar Resumen a Excel", type="primary"):
-                # Crear archivo Excel
-                output = BytesIO()
-                with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                    df_resumen.to_excel(writer, sheet_name='Resumen', index=False)
-                    
-                    # Hoja adicional con totales
-                    df_totales = pd.DataFrame([{
-                        'Concepto': 'Total Facturas',
-                        'Cantidad': len(facturas_procesadas)
-                    }, {
-                        'Concepto': 'Subtotal',
-                        'Cantidad': f'${total_subtotal:,.2f}'
-                    }, {
-                        'Concepto': 'IVA',
-                        'Cantidad': f'${total_iva:,.2f}'
-                    }, {
-                        'Concepto': 'Total General',
-                        'Cantidad': f'${total_general:,.2f}'
-                    }])
-                    df_totales.to_excel(writer, sheet_name='Totales', index=False)
+            # Preparar archivo Excel para descarga
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                df_resumen.to_excel(writer, sheet_name='Resumen', index=False)
                 
-                output.seek(0)
-                
-                st.download_button(
-                    label="⬇️ Descargar Excel",
-                    data=output,
-                    file_name=f"facturas_resumen_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
+                # Hoja adicional con totales
+                df_totales = pd.DataFrame([{
+                    'Concepto': 'Total Facturas',
+                    'Cantidad': len(facturas_procesadas)
+                }, {
+                    'Concepto': 'Subtotal',
+                    'Cantidad': f'${total_subtotal:,.2f}'
+                }, {
+                    'Concepto': 'IVA',
+                    'Cantidad': f'${total_iva:,.2f}'
+                }, {
+                    'Concepto': 'Total General',
+                    'Cantidad': f'${total_general:,.2f}'
+                }])
+                df_totales.to_excel(writer, sheet_name='Totales', index=False)
+            
+            output.seek(0)
+            
+            # Botón de descarga directo
+            st.download_button(
+                label="⬇️ Descargar Resumen en Excel",
+                data=output,
+                file_name=f"facturas_resumen_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                type="primary",
+                use_container_width=True
+            )
         
         with tab_detalle:
             st.markdown("#### 📄 Detalle Completo por Factura")
