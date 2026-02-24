@@ -31,6 +31,9 @@ openai==2.17.0
 # Variables de entorno (seguridad)
 python-dotenv==1.0.1
 
+# Autenticación y seguridad
+bcrypt==5.0.0
+
 # ===================================================================
 # NOTAS:
 # - Para actualizar: pip install --upgrade <paquete>
