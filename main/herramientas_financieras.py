@@ -1431,8 +1431,8 @@ def mostrar_digestor_xml():
         with tab_resumen:
             st.markdown("#### 📊 Tabla Resumen de Facturas")
             
-            # Crear DataFrame resumen
-            df_resumen = pd.DataFrame([
+            # Crear DataFrame resumen para VISUALIZACIÓN (con textos truncados)
+            df_resumen_display = pd.DataFrame([
                 {
                     'Archivo': f['Archivo'],
                     'Fecha': f['Fecha'][:10] if len(f['Fecha']) > 10 else f['Fecha'],
@@ -1449,8 +1449,31 @@ def mostrar_digestor_xml():
                 for f in facturas_procesadas
             ])
             
+            # Crear DataFrame completo para EXPORTACIÓN (sin truncar)
+            df_resumen_completo = pd.DataFrame([
+                {
+                    'Archivo': f['Archivo'],
+                    'Fecha': f['Fecha'][:10] if len(f['Fecha']) > 10 else f['Fecha'],
+                    'Folio': f['Folio'],
+                    'Serie': f['Serie'],
+                    'Emisor RFC': f['EmisorRFC'],
+                    'Emisor Nombre': f['EmisorNombre'],  # Nombre completo sin truncar
+                    'Receptor RFC': f['ReceptorRFC'],
+                    'Receptor Nombre': f['ReceptorNombre'],
+                    'UUID': f['UUID'],  # UUID completo sin truncar
+                    'Forma Pago': f['FormaPago'],
+                    'Método Pago': f['MetodoPago'],
+                    'Subtotal': f['SubTotal'],
+                    'IVA': f['IVA'],
+                    'Total': f['Total'],
+                    'Moneda': f['Moneda']
+                }
+                for f in facturas_procesadas
+            ])
+            
+            # Mostrar resumen en pantalla (versión truncada)
             st.dataframe(
-                df_resumen.style.format({
+                df_resumen_display.style.format({
                     'Subtotal': '${:,.2f}',
                     'IVA': '${:,.2f}',
                     'Total': '${:,.2f}'
@@ -1459,10 +1482,36 @@ def mostrar_digestor_xml():
                 hide_index=True
             )
             
-            # Preparar archivo Excel para descarga
+            # Preparar archivo Excel para descarga (versión completa)
             output = BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                df_resumen.to_excel(writer, sheet_name='Resumen', index=False)
+                df_resumen_completo.to_excel(writer, sheet_name='Resumen', index=False)
+                
+                # Obtener el workbook y worksheet para ajustar formatos
+                workbook = writer.book
+                worksheet = writer.sheets['Resumen']
+                
+                # Formato de moneda
+                money_format = workbook.add_format({'num_format': '$#,##0.00'})
+                
+                # Ajustar anchos de columnas
+                worksheet.set_column('A:A', 35)  # Archivo
+                worksheet.set_column('B:B', 12)  # Fecha
+                worksheet.set_column('C:D', 10)  # Folio, Serie
+                worksheet.set_column('E:E', 15)  # Emisor RFC
+                worksheet.set_column('F:F', 50)  # Emisor Nombre (ANCHO AMPLIO)
+                worksheet.set_column('G:G', 15)  # Receptor RFC
+                worksheet.set_column('H:H', 50)  # Receptor Nombre (ANCHO AMPLIO)
+                worksheet.set_column('I:I', 40)  # UUID (ANCHO COMPLETO)
+                worksheet.set_column('J:K', 15)  # Forma Pago, Método Pago
+                worksheet.set_column('L:N', 15)  # Subtotal, IVA, Total
+                worksheet.set_column('O:O', 10)  # Moneda
+                
+                # Aplicar formato de moneda a columnas numéricas
+                for row in range(1, len(df_resumen_completo) + 1):
+                    worksheet.write(row, 11, df_resumen_completo.iloc[row-1]['Subtotal'], money_format)
+                    worksheet.write(row, 12, df_resumen_completo.iloc[row-1]['IVA'], money_format)
+                    worksheet.write(row, 13, df_resumen_completo.iloc[row-1]['Total'], money_format)
                 
                 # Hoja adicional con totales
                 df_totales = pd.DataFrame([{
