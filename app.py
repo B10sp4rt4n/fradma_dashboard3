@@ -13,7 +13,7 @@ _DEFAULT_LOGO = open(_LOGO_PATH, "rb").read() if os.path.exists(_LOGO_PATH) else
 
 from main import main_kpi, main_comparativo, heatmap_ventas
 from main import kpi_cpc, reporte_ejecutivo, ytd_lineas, reporte_consolidado
-from main import vendedores_cxc
+from main import vendedores_cxc, herramientas_financieras
 from utils.data_cleaner import limpiar_columnas_texto, detectar_duplicados_similares
 from utils.data_normalizer import normalizar_columnas
 from utils.logger import configurar_logger, log_dataframe_info, log_execution_time
@@ -1085,7 +1085,8 @@ opciones_menu = [
     "📉 YTD por Línea de Negocio",
     "🔥 Heatmap Ventas",
     "💳 KPI Cartera CxC",
-    "👥 Vendedores + CxC"
+    "👥 Vendedores + CxC",
+    "🧰 Herramientas Financieras"
 ]
 
 # Si el usuario es admin, agregar opciones de administración
@@ -1179,6 +1180,16 @@ with st.sidebar.expander("ℹ️ Acerca de esta vista"):
         - Score de calidad de cartera
         - Ranking mixto volumen + calidad
         - Alertas automáticas por vendedor
+        """)
+    elif menu == "🧰 Herramientas Financieras":
+        st.markdown("""
+        **Calculadoras y utilidades financieras**
+        
+        - Conversor de monedas en tiempo real
+        - Calculadora de descuento por pronto pago
+        - Calculadora DSO (Days Sales Outstanding)
+        - Herramientas para el día a día
+        - Sin necesidad de datos cargados
         """)
     elif menu == "⚙️ Gestión de Usuarios":
         st.markdown("""
@@ -1323,6 +1334,10 @@ elif menu == "💳 KPI Cartera CxC":
 
 elif menu == "👥 Vendedores + CxC":
     vendedores_cxc.run()
+
+elif menu == "🧰 Herramientas Financieras":
+    # Las herramientas financieras no requieren datos cargados
+    herramientas_financieras.run()
 
 elif menu == "📊 Reporte Consolidado":
     if "df" in st.session_state and "archivo_excel" in st.session_state:
