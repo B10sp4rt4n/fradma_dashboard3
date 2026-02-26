@@ -17,9 +17,13 @@ cfdi/
 ├── __init__.py              # Módulo principal
 ├── parser.py                # Parser de CFDI 4.0 y complementos
 ├── neon_schema.sql          # Schema de base de datos
-├── ingestion.py             # (TODO) Lógica de ingesta a Neon
+├── ingestion.py             # ✅ Lógica de ingesta a Neon
 ├── enrichment.py            # (TODO) Enriquecimiento con IA
 └── README.md                # Esta documentación
+
+examples/
+├── test_parser.py           # CLI para parsear un CFDI
+└── ingest_cfdi_to_neon.py   # ✅ Ingesta completa XML → Neon
 ```
 
 ---
@@ -55,19 +59,215 @@ print(f"Cliente: {datos['receptor']['nombre']}")
 print(f"Total: ${datos['total']:.2f} {datos['moneda']}")
 ```
 
-### 4. Procesar batch de XMLs
+### 4. Ingesta completa a Neon (desde ZIP o carpeta)
+
+```bash
+# Opción 1: Desde un ZIP de XMLs
+python examples/ingest_cfdi_to_neon.py \
+    --xml-zip /ruta/a/facturas_2025.zip \
+    --empresa-id 1 \
+    --neon-url "postgresql://user:pass@ep-xyz.us-east-2.aws.neon.tech/fradma?sslmode=require"
+
+# Opción 2: Desde una carpeta local
+python examples/ingest_cfdi_to_neon.py \
+    --xml-folder /ruta/a/cfdi_xmls/ \
+    --empresa-id 1 \
+    --neon-url "postgresql://user:pass@ep-xyz.us-east-2.aws.neon.tech/fradma?sslmode=require"
+```
+
+**Output esperado:**
+```
+============================================================
+📊 RESUMEN DE INGESTA
+============================================================
+Total XMLs procesados:    1,247
+✅ Insertados correctamente: 1,195
+⚠️  Duplicados (saltados):    42
+❌ Errores:                  10
+============================================================
+
+============================================================
+📈 ESTADÍSTICAS EMPRESA ID 1
+============================================================
+Total CFDIs almacenados:  5,234
+Total conceptos:          18,923
+Total pagos registrados:  3,456
+
+Rango de fechas:
+  Primer CFDI: 2020-01-15
+  Último CFDI: 2025-02-25
+
+Total facturado por moneda:
+  MXN: $45,234,567.00
+  USD: $123,456.00
+============================================================
+```
+
+### 5. Uso programático con Python
 
 ```python
-from cfdi.parser import parse_cfdi_batch
+from cfdi.parser import CFDIParser, parse_cfdi_batch
+from cfdi.ingestion import NeonIngestion
 
-resultados = parse_cfdi_batch(
-    xml_files=['factura1.xml', 'factura2.xml', ...],
-    empresa_id='uuid-de-empresa'
-)
+# Configurar conexión a Neon
+NEON_URL = "postgresql://user:pass@host/db?sslmode=require"
 
-print(f"✅ {len(resultados['ventas'])} facturas procesadas")
-print(f"✅ {len(resultados['pagos'])} pagos documentados")
-print(f"❌ {len(resultados['errores'])} errores")
+# Parsear XMLs
+parser = CFDIParser()
+ventas = []
+
+for xml_file in ['factura1.xml', 'factura2.xml', 'factura3.xml']:
+    with open(xml_file, 'r') as f:
+        xml_content = f.read()
+    venta = parser.parse_cfdi_venta(xml_content)
+    ventas.append(venta)
+
+# Insertar en Neon
+with NeonIngestion(NEON_URL) as ingestion:
+    stats = ingestion.insert_ventas_batch(
+        empresa_id=1,
+        ventas_list=ventas,
+        skip_duplicates=True
+    )
+    
+    print(f"✅ {stats['insertados']} CFDIs insertados")
+    print(f"⚠️ {stats['duplicados']} duplicados")
+    print(f"❌ {stats['errores']} errores")
+    
+    # Obtener estadísticas de la empresa
+    empresa_stats = ingestion.get_empresa_stats(empresa_id=1)
+    print(f"Total acumulado: {empresa_stats['total_cfdis']} CFDIs")
+```
+
+---
+
+## 💾 Configuración de Neon PostgreSQL
+
+### 1. Crear proyecto en Neon
+
+1. Ir a https://neon.tech y crear cuenta gratuita
+2. Crear nuevo proyecto: `fradma-dashboard`
+3. Seleccionar región: `US East (Ohio)` o `AWS us-east-2`
+4. Copiar la connection string (formato: `postgresql://user:pass@host/db`)
+
+### 2. Ejecutar schema inicial
+
+```bash
+# Conectar a Neon y crear tablas
+psql $NEON_URL -f cfdi/neon_schema.sql
+```
+
+**Verificar instalación:**
+```sql
+-- Debe retornar 6 tablas
+SELECT table_name FROM information_schema.tables 
+WHERE table_schema = 'public';
+
+-- Output esperado:
+-- empresas
+-- cfdi_ventas
+-- cfdi_conceptos
+-- cfdi_pagos
+-- clientes_master
+-- benchmarks_industria
+```
+
+### 3. Crear empresa de prueba
+
+```sql
+INSERT INTO empresas (
+    nombre_comercial,
+    rfc,
+    plan,
+    industria,
+    tamanio
+) VALUES (
+    'Mi Distribuidora SA de CV',
+    'MDI123456ABC',
+    'business',
+    'distribucion_materiales',
+    'mediana'
+) RETURNING id;
+
+-- Usar el ID retornado para --empresa-id en el script de ingesta
+```
+
+### 4. Variables de entorno (recomendado)
+
+```bash
+# .env
+NEON_DATABASE_URL="postgresql://user:pass@ep-xyz.us-east-2.aws.neon.tech/fradma?sslmode=require"
+EMPRESA_ID=1
+```
+
+```python
+# En tu código
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+NEON_URL = os.getenv('NEON_DATABASE_URL')
+EMPRESA_ID = int(os.getenv('EMPRESA_ID'))
+```
+
+---
+
+## 🔍 Queries Útiles
+
+### Ver últimas facturas insertadas
+
+```sql
+SELECT 
+    uuid,
+    fecha_emision,
+    receptor_nombre,
+    total,
+    moneda
+FROM cfdi_ventas
+WHERE empresa_id = 1
+ORDER BY fecha_emision DESC
+LIMIT 10;
+```
+
+### Ventas totales por mes
+
+```sql
+SELECT 
+    DATE_TRUNC('month', fecha_emision) as mes,
+    COUNT(*) as num_facturas,
+    SUM(total) as total_facturado,
+    moneda
+FROM cfdi_ventas
+WHERE empresa_id = 1
+GROUP BY mes, moneda
+ORDER BY mes DESC;
+```
+
+### Clientes con mayor cartera vencida
+
+```sql
+SELECT * FROM v_cartera_clientes
+WHERE empresa_id = 1
+  AND saldo_pendiente > 0
+ORDER BY dias_promedio_cobro DESC
+LIMIT 20;
+```
+
+### Top productos vendidos
+
+```sql
+SELECT 
+    descripcion,
+    COUNT(*) as veces_vendido,
+    SUM(cantidad) as cantidad_total,
+    SUM(importe) as importe_total
+FROM cfdi_conceptos cc
+JOIN cfdi_ventas cv ON cc.cfdi_id = cv.id
+WHERE cv.empresa_id = 1
+  AND cv.fecha_emision >= CURRENT_DATE - INTERVAL '12 months'
+GROUP BY descripcion
+ORDER BY importe_total DESC
+LIMIT 50;
 ```
 
 ---
@@ -195,11 +395,14 @@ HAVING COUNT(DISTINCT empresa_id) >= 30;  -- K-anonymity
 
 ## 🚧 Roadmap
 
-### Fase 1: MVP (Semanas 1-4) ✅
+### Fase 1: MVP (Semanas 1-4) ✅ COMPLETADO
 - [x] Parser CFDI 4.0 básico
+- [x] Parser Complemento de Pagos 2.0
 - [x] Schema Neon PostgreSQL
-- [ ] Script de ingesta manual
-- [ ] Tests unitarios del parser
+- [x] Script de ingesta completo
+- [x] Tests unitarios (parser + ingestion)
+- [x] Documentación completa
+- [x] CLI tools (test_parser.py, ingest_cfdi_to_neon.py)
 
 ### Fase 2: Automatización (Semanas 5-8)
 - [ ] Upload ZIP desde Streamlit UI
