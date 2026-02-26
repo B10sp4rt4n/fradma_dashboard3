@@ -18,8 +18,11 @@ cfdi/
 ├── parser.py                # Parser de CFDI 4.0 y complementos
 ├── neon_schema.sql          # Schema de base de datos
 ├── ingestion.py             # ✅ Lógica de ingesta a Neon
-├── enrichment.py            # (TODO) Enriquecimiento con IA
+├── enrichment.py            # ✅ Enriquecimiento con IA
 └── README.md                # Esta documentación
+
+main/
+└── ingesta_cfdi.py          # ✅ UI Streamlit para upload ZIP
 
 examples/
 ├── test_parser.py           # CLI para parsear un CFDI
@@ -323,39 +326,129 @@ graph LR
 
 ## 🤖 Enriquecimiento con IA
 
-### Clasificación de línea de negocio
+El módulo [cfdi/enrichment.py](cfdi/enrichment.py) ofrece clasificación automática y detección de anomalías usando GPT-4.
 
-```python
-# Ejemplo: descripción del concepto → línea de negocio
-"Tornillo hexagonal 1/4 x 2" acero grado 8"
-    ↓ GPT-4 fine-tuned
-"ferreteria_industrial"
+### 1. Clasificación de líneas de negocio
 
-"Bomba sumergible 1.5HP marca Franklin"
-    ↓
-"equipos_hidraulicos"
-```
-
-**Prompt usado:**
-```
-Clasifica el siguiente producto en una de estas categorías:
+**14 categorías predefinidas para México:**
 - ferreteria_herramientas
 - ferreteria_industrial
-- equipos_hidraulicos
 - materiales_construccion
 - plasticos_industriales
+- equipos_hidraulicos
+- equipos_electricos
+- pinturas_recubrimientos
+- quimicos_industriales
+- seguridad_industrial
+- textiles_industriales
+- automotriz_refacciones
+- empaque_embalaje
+- limpieza_industrial
 - otro
 
-Producto: {descripcion}
-Categoría:
+**Ejemplo de uso:**
+```python
+from cfdi.enrichment import CFDIEnrichment
+
+# Inicializar con API key de OpenAI
+enricher = CFDIEnrichment(api_key="sk-...", model="gpt-4o-mini")
+
+# Clasificar un producto
+linea = enricher.clasificar_concepto("Tornillo hexagonal 1/4 x 2 pulgadas")
+print(f"Línea: {linea}")  # Output: "ferreteria_industrial"
+
+# Clasificar batch con límite de GPT calls
+conceptos = [
+    {'descripcion': 'Tornillo', 'importe': 100},
+    {'descripcion': 'Cemento 50kg', 'importe': 150},
+    {'descripcion': 'Cable eléctrico', 'importe': 200}
+]
+
+enriquecidos = enricher.enriquecer_conceptos_batch(
+    conceptos,
+    usar_gpt=True,
+    max_gpt_calls=100  # Límite para controlar costos
+)
+
+# Resultado: cada concepto tiene campo 'linea_negocio'
+print(enriquecidos[0])
+# {'descripcion': 'Tornillo', 'importe': 100, 'linea_negocio': 'ferreteria_industrial'}
 ```
 
-### Detección de anomalías
+**Sistema de caché inteligente:**
+- Guarda clasificaciones previas para evitar llamadas duplicadas
+- Reduce costos hasta 90% en procesamiento repetido
+- Exportable/importable para compartir entre sesiones
 
 ```python
-# Cliente normalmente compra $10K-15K mensual
-# Este mes: $45K → Alerta: "Compra inusual, verificar si aplica crédito"
+# Exportar caché
+enricher.export_cache('cache_clasificaciones.json')
+
+# Importar en otra sesión
+enricher2 = CFDIEnrichment()
+enricher2.import_cache('cache_clasificaciones.json')
 ```
+
+**Clasificación sin GPT (solo keywords):**
+Para ahorrar costos o procesamiento offline:
+
+```python
+from cfdi.enrichment import clasificar_rapido
+
+linea = clasificar_rapido("Tornillo hexagonal")  # Usa solo keywords
+# Output: "ferreteria_industrial"
+```
+
+### 2. Detección de anomalías
+
+El módulo detecta automáticamente:
+- ✅ Cantidades anormalmente altas (>10,000 unidades)
+- ✅ Precios <= 0 o excesivamente altos
+- ✅ Descripciones muy cortas o vacías
+- ✅ Precios desviados vs histórico (>50%)
+
+```python
+concepto = {
+    'descripcion': 'Tornillo',
+    'cantidad': 15000,  # Anormal
+    'valor_unitario': 1.50
+}
+
+anomalias = enricher.detectar_anomalias(concepto)
+print(anomalias)
+# Output: ['Cantidad inusualmente alta: 15,000 unidades']
+```
+
+### 3. Resumen por línea de negocio
+
+```python
+resumen = enricher.generar_resumen(conceptos_enriquecidos)
+
+# Resultado:
+{
+    'ferreteria_industrial': {
+        'total_conceptos': 1245,
+        'importe_total': 567890.50,
+        'conceptos_ejemplo': ['Tornillo 1/4', 'Tuerca hex', 'Clavo 2"']
+    },
+    'materiales_construccion': {
+        'total_conceptos': 856,
+        'importe_total': 1234567.00,
+        'conceptos_ejemplo': ['Cemento gris 50kg', 'Arena', 'Grava']
+    }
+}
+```
+
+### 4. Uso en UI Streamlit
+
+La página **📦 Ingesta CFDIs (ZIP)** integra todo automáticamente:
+1. Upload ZIP de XMLs
+2. Parsing automático
+3. Clasificación IA opcional (con control de costos)
+4. Reportes consolidados por línea
+5. Guardado a Neon PostgreSQL
+
+Accesible desde el menú principal → "📦 Ingesta CFDIs (ZIP)"
 
 ---
 

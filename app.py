@@ -13,7 +13,7 @@ _DEFAULT_LOGO = open(_LOGO_PATH, "rb").read() if os.path.exists(_LOGO_PATH) else
 
 from main import main_kpi, main_comparativo, heatmap_ventas
 from main import kpi_cpc, reporte_ejecutivo, ytd_lineas, reporte_consolidado
-from main import vendedores_cxc, herramientas_financieras
+from main import vendedores_cxc, herramientas_financieras, ingesta_cfdi
 from utils.data_cleaner import limpiar_columnas_texto, detectar_duplicados_similares
 from utils.data_normalizer import normalizar_columnas
 from utils.logger import configurar_logger, log_dataframe_info, log_execution_time
@@ -1086,7 +1086,8 @@ opciones_menu = [
     "🔥 Heatmap Ventas",
     "💳 KPI Cartera CxC",
     "👥 Vendedores + CxC",
-    "🧰 Herramientas Financieras"
+    "🧰 Herramientas Financieras",
+    "📦 Ingesta CFDIs (ZIP)"
 ]
 
 # Si el usuario es admin, agregar opciones de administración
@@ -1190,6 +1191,16 @@ with st.sidebar.expander("ℹ️ Acerca de esta vista"):
         - Calculadora DSO (Days Sales Outstanding)
         - Herramientas para el día a día
         - Sin necesidad de datos cargados
+        """)
+    elif menu == "📦 Ingesta CFDIs (ZIP)":
+        st.markdown("""
+        **Procesamiento masivo de facturas electrónicas**
+        
+        - Upload de ZIP con XMLs de CFDI 4.0
+        - Parsing automático de facturas
+        - Clasificación IA con GPT-4
+        - Guardado opcional en Neon PostgreSQL
+        - Reportes consolidados por línea de negocio
         """)
     elif menu == "⚙️ Gestión de Usuarios":
         st.markdown("""
@@ -1339,7 +1350,11 @@ elif menu == "🧰 Herramientas Financieras":
     # Las herramientas financieras no requieren datos cargados
     herramientas_financieras.run()
 
-elif menu == "📊 Reporte Consolidado":
+elif menu == "� Ingesta CFDIs (ZIP)":
+    # La ingesta de CFDIs no requiere datos cargados previamente
+    ingesta_cfdi.main()
+
+elif menu == "�📊 Reporte Consolidado":
     if "df" in st.session_state and "archivo_excel" in st.session_state:
         with st.spinner("📊 Generando reporte consolidado..."):
             try:
