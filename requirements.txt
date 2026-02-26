@@ -34,6 +34,12 @@ python-dotenv==1.0.1
 # Autenticación y seguridad
 bcrypt==5.0.0
 
+# Parsing XML (para CFDIs)
+lxml==5.3.0
+
+# Base de datos PostgreSQL (Neon)
+psycopg2-binary==2.9.10
+
 # ===================================================================
 # NOTAS:
 # - Para actualizar: pip install --upgrade <paquete>
