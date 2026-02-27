@@ -120,6 +120,172 @@ def calcular_metricas_ytd(df_ytd):
         'proyeccion_anual': proyeccion_anual
     }
 
+def crear_grafico_temporal_producto(df, producto, año_actual, año_anterior=None):
+    """
+    Crea gráfico de evolución temporal de un producto específico.
+    
+    Args:
+        df: DataFrame con datos de ventas
+        producto: Nombre del producto a analizar
+        año_actual: Año principal a mostrar
+        año_anterior: Año para comparación (opcional)
+    
+    Returns:
+        Figura de Plotly
+    """
+    fig = go.Figure()
+    
+    color_producto = COLORES_LINEAS.get(producto, '#2E86AB')
+    
+    # Datos año actual
+    df_actual = df[(df['fecha'].dt.year == año_actual) & (df['producto'] == producto)].copy()
+    if not df_actual.empty:
+        df_actual['mes'] = df_actual['fecha'].dt.month
+        ventas_mes = df_actual.groupby('mes')['ventas_usd'].sum().sort_index()
+        ventas_acumuladas = ventas_mes.cumsum()
+        
+        fig.add_trace(go.Scatter(
+            x=ventas_acumuladas.index,
+            y=ventas_acumuladas.values,
+            mode='lines+markers',
+            name=f"{año_actual}",
+            line=dict(color=color_producto, width=4),
+            marker=dict(size=12, color=color_producto, line=dict(width=2, color='white')),
+            hovertemplate='<b>%{fullData.name}</b><br>' +
+                         'Mes: %{x}<br>' +
+                         'Acumulado: $%{y:,.2f}<extra></extra>',
+            fill='tozeroy',
+            fillcolor=f'rgba({int(color_producto[1:3], 16)}, {int(color_producto[3:5], 16)}, {int(color_producto[5:7], 16)}, 0.1)'
+        ))
+    
+    # Datos año anterior si existe
+    if año_anterior:
+        df_anterior = df[(df['fecha'].dt.year == año_anterior) & (df['producto'] == producto)].copy()
+        if not df_anterior.empty:
+            df_anterior['mes'] = df_anterior['fecha'].dt.month
+            ventas_mes_ant = df_anterior.groupby('mes')['ventas_usd'].sum().sort_index()
+            ventas_acumuladas_ant = ventas_mes_ant.cumsum()
+            
+            fig.add_trace(go.Scatter(
+                x=ventas_acumuladas_ant.index,
+                y=ventas_acumuladas_ant.values,
+                mode='lines+markers',
+                name=f"{año_anterior}",
+                line=dict(color=color_producto, width=2, dash='dash'),
+                marker=dict(size=6, color=color_producto, symbol='diamond'),
+                opacity=0.6,
+                hovertemplate='<b>%{fullData.name}</b><br>' +
+                             'Mes: %{x}<br>' +
+                             'Acumulado: $%{y:,.2f}<extra></extra>'
+            ))
+    
+    fig.update_layout(
+        title={
+            'text': f'<b>Evolución Temporal YTD - {producto}</b>',
+            'x': 0.5,
+            'xanchor': 'center',
+            'font': {'size': 18}
+        },
+        xaxis_title='Mes',
+        yaxis_title='Ventas USD Acumuladas',
+        hovermode='x unified',
+        height=450,
+        template=None,
+        paper_bgcolor='white',
+        plot_bgcolor='white',
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="center",
+            x=0.5
+        ),
+        xaxis=dict(
+            tickmode='array',
+            tickvals=list(range(1, 13)),
+            ticktext=['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 
+                     'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'],
+            gridcolor='lightgray',
+            showgrid=True
+        ),
+        yaxis=dict(
+            gridcolor='lightgray',
+            showgrid=True,
+            tickformat='$,.0f'
+        )
+    )
+    
+    return fig
+
+def crear_treemap_clientes_producto(df_ytd, producto):
+    """
+    Crea treemap de clientes que compran un producto específico.
+    
+    Args:
+        df_ytd: DataFrame con datos YTD
+        producto: Nombre del producto
+    
+    Returns:
+        Figura de Plotly
+    """
+    # Filtrar solo el producto seleccionado
+    df_producto = df_ytd[df_ytd['producto'] == producto].copy()
+    
+    if df_producto.empty:
+        # Retornar figura vacía si no hay datos
+        fig = go.Figure()
+        fig.add_annotation(
+            text="No hay datos de clientes para este producto",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5, showarrow=False,
+            font=dict(size=16)
+        )
+        return fig
+    
+    # Agrupar por cliente
+    ventas_clientes = df_producto.groupby('cliente')['ventas_usd'].sum().reset_index()
+    ventas_clientes = ventas_clientes.sort_values('ventas_usd', ascending=False)
+    
+    # Agregar columna de producto para el treemap
+    ventas_clientes['producto'] = producto
+    
+    # Crear columna de texto con formato
+    ventas_clientes['texto'] = ventas_clientes.apply(
+        lambda row: f"{row['cliente']}<br>${row['ventas_usd']:,.0f}", 
+        axis=1
+    )
+    
+    # Calcular participación
+    ventas_clientes['participacion'] = (ventas_clientes['ventas_usd'] / ventas_clientes['ventas_usd'].sum() * 100).round(2)
+    
+    fig = px.treemap(
+        ventas_clientes,
+        path=['producto', 'cliente'],
+        values='ventas_usd',
+        title=f'<b>Distribución de Clientes - {producto}</b>',
+        color='ventas_usd',
+        color_continuous_scale='Blues',
+        hover_data={'ventas_usd': ':$,.2f', 'participacion': ':.2f%'},
+        custom_data=['participacion']
+    )
+    
+    fig.update_traces(
+        textposition="middle center",
+        marker=dict(line=dict(width=2, color='white')),
+        hovertemplate='<b>%{label}</b><br>' +
+                     'Ventas: %{value:$,.2f}<br>' +
+                     'Participación: %{customdata[0]:.2f}%<extra></extra>'
+    )
+    
+    fig.update_layout(
+        height=500,
+        title_x=0.5,
+        title_font_size=18,
+        margin=dict(t=50, l=10, r=10, b=10)
+    )
+    
+    return fig
+
 def crear_grafico_lineas_acumulado(df, año_actual, año_anterior=None):
     """
     Crea gráfico de productos con ventas acumuladas por mes.
@@ -753,24 +919,26 @@ def run(df, habilitar_ia=False, openai_api_key=None):
     
     # Filtros adicionales
     st.sidebar.markdown("---")
-    st.sidebar.subheader("🔍 Filtros Adicionales")
+    st.sidebar.subheader("🔍 Selección de Producto")
     
     productos_disponibles = sorted(df['producto'].unique())
-    seleccion_productos = st.sidebar.multiselect(
-        "Productos",
+    
+    # Calcular producto con más ventas para usarlo como default
+    df_temp_ytd = calcular_ytd(df, año_actual)
+    if not df_temp_ytd.empty:
+        ventas_por_producto = df_temp_ytd.groupby('producto')['ventas_usd'].sum().sort_values(ascending=False)
+        producto_default = ventas_por_producto.index[0] if len(ventas_por_producto) > 0 else productos_disponibles[0]
+    else:
+        producto_default = productos_disponibles[0] if productos_disponibles else None
+    
+    producto_seleccionado = st.sidebar.selectbox(
+        "📦 Selecciona un Producto",
         options=productos_disponibles,
-        default=productos_disponibles
+        index=productos_disponibles.index(producto_default) if producto_default in productos_disponibles else 0,
+        help="Selecciona un producto para ver su análisis detallado"
     )
     
-    # Control para número de productos a mostrar en detalle
-    num_total_productos = len(productos_disponibles)
-    num_productos_mostrar = st.sidebar.slider(
-        "📊 Productos en Panel Detallado",
-        min_value=1,
-        max_value=num_total_productos,
-        value=min(10, num_total_productos),
-        help="Número de productos de negocio a mostrar en el panel de detalles expandibles"
-    )
+    st.sidebar.info(f"📊 Producto: **{producto_seleccionado}**")
     
     # =====================================================================
     # CONFIGURACIÓN DE ANÁLISIS CON IA - TEMPORALMENTE DESHABILITADO
@@ -813,8 +981,8 @@ def run(df, habilitar_ia=False, openai_api_key=None):
     # IA controlada desde el passkey premium en app.py (se recibe como parámetro)
     # habilitar_ia y openai_api_key vienen de los parámetros de la función
     
-    # Aplicar filtros
-    df_filtrado = df[df['producto'].isin(seleccion_productos)].copy()
+    # Aplicar filtro de producto individual
+    df_filtrado = df[df['producto'] == producto_seleccionado].copy()
     
     # Calcular YTD
     df_ytd_actual = calcular_ytd(df_filtrado, año_actual)
@@ -916,9 +1084,10 @@ def run(df, habilitar_ia=False, openai_api_key=None):
         elif metricas['total_ytd'] > 0:
             crecimiento_pct = 100.0  # Crecimiento desde cero
     
-    # Línea top
-    producto_top = df_ytd_actual.groupby('producto')['ventas_usd'].sum().idxmax()
-    ventas_producto_top = df_ytd_actual.groupby('producto')['ventas_usd'].sum().max()
+    # Análisis de clientes del producto
+    clientes_del_producto = df_ytd_actual['cliente'].nunique()
+    top_cliente = df_ytd_actual.groupby('cliente')['ventas_usd'].sum().idxmax() if len(df_ytd_actual) > 0 else "N/A"
+    ventas_top_cliente = df_ytd_actual.groupby('cliente')['ventas_usd'].sum().max() if len(df_ytd_actual) > 0 else 0
     
     # Mostrar métricas
     col1, col2, col3, col4 = st.columns(4)
@@ -933,10 +1102,10 @@ def run(df, habilitar_ia=False, openai_api_key=None):
             delta_label = None
             
         st.metric(
-            label="💰 Total YTD",
+            label="💰 Total YTD Producto",
             value=f"${metricas['total_ytd']:,.0f}",
             delta=delta_label,
-            help="📐 Suma de ventas acumuladas desde inicio de año hasta la fecha de corte seleccionada"
+            help=f"📐 Ventas totales del producto **{producto_seleccionado}** desde inicio de año"
         )
     
     with col2:
@@ -952,15 +1121,15 @@ def run(df, habilitar_ia=False, openai_api_key=None):
             label=label_crec,
             value=f"{crecimiento_pct:+.1f}%" if año_anterior else "N/A",
             delta_color="off",
-            help="📐 Fórmula: ((YTD Actual - YTD Anterior) / YTD Anterior) × 100%"
+            help=f"📐 Crecimiento del producto **{producto_seleccionado}** vs año anterior"
         )
     
     with col3:
         st.metric(
-            label="🏆 Línea #1",
-            value=producto_top,
-            delta=f"${ventas_producto_top:,.0f}",
-            help="📐 Línea de negocio con mayor monto de ventas YTD"
+            label="👥 Clientes Compradores",
+            value=f"{clientes_del_producto}",
+            delta=f"Top: {top_cliente[:20]}..." if len(top_cliente) > 20 else f"Top: {top_cliente}",
+            help=f"📐 Número de clientes únicos que compraron **{producto_seleccionado}** este año"
         )
     
     with col4:
@@ -995,84 +1164,61 @@ def run(df, habilitar_ia=False, openai_api_key=None):
         if st.button("🚀 Generar Análisis con IA", type="primary", use_container_width=True):
             with st.spinner("🔄 Generando análisis ejecutivo con GPT-4o-mini..."):
                 try:
-                    # Filtrar datos según configuración
+                    # Preparar datos del producto seleccionado
                     df_analisis = df_ytd_actual.copy()
                     
-                    # Filtrar productos específicas
-                    productos_filtrar = obtener_lineas_filtradas(lineas_seleccionadas)
+                    # Calcular métricas específicas del producto
+                    ventas_ytd_actual_producto = df_analisis['ventas_usd'].sum()
+                    num_clientes = df_analisis['cliente'].nunique()
+                    ticket_promedio = ventas_ytd_actual_producto / num_clientes if num_clientes > 0 else 0
                     
-                    # Aplicar filtro de productos (validar columna existe)
-                    if productos_filtrar and 'producto' in df_analisis.columns:
-                        df_analisis = df_analisis[df_analisis['producto'].isin(productos_filtrar)]
-                    
-                    # Preparar datos por producto para el análisis (optimizado con groupby)
-                    datos_lineas = {}
-                    if 'producto' in df_analisis.columns:
-                        ventas_por_producto = df_analisis.groupby('producto')['ventas_usd'].sum()
-                        
-                        for linea, ventas_producto_actual in ventas_por_producto.items():
-                            crecimiento_linea = 0
-                            if año_anterior and 'producto' in df_ytd_anterior.columns:
-                                ventas_producto_anterior = df_ytd_anterior[df_ytd_anterior['producto'] == linea]['ventas_usd'].sum()
-                                if ventas_producto_anterior > 0:
-                                    crecimiento_linea = ((ventas_producto_actual - ventas_producto_anterior) / ventas_producto_anterior) * 100
-                            
-                            datos_lineas[linea] = {
-                                'ventas': ventas_producto_actual,
-                                'crecimiento': crecimiento_linea
-                            }
-                    
-                    # Generar análisis
-                    # Preparar contexto de filtros para IA
-                    contexto_filtros = generar_contexto_filtros(productos_filtrar)
-                    
-                    # Recalcular métricas con datos filtrados
-                    ventas_ytd_actual_filtrado = df_analisis['ventas_usd'].sum()
-                    
-                    # Recalcular anterior filtrado
-                    ventas_ytd_anterior_filtrado = 0
+                    # Recalcular anterior para el producto
+                    ventas_ytd_anterior_producto = 0
                     if año_anterior and not df_ytd_anterior.empty:
-                        df_anterior_filtrado = df_ytd_anterior.copy()
-                        if productos_filtrar:
-                            df_anterior_filtrado = df_anterior_filtrado[df_anterior_filtrado['producto'].isin(productos_filtrar)]
-                        ventas_ytd_anterior_filtrado = df_anterior_filtrado['ventas_usd'].sum()
+                        ventas_ytd_anterior_producto = df_ytd_anterior['ventas_usd'].sum()
                     
-                    # Recalcular crecimiento con datos filtrados
-                    if ventas_ytd_anterior_filtrado > 0:
-                        crecimiento_pct_filtrado = ((ventas_ytd_actual_filtrado - ventas_ytd_anterior_filtrado) / ventas_ytd_anterior_filtrado) * 100
-                    elif ventas_ytd_actual_filtrado > 0:
-                        crecimiento_pct_filtrado = 100.0
+                    # Recalcular crecimiento del producto
+                    if ventas_ytd_anterior_producto > 0:
+                        crecimiento_pct_producto = ((ventas_ytd_actual_producto - ventas_ytd_anterior_producto) / ventas_ytd_anterior_producto) * 100
+                    elif ventas_ytd_actual_producto > 0:
+                        crecimiento_pct_producto = 100.0
                     else:
-                        crecimiento_pct_filtrado = 0
+                        crecimiento_pct_producto = 0
                     
-                    # Recalcular proyección con datos filtrados
-                    dias_transcurridos_filtrado = metricas['dias_transcurridos']
-                    if dias_transcurridos_filtrado > 0:
-                        proyeccion_anual_filtrado = (ventas_ytd_actual_filtrado / dias_transcurridos_filtrado) * 365
+                    # Recalcular proyección del producto
+                    dias_transcurridos_producto = metricas['dias_transcurridos']
+                    if dias_transcurridos_producto > 0:
+                        proyeccion_anual_producto = (ventas_ytd_actual_producto / dias_transcurridos_producto) * 365
                     else:
-                        proyeccion_anual_filtrado = 0
+                        proyeccion_anual_producto = 0
                     
-                    # Recalcular línea top con datos filtrados
-                    if datos_lineas:
-                        producto_top_filtrado = max(datos_lineas.items(), key=lambda x: x[1]['ventas'])[0]
-                        ventas_producto_top_filtrado = datos_lineas[producto_top_filtrado]['ventas']
-                    else:
-                        # Fallback: usar valores globales si existen, sino valores por defecto
-                        try:
-                            producto_top_filtrado = producto_top
-                            ventas_producto_top_filtrado = ventas_producto_top
-                        except NameError:
-                            producto_top_filtrado = "N/A"
-                            ventas_producto_top_filtrado = 0
+                    # Top clientes del producto
+                    top_clientes = df_analisis.groupby('cliente')['ventas_usd'].sum().sort_values(ascending=False).head(5)
+                    
+                    # Preparar contexto específico para el producto
+                    contexto_filtros = f"Análisis del producto: **{producto_seleccionado}**\n"
+                    contexto_filtros += f"- Total de clientes que compran este producto: {num_clientes}\n"
+                    contexto_filtros += f"- Ticket promedio: ${ticket_promedio:,.2f}\n"
+                    contexto_filtros += f"- Top 3 clientes: {', '.join(top_clientes.head(3).index.tolist())}"
+                    
+                    # Datos del producto para IA
+                    datos_lineas = {
+                        producto_seleccionado: {
+                            'ventas': ventas_ytd_actual_producto,
+                            'crecimiento': crecimiento_pct_producto,
+                            'clientes': num_clientes,
+                            'ticket_promedio': ticket_promedio
+                        }
+                    }
                     
                     analisis = generar_resumen_ejecutivo_ytd(
-                        ventas_ytd_actual=ventas_ytd_actual_filtrado,
-                        ventas_ytd_anterior=ventas_ytd_anterior_filtrado,
-                        crecimiento_pct=crecimiento_pct_filtrado,
-                        dias_transcurridos=dias_transcurridos_filtrado,
-                        proyeccion_anual=proyeccion_anual_filtrado,
-                        producto_top=producto_top_filtrado,
-                        ventas_producto_top=ventas_producto_top_filtrado,
+                        ventas_ytd_actual=ventas_ytd_actual_producto,
+                        ventas_ytd_anterior=ventas_ytd_anterior_producto,
+                        crecimiento_pct=crecimiento_pct_producto,
+                        dias_transcurridos=dias_transcurridos_producto,
+                        proyeccion_anual=proyeccion_anual_producto,
+                        producto_top=producto_seleccionado,
+                        ventas_producto_top=ventas_ytd_actual_producto,
                         api_key=openai_api_key,
                         datos_lineas=datos_lineas,
                         contexto_filtros=contexto_filtros
@@ -1149,184 +1295,38 @@ def run(df, habilitar_ia=False, openai_api_key=None):
     # =====================================================================
     st.header("📊 Análisis Visual")
     
-    # Gráfico de productos acumulado
-    fig_lineas = crear_grafico_lineas_acumulado(df_filtrado, año_actual, año_anterior)
-    st.plotly_chart(fig_lineas, use_container_width=True)
+    # Gráfico temporal del producto individual
+    st.subheader(f"📈 Evolución Temporal - {producto_seleccionado}")
+    fig_temporal = crear_grafico_temporal_producto(df_filtrado, producto_seleccionado, año_actual, año_anterior)
+    st.plotly_chart(fig_temporal, use_container_width=True)
     
-    # Gráfico comparativo de años completos
-    if len(años_disponibles) >= 2:
-        st.subheader("📊 Comparativo Histórico de Años Completos")
-        st.caption("Ventas totales anuales con crecimiento año a año")
-        fig_años_completos = crear_grafico_comparativo_anos_completos(df_filtrado, años_disponibles)
-        st.plotly_chart(fig_años_completos, use_container_width=True)
-        st.markdown("---")
+    # Análisis de clientes que compran el producto
+    st.markdown("---")
+    st.subheader(f"👥 Análisis de Clientes - {producto_seleccionado}")
     
-    # Layout de dos columnas
     col_left, col_right = st.columns([6, 4])
     
     with col_left:
-        # Gráfico de barras comparativo
-        if año_anterior:
-            usar_año_completo = (modo_comparacion == "año_completo")
-            fig_barras, comparativo_df = crear_grafico_barras_comparativo(
-                df_filtrado, 
-                año_actual, 
-                año_anterior, 
-                usar_año_completo_anterior=usar_año_completo
-            )
-            st.plotly_chart(fig_barras, use_container_width=True)
-            
-            # Panel extendible con detalles por producto
-            st.subheader("📊 Detalle Comparativo por Línea")
-            
-            # Ordenar por ventas actuales descendente
-            comparativo_ordenado = comparativo_df.sort_values('ventas_actual', ascending=False)
-            
-            # Limitar según slider del usuario
-            comparativo_a_mostrar = comparativo_ordenado.head(num_productos_mostrar)
-            
-            # Mostrar información del filtro
-            total_productos = len(comparativo_ordenado)
-            if num_productos_mostrar < total_productos:
-                st.info(f"📋 Mostrando las top {num_productos_mostrar} de {total_productos} productos disponibles. Ajusta el slider en el panel lateral para ver más.")
-            
-            # Crear expanders para cada producto
-            for idx, row in comparativo_a_mostrar.iterrows():
-                linea = row['producto']
-                ventas_actual = row['ventas_actual']
-                ventas_anterior = row['ventas_anterior']
-                crecimiento = row['crecimiento']
-                
-                # Calcular variación absoluta
-                variacion_absoluta = ventas_actual - ventas_anterior
-                
-                # Obtener color de la línea
-                color_linea = COLORES_LINEAS.get(linea, '#808080')
-                
-                # Determinar emoji basado en crecimiento
-                if crecimiento > 0:
-                    emoji_trend = "📈"
-                    delta_color = "normal"
-                elif crecimiento < 0:
-                    emoji_trend = "📉"
-                    delta_color = "inverse"
-                else:
-                    emoji_trend = "➖"
-                    delta_color = "off"
-                
-                # Crear expander con título informativo
-                with st.expander(f"{emoji_trend} **{linea}** - ${ventas_actual:,.0f} ({crecimiento:+.1f}%)", expanded=False):
-                    # Mostrar métricas en columnas
-                    col_a, col_b, col_c = st.columns(3)
-                    
-                    with col_a:
-                        st.metric(
-                            label=f"Año {año_actual}",
-                            value=f"${ventas_actual:,.0f}",
-                            delta=None
-                        )
-                    
-                    with col_b:
-                        st.metric(
-                            label=f"Año {año_anterior}",
-                            value=f"${ventas_anterior:,.0f}",
-                            delta=None
-                        )
-                    
-                    with col_c:
-                        st.metric(
-                            label="Crecimiento",
-                            value=f"{crecimiento:+.1f}%",
-                            delta=f"${variacion_absoluta:+,.0f}",
-                            delta_color=delta_color
-                        )
-                    
-                    # Barra visual de comparación
-                    if ventas_anterior > 0:
-                        ratio = ventas_actual / ventas_anterior
-                        st.markdown(f"**Ratio:** {ratio:.2f}x")
-                        
-                        # Crear mini gráfico de barras comparativo
-                        import plotly.graph_objects as go
-                        
-                        fig_mini = go.Figure()
-                        fig_mini.add_trace(go.Bar(
-                            x=[f'{año_anterior}', f'{año_actual}'],
-                            y=[ventas_anterior, ventas_actual],
-                            marker=dict(color=[color_linea, color_linea], opacity=[0.6, 1.0]),
-                            text=[f'${ventas_anterior:,.0f}', f'${ventas_actual:,.0f}'],
-                            textposition='outside'
-                        ))
-                        
-                        fig_mini.update_layout(
-                            height=200,
-                            margin=dict(l=0, r=0, t=0, b=0),
-                            showlegend=False,
-                            yaxis=dict(showgrid=True, gridcolor='lightgray'),
-                            xaxis=dict(showgrid=False),
-                            paper_bgcolor='rgba(0,0,0,0)',
-                            plot_bgcolor='rgba(0,0,0,0)'
-                        )
-                        
-                        st.plotly_chart(fig_mini, use_container_width=True)
-                    else:
-                        st.info("💡 Sin datos del año anterior para comparar")
-        else:
-            st.info("💡 Selecciona 'Comparar con año anterior' para ver análisis comparativo")
+        # Treemap de clientes que compran el producto
+        fig_treemap_clientes = crear_treemap_clientes_producto(df_ytd_actual, producto_seleccionado)
+        st.plotly_chart(fig_treemap_clientes, use_container_width=True)
     
     with col_right:
-        # Treemap de participación (limitado según slider)
-        # Filtrar top N productos para el treemap
-        top_productos_filtro = df_ytd_actual.groupby('producto')['ventas_usd'].sum()\
-            .sort_values(ascending=False).head(num_productos_mostrar).index.tolist()
-        df_ytd_treemap = df_ytd_actual[df_ytd_actual['producto'].isin(top_productos_filtro)]
+        # Tabla de top clientes que compran el producto
+        st.subheader("🏆 Top Clientes")
+        clientes_producto = df_ytd_actual.groupby('cliente')['ventas_usd'].sum().reset_index()
+        clientes_producto = clientes_producto.sort_values('ventas_usd', ascending=False).head(10)
+        clientes_producto['participacion'] = (clientes_producto['ventas_usd'] / clientes_producto['ventas_usd'].sum() * 100)
+        clientes_producto.columns = ['Cliente', 'Ventas USD', 'Part. %']
         
-        fig_treemap = crear_treemap_participacion(df_ytd_treemap)
-        st.plotly_chart(fig_treemap, use_container_width=True)
+        st_clientes = clientes_producto.style\
+            .format({'Ventas USD': '${:,.2f}', 'Part. %': '{:.2f}%'})
         
-        # Tabla resumen por producto con colores
-        st.subheader("📋 Resumen por Línea")
-        ventas_producto = df_ytd_actual.groupby('producto')['ventas_usd'].sum().reset_index()
-        ventas_producto['participacion'] = (ventas_producto['ventas_usd'] / ventas_producto['ventas_usd'].sum() * 100)
-        ventas_producto = ventas_producto.sort_values('ventas_usd', ascending=False)
-        
-        # Limitar según slider del usuario
-        ventas_producto_mostrar = ventas_producto.head(num_productos_mostrar)
-        
-        # Mostrar información del filtro
-        total_productos_tabla = len(ventas_producto)
-        if num_productos_mostrar < total_productos_tabla:
-            st.caption(f"Mostrando top {num_productos_mostrar} de {total_productos_tabla} productos")
-        
-        ventas_producto_mostrar.columns = ['Línea', 'Ventas USD', 'Part. %']
-        
-        # Función para aplicar colores de fondo a la columna Línea
-        def aplicar_color_fondo(val):
-            color = COLORES_LINEAS.get(val, 'white')
-            # Calcular brillo para decidir color de texto (blanco o negro)
-            # Fórmula de luminancia relativa
-            if color.startswith('#'):
-                r = int(color[1:3], 16)
-                g = int(color[3:5], 16)
-                b = int(color[5:7], 16)
-                luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
-                text_color = 'white' if luminance < 0.5 else 'black'
-            else:
-                text_color = 'black'
-                
-            return f'background-color: {color}; color: {text_color}'
-
-        # Aplicar estilos usando Pandas Styler
-        st_tabla = ventas_producto_mostrar.style\
-            .format({'Ventas USD': '${:,.2f}', 'Part. %': '{:.2f}%'})\
-            .applymap(aplicar_color_fondo, subset=['Línea'])
-            
         st.dataframe(
-            st_tabla, 
+            st_clientes, 
             hide_index=True, 
             use_container_width=True,
             column_config={
-                "Línea": st.column_config.TextColumn("Producto"),
                 "Ventas USD": st.column_config.NumberColumn("Ventas USD", format="$%.2f"),
                 "Part. %": st.column_config.ProgressColumn(
                     "Participación", 
@@ -1336,6 +1336,112 @@ def run(df, habilitar_ia=False, openai_api_key=None):
                 )
             }
         )
+        
+        # Estadísticas adicionales
+        st.markdown("---")
+        st.markdown("**📊 Estadísticas de Clientes**")
+        total_clientes = len(df_ytd_actual['cliente'].unique())
+        ticket_promedio = df_ytd_actual['ventas_usd'].sum() / total_clientes if total_clientes > 0 else 0
+        
+        col_stat1, col_stat2 = st.columns(2)
+        with col_stat1:
+            st.metric("Total Clientes", total_clientes)
+        with col_stat2:
+            st.metric("Ticket Promedio", f"${ticket_promedio:,.0f}")
+    
+    # Comparativo año vs año del producto
+    if año_anterior:
+        st.markdown("---")
+        st.subheader(f"📊 Comparativo {año_actual} vs {año_anterior}")
+        
+        # Calcular ventas del año anterior para el producto
+        df_anterior_producto = df[(df['fecha'].dt.year == año_anterior) & (df['producto'] == producto_seleccionado)].copy()
+        
+        if not df_anterior_producto.empty:
+            # Determinar fecha de corte según modo de comparación
+            if modo_comparacion == "año_completo":
+                fecha_corte_anterior = datetime(año_anterior, 12, 31)
+            else:
+                fecha_corte = datetime.now()
+                try:
+                    fecha_corte_anterior = datetime(año_anterior, fecha_corte.month, fecha_corte.day)
+                except ValueError:
+                    fecha_corte_anterior = datetime(año_anterior, fecha_corte.month, 28)
+            
+            df_ytd_anterior_producto = calcular_ytd(df_anterior_producto, año_anterior, fecha_corte_anterior)
+            ventas_anterior_producto = df_ytd_anterior_producto['ventas_usd'].sum()
+            ventas_actual_producto = df_ytd_actual['ventas_usd'].sum()
+            
+            # Calcular crecimiento
+            if ventas_anterior_producto > 0:
+                crecimiento_producto = ((ventas_actual_producto - ventas_anterior_producto) / ventas_anterior_producto) * 100
+            elif ventas_actual_producto > 0:
+                crecimiento_producto = 100.0
+            else:
+                crecimiento_producto = 0
+            
+            # Determinar emoji y color
+            if crecimiento_producto > 0:
+                emoji_trend = "📈"
+                delta_color = "normal"
+            elif crecimiento_producto < 0:
+                emoji_trend = "📉"
+                delta_color = "inverse"
+            else:
+                emoji_trend = "➖"
+                delta_color = "off"
+            
+            # Mostrar métricas comparativas
+            col_comp1, col_comp2, col_comp3 = st.columns(3)
+            
+            with col_comp1:
+                st.metric(
+                    label=f"Año {año_actual}",
+                    value=f"${ventas_actual_producto:,.0f}"
+                )
+            
+            with col_comp2:
+                st.metric(
+                    label=f"Año {año_anterior}",
+                    value=f"${ventas_anterior_producto:,.0f}"
+                )
+            
+            with col_comp3:
+                st.metric(
+                    label=f"{emoji_trend} Crecimiento",
+                    value=f"{crecimiento_producto:+.1f}%",
+                    delta=f"${ventas_actual_producto - ventas_anterior_producto:+,.0f}",
+                    delta_color=delta_color
+                )
+            
+            # Crear mini gráfico de barras comparativo
+            color_producto = COLORES_LINEAS.get(producto_seleccionado, '#2E86AB')
+            
+            fig_comp = go.Figure()
+            fig_comp.add_trace(go.Bar(
+                x=[f'{año_anterior}', f'{año_actual}'],
+                y=[ventas_anterior_producto, ventas_actual_producto],
+                marker=dict(color=[color_producto, color_producto], opacity=[0.6, 1.0]),
+                text=[f'${ventas_anterior_producto:,.0f}', f'${ventas_actual_producto:,.0f}'],
+                textposition='outside'
+            ))
+            
+            fig_comp.update_layout(
+                title=f"<b>Ventas YTD - {producto_seleccionado}</b>",
+                height=350,
+                margin=dict(l=0, r=0, t=50, b=0),
+                showlegend=False,
+                yaxis=dict(showgrid=True, gridcolor='lightgray', title='Ventas USD'),
+                xaxis=dict(showgrid=False, title='Año'),
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)'
+            )
+            
+            st.plotly_chart(fig_comp, use_container_width=True)
+        else:
+            st.info(f"💡 No hay datos del producto **{producto_seleccionado}** para el año {año_anterior}")
+    else:
+        st.info("💡 Selecciona 'Comparar con año anterior' para ver análisis comparativo")
     
     st.markdown("---")
     
@@ -1344,71 +1450,91 @@ def run(df, habilitar_ia=False, openai_api_key=None):
     # =====================================================================
     st.header("🔍 Análisis Detallado")
     
-    tab1, tab2, tab3 = st.tabs(["📋 Desglose Mensual", "👥 Top Clientes", "📦 Top Productos"])
+    tab1, tab2 = st.tabs(["📋 Desglose Mensual", "👥 Detalle Clientes"])
     
     with tab1:
-        st.subheader("Ventas Mensuales por Línea")
+        st.subheader(f"Ventas Mensuales - {producto_seleccionado}")
         df_ytd_copy = df_ytd_actual.copy()
         df_ytd_copy['mes'] = df_ytd_copy['fecha'].dt.month
         df_ytd_copy['mes_nombre'] = df_ytd_copy['fecha'].dt.strftime('%B')
         
-        desglose_mes = df_ytd_copy.groupby(['producto', 'mes', 'mes_nombre'])['ventas_usd'].sum().reset_index()
-        pivot_mes = desglose_mes.pivot(index='producto', columns='mes', values='ventas_usd').fillna(0)
-        pivot_mes.columns = [f'{datetime(2000, int(m), 1).strftime("%b")}' for m in pivot_mes.columns]
-        pivot_mes['Total'] = pivot_mes.sum(axis=1)
-        pivot_mes = pivot_mes.style.format('${:,.2f}').background_gradient(cmap='Blues', subset=pivot_mes.columns[:-1])
+        # Desglose mensual del producto
+        desglose_mes = df_ytd_copy.groupby(['mes', 'mes_nombre'])['ventas_usd'].sum().reset_index()
+        desglose_mes = desglose_mes.sort_values('mes')
+        desglose_mes['ventas_acum'] = desglose_mes['ventas_usd'].cumsum()
         
-        st.dataframe(pivot_mes, use_container_width=True)
+        # Crear tabla pivote con meses como columnas
+        st.markdown("**📊 Ventas por Mes**")
+        tabla_meses = desglose_mes[['mes_nombre', 'ventas_usd', 'ventas_acum']].copy()
+        tabla_meses.columns = ['Mes', 'Ventas', 'Acumulado']
+        
+        tabla_styled = tabla_meses.style\
+            .format({'Ventas': '${:,.2f}', 'Acumulado': '${:,.2f}'})\
+            .background_gradient(cmap='Blues', subset=['Ventas'])
+        
+        st.dataframe(tabla_styled, use_container_width=True, hide_index=True)
+        
+        # Gráfico de barras por mes
+        fig_barras_mes = go.Figure()
+        fig_barras_mes.add_trace(go.Bar(
+            x=desglose_mes['mes_nombre'],
+            y=desglose_mes['ventas_usd'],
+            marker=dict(color=COLORES_LINEAS.get(producto_seleccionado, '#2E86AB')),
+            text=desglose_mes['ventas_usd'],
+            texttemplate='$%{text:,.0f}',
+            textposition='outside'
+        ))
+        
+        fig_barras_mes.update_layout(
+            title=f"<b>Ventas Mensuales - {producto_seleccionado}</b>",
+            xaxis_title='Mes',
+            yaxis_title='Ventas USD',
+            height=400,
+            showlegend=False
+        )
+        
+        st.plotly_chart(fig_barras_mes, use_container_width=True)
     
     with tab2:
-        st.subheader("Top 10 Clientes YTD")
-        tabla_clientes = crear_tabla_top_clientes(df_ytd_actual, n=10)
-        if tabla_clientes is not None:
-            # Reutilizar función de estilo definida anteriormente si es posible, o redefinir
-            def aplicar_color_fondo_local(val):
-                color = COLORES_LINEAS.get(val, 'white')
-                if color.startswith('#'):
-                    r = int(color[1:3], 16)
-                    g = int(color[3:5], 16)
-                    b = int(color[5:7], 16)
-                    luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
-                    text_color = 'white' if luminance < 0.5 else 'black'
-                else:
-                    text_color = 'black'
-                return f'background-color: {color}; color: {text_color}'
-
-            st_clientes = tabla_clientes.style\
-                .format({'Ventas USD': '${:,.2f}'})\
-                .applymap(aplicar_color_fondo_local, subset=['Producto'])
-                
-            st.dataframe(
-                st_clientes, 
-                hide_index=True, 
-                use_container_width=True,
-                column_config={
-                    "Ventas USD": st.column_config.NumberColumn("Ventas USD", format="$%.2f")
-                }
-            )
-        else:
-            st.info("💡 No hay información de clientes disponible")
-    
-    with tab3:
-        st.subheader("Top 10 Productos YTD")
-        tabla_productos = crear_tabla_top_productos(df_ytd_actual, n=10)
-        if tabla_productos is not None:
-            st_productos = tabla_productos.style\
-                .format({'Ventas USD': '${:,.2f}'})
-            
-            st.dataframe(
-                st_productos, 
-                hide_index=True, 
-                use_container_width=True,
-                column_config={
-                    "Ventas USD": st.column_config.NumberColumn("Ventas USD", format="$%.2f")
-                }
-            )
-        else:
-            st.info("💡 No hay información de productos disponible")
+        st.subheader(f"Detalle de Clientes - {producto_seleccionado}")
+        
+        # Análisis por cliente con más detalle
+        clientes_detalle = df_ytd_actual.groupby('cliente').agg({
+            'ventas_usd': ['sum', 'count', 'mean']
+        }).reset_index()
+        
+        clientes_detalle.columns = ['Cliente', 'Total Ventas', 'Num. Transacciones', 'Ticket Promedio']
+        clientes_detalle = clientes_detalle.sort_values('Total Ventas', ascending=False)
+        clientes_detalle['% Participación'] = (clientes_detalle['Total Ventas'] / clientes_detalle['Total Ventas'].sum() * 100)
+        
+        # Reordenar columnas
+        clientes_detalle = clientes_detalle[['Cliente', 'Total Ventas', 'Num. Transacciones', 'Ticket Promedio', '% Participación']]
+        
+        st_detalle = clientes_detalle.style\
+            .format({
+                'Total Ventas': '${:,.2f}',
+                'Num. Transacciones': '{:.0f}',
+                'Ticket Promedio': '${:,.2f}',
+                '% Participación': '{:.2f}%'
+            })\
+            .background_gradient(cmap='Greens', subset=['Total Ventas'])
+        
+        st.dataframe(
+            st_detalle,
+            hide_index=True,
+            use_container_width=True,
+            column_config={
+                "Total Ventas": st.column_config.NumberColumn("Total Ventas", format="$%.2f"),
+                "Num. Transacciones": st.column_config.NumberColumn("Transacciones", format="%.0f"),
+                "Ticket Promedio": st.column_config.NumberColumn("Ticket Promedio", format="$%.2f"),
+                "% Participación": st.column_config.ProgressColumn(
+                    "Participación",
+                    format="%.2f%%",
+                    min_value=0,
+                    max_value=100
+                )
+            }
+        )
     
     st.markdown("---")
     
