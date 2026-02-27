@@ -12,7 +12,7 @@ _LOGO_PATH = os.path.join(os.path.dirname(__file__), "Logo de CIMA Analytics y S
 _DEFAULT_LOGO = open(_LOGO_PATH, "rb").read() if os.path.exists(_LOGO_PATH) else None
 
 from main import main_kpi, main_comparativo, heatmap_ventas
-from main import kpi_cpc, reporte_ejecutivo, ytd_lineas, reporte_consolidado
+from main import kpi_cpc, reporte_ejecutivo, ytd_lineas, ytd_productos, reporte_consolidado
 from main import vendedores_cxc, herramientas_financieras, ingesta_cfdi
 from utils.data_cleaner import limpiar_columnas_texto, detectar_duplicados_similares
 from utils.data_normalizer import normalizar_columnas
@@ -438,6 +438,14 @@ def validar_columnas_requeridas(df):
             },
             "recomendadas": ["vendedor", "agente", "ejecutivo", "cliente"],
             "opcionales": ["producto"]
+        },
+        "YTD por Productos": {
+            "obligatorias": ["fecha", "producto"],
+            "variantes_obligatorias": {
+                "ventas_usd": ["ventas_usd", "ventas_usd_con_iva", "ventas_usd_sin_iva", "importe", "valor_usd", "monto_usd", "total_usd", "valor", "venta"]
+            },
+            "recomendadas": ["vendedor", "agente", "ejecutivo", "cliente"],
+            "opcionales": ["linea_de_negocio", "categoria", "familia"]
         },
         "Dashboard CxC": {
             "obligatorias": ["cliente", "fecha"],
@@ -1142,6 +1150,7 @@ opciones_menu = [
     "📈 KPIs Generales",
     "📊 Comparativo Año vs Año",
     "📉 YTD por Línea de Negocio",
+    "� YTD por Producto",
     "🔥 Heatmap Ventas",
     "💳 KPI Cartera CxC",
     "👥 Vendedores + CxC",
@@ -1153,7 +1162,6 @@ opciones_menu = [
 user = get_current_user()
 if user and user.can_manage_users():
     opciones_menu.extend([
-        "---",  # Separador visual
         "⚙️ Gestión de Usuarios",
         "🔧 Configuración"
     ])
@@ -1214,7 +1222,17 @@ with st.sidebar.expander("ℹ️ Acerca de esta vista"):
         - Top productos y clientes
         - Proyección anual
         """)
-    elif menu == "🔥 Heatmap Ventas":
+    elif menu == "� YTD por Producto":
+        st.markdown("""
+        **Reporte Year-to-Date (YTD) por Producto**
+        
+        - Ventas acumuladas del año
+        - Comparativa vs año anterior
+        - Análisis detallado por producto individual
+        - Top clientes por producto
+        - Proyección y tendencias
+        """)
+    elif menu == "�🔥 Heatmap Ventas":
         st.markdown("""
         **Mapa de calor de ventas**
         
@@ -1387,7 +1405,17 @@ elif menu == "📉 YTD por Línea de Negocio":
         st.warning("⚠️ Primero sube un archivo para visualizar el reporte YTD.")
         st.info("📂 Este reporte requiere datos de ventas con: fecha, linea_de_negocio, ventas_usd")
 
-elif menu == "🔥 Heatmap Ventas":
+elif menu == "� YTD por Producto":
+    if "df" in st.session_state:
+        # Pasar parámetros de IA premium al módulo
+        ia_habilitada = st.session_state.get("ia_premium_activada", False)
+        api_key = st.session_state.get("openai_api_key", None)
+        ytd_productos.run(st.session_state["df"], habilitar_ia=ia_habilitada, openai_api_key=api_key)
+    else:
+        st.warning("⚠️ Primero sube un archivo para visualizar el reporte YTD por Producto.")
+        st.info("📂 Este reporte requiere datos de ventas con: fecha, producto, ventas_usd")
+
+elif menu == "�🔥 Heatmap Ventas":
     if "df" in st.session_state:
         heatmap_ventas.run(st.session_state["df"])
     else:
