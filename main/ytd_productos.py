@@ -1582,19 +1582,31 @@ def run(df, habilitar_ia=False, openai_api_key=None):
     
     # Análisis de clientes que compran el producto
     st.markdown("---")
-    st.subheader(f"👥 Análisis de Clientes - {producto_seleccionado}")
+    
+    # Determinar periodo para análisis de clientes (consistente con configuración del treemap)
+    if periodo_treemap == "ytd_actual":
+        df_analisis_clientes = df_ytd_actual.copy()
+        subtitulo_clientes = f"👥 Análisis de Clientes - {producto_seleccionado} (YTD {año_actual})"
+    elif periodo_treemap == "historico_completo":
+        df_analisis_clientes = df_filtrado.copy()
+        subtitulo_clientes = f"👥 Análisis de Clientes - {producto_seleccionado} (Histórico Completo)"
+    else:  # año_especifico
+        df_analisis_clientes = df_filtrado[df_filtrado['fecha'].dt.year == año_treemap].copy()
+        subtitulo_clientes = f"👥 Análisis de Clientes - {producto_seleccionado} (Año {año_treemap})"
+    
+    st.subheader(subtitulo_clientes)
     
     col_left, col_right = st.columns([6, 4])
     
     with col_left:
         # Treemap de clientes que compran el producto
-        fig_treemap_clientes = crear_treemap_clientes_producto(df_ytd_actual, producto_seleccionado)
+        fig_treemap_clientes = crear_treemap_clientes_producto(df_analisis_clientes, producto_seleccionado)
         st.plotly_chart(fig_treemap_clientes, use_container_width=True)
     
     with col_right:
         # Tabla de top clientes que compran el producto
         st.subheader("🏆 Top Clientes")
-        clientes_producto = df_ytd_actual.groupby('cliente')['ventas_usd'].sum().reset_index()
+        clientes_producto = df_analisis_clientes.groupby('cliente')['ventas_usd'].sum().reset_index()
         clientes_producto = clientes_producto.sort_values('ventas_usd', ascending=False).head(10)
         clientes_producto['participacion'] = (clientes_producto['ventas_usd'] / clientes_producto['ventas_usd'].sum() * 100)
         clientes_producto.columns = ['Cliente', 'Ventas USD', 'Part. %']
