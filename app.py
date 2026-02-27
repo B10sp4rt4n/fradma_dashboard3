@@ -1350,11 +1350,11 @@ elif menu == "🧰 Herramientas Financieras":
     # Las herramientas financieras no requieren datos cargados
     herramientas_financieras.run()
 
-elif menu == "� Ingesta CFDIs (ZIP)":
+elif menu == "📦 Ingesta CFDIs (ZIP)":
     # La ingesta de CFDIs no requiere datos cargados previamente
     ingesta_cfdi.main()
 
-elif menu == "�📊 Reporte Consolidado":
+elif menu == "📊 Reporte Consolidado":
     if "df" in st.session_state and "archivo_excel" in st.session_state:
         with st.spinner("📊 Generando reporte consolidado..."):
             try:

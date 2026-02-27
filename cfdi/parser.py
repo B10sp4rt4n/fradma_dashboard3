@@ -40,13 +40,17 @@ class CFDIParser:
         """
         try:
             # Parsear XML
-            if xml_path.startswith('<?xml'):
+            if xml_path.startswith('<?xml') or xml_path.startswith('\ufeff<?xml'):
                 # Es contenido XML directo
-                root = ET.fromstring(xml_path)
+                # Eliminar BOM si existe
+                content = xml_path.lstrip('\ufeff')
+                root = ET.fromstring(content)
             else:
                 # Es ruta de archivo
-                tree = ET.parse(xml_path)
-                root = tree.getroot()
+                # Abrir con encoding utf-8-sig para manejar BOM automáticamente
+                with open(xml_path, 'r', encoding='utf-8-sig') as f:
+                    content = f.read()
+                root = ET.fromstring(content)
             
             # Extraer datos del comprobante (nodo raíz)
             comprobante = self._extract_comprobante(root)
@@ -292,8 +296,11 @@ def parse_cfdi_batch(xml_files: List[str], empresa_id: str) -> Dict:
                 pass  # No todos los CFDIs tienen complemento de pago
                 
         except Exception as e:
+            # Extraer solo el nombre del archivo, no la ruta completa
+            import os
+            filename = os.path.basename(xml_file) if isinstance(xml_file, str) else 'desconocido'
             results['errores'].append({
-                'archivo': xml_file,
+                'archivo': filename,
                 'error': str(e)
             })
     
