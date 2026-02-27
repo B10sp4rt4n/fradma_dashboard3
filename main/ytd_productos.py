@@ -998,7 +998,7 @@ def run(df, habilitar_ia=False, openai_api_key=None):
                 "Si estás en inicio de año, verás crecimientos negativos normales."
             )
     
-    # Selector de producto
+    # Selector de producto con búsqueda dinámica
     with col_producto:
         productos_disponibles = sorted(df['producto'].unique())
         
@@ -1010,12 +1010,57 @@ def run(df, habilitar_ia=False, openai_api_key=None):
         else:
             producto_default = productos_disponibles[0] if productos_disponibles else None
         
-        producto_seleccionado = st.selectbox(
-            "📦 Producto a Analizar",
-            options=productos_disponibles,
-            index=productos_disponibles.index(producto_default) if producto_default in productos_disponibles else 0,
-            help="Selecciona un producto específico para ver su análisis detallado"
+        # Buscador de productos
+        st.markdown("**📦 Buscador de Producto**")
+        busqueda_producto = st.text_input(
+            "🔍 Buscar producto",
+            value="",
+            placeholder="Escribe para filtrar productos...",
+            help="Escribe palabras clave para filtrar la lista de productos",
+            label_visibility="collapsed"
         )
+        
+        # Filtrar productos según búsqueda
+        if busqueda_producto:
+            # Filtro case-insensitive
+            productos_filtrados = [p for p in productos_disponibles if busqueda_producto.lower() in p.lower()]
+        else:
+            productos_filtrados = productos_disponibles
+        
+        # Mostrar contador de resultados
+        if busqueda_producto:
+            if len(productos_filtrados) == 0:
+                st.warning(f"⚠️ No se encontraron productos con '{busqueda_producto}'")
+                # Mostrar todos si no hay resultados
+                productos_filtrados = productos_disponibles
+            else:
+                st.caption(f"✅ {len(productos_filtrados)} producto(s) encontrado(s) de {len(productos_disponibles)} totales")
+        else:
+            st.caption(f"📋 {len(productos_disponibles)} productos disponibles")
+        
+        # Determinar producto a seleccionar
+        # Mantener el previamente seleccionado si está en los filtrados
+        if 'producto_seleccionado_ytd' in st.session_state and st.session_state.producto_seleccionado_ytd in productos_filtrados:
+            index_default = productos_filtrados.index(st.session_state.producto_seleccionado_ytd)
+        elif producto_default in productos_filtrados:
+            index_default = productos_filtrados.index(producto_default)
+        else:
+            index_default = 0
+        
+        # Selectbox con productos filtrados
+        if len(productos_filtrados) > 0:
+            producto_seleccionado = st.selectbox(
+                "Selecciona producto",
+                options=productos_filtrados,
+                index=index_default,
+                help="Selecciona un producto para ver su análisis detallado",
+                label_visibility="collapsed"
+            )
+            # Guardar en session state
+            st.session_state.producto_seleccionado_ytd = producto_seleccionado
+        else:
+            st.error("❌ No hay productos disponibles")
+            return
     
     # Control adicional para treemap de productos
     st.markdown("---")
