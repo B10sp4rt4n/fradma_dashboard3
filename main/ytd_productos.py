@@ -1064,7 +1064,56 @@ def run(df, habilitar_ia=False, openai_api_key=None):
     
     # Resumen visual de la configuración
     st.markdown("---")
-    col_resumen1, col_resumen2, col_resumen3, col_resumen4 = st.columns(4)
+    
+    # Configuración adicional para treemap
+    st.markdown("**🗺️ Configuración de Vista General de Productos**")
+    col_treemap_conf1, col_treemap_conf2, col_treemap_conf3 = st.columns([2, 2, 1])
+    
+    with col_treemap_conf1:
+        periodo_treemap = st.radio(
+            "Periodo para Treemap",
+            options=["ytd_actual", "historico_completo", "año_especifico"],
+            format_func=lambda x: {
+                "ytd_actual": f"📅 YTD {año_actual}",
+                "historico_completo": "📊 Todo el Histórico",
+                "año_especifico": "🎯 Año Específico"
+            }[x],
+            horizontal=True,
+            help="Selecciona el periodo de datos para calcular los productos top",
+            label_visibility="collapsed"
+        )
+    
+    with col_treemap_conf2:
+        # Inicializar año_treemap
+        año_treemap = año_actual
+        
+        if periodo_treemap == "año_especifico":
+            año_treemap = st.selectbox(
+                "Año para Treemap",
+                options=años_disponibles,
+                index=años_disponibles.index(año_actual) if año_actual in años_disponibles else 0,
+                help="Selecciona un año específico para el treemap",
+                label_visibility="collapsed"
+            )
+        else:
+            # Mostrar placeholder cuando no es año específico
+            st.caption("Periodo configurado →")
+    
+    with col_treemap_conf3:
+        top_n_productos = st.slider(
+            "Top N",
+            min_value=1,
+            max_value=20,
+            value=10,
+            step=1,
+            help="Productos top a mostrar. El resto se agrupa como 'Otros'",
+            label_visibility="collapsed"
+        )
+    
+    st.markdown("---")
+    
+    # Resumen de configuración principal
+    col_resumen1, col_resumen2, col_resumen3 = st.columns(3)
     
     with col_resumen1:
         st.info(f"📅 **Periodo:** {año_actual}" + (f" vs {año_anterior}" if año_anterior else ""))
@@ -1079,17 +1128,6 @@ def run(df, habilitar_ia=False, openai_api_key=None):
     with col_resumen3:
         st.success(f"📦 **Producto:** {producto_seleccionado}")
     
-    with col_resumen4:
-        # Control compacto para treemap
-        top_n_productos = st.slider(
-            "🗺️ Top N Treemap",
-            min_value=1,
-            max_value=20,
-            value=10,
-            step=1,
-            help="Productos top a mostrar en el treemap general. El resto se agrupa como 'Otros'"
-        )
-    
     st.markdown("---")
     
     # =====================================================================
@@ -1101,7 +1139,15 @@ def run(df, habilitar_ia=False, openai_api_key=None):
         st.sidebar.markdown(f"**Comparación:** {año_anterior}")
         st.sidebar.markdown(f"**Modo:** {'YTD Equiv.' if modo_comparacion == 'ytd_equivalente' else 'Año Completo'}")
     st.sidebar.markdown(f"**Producto:** {producto_seleccionado}")
-    st.sidebar.markdown(f"**Treemap Top:** {top_n_productos} productos")
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("**🗺️ Treemap:**")
+    if periodo_treemap == "ytd_actual":
+        st.sidebar.markdown(f"- Periodo: YTD {año_actual}")
+    elif periodo_treemap == "historico_completo":
+        st.sidebar.markdown("- Periodo: Histórico completo")
+    else:
+        st.sidebar.markdown(f"- Periodo: Año {año_treemap}")
+    st.sidebar.markdown(f"- Top: {top_n_productos} productos")
     st.sidebar.markdown("---")
     
     # =====================================================================
@@ -1309,15 +1355,42 @@ def run(df, habilitar_ia=False, openai_api_key=None):
     # =====================================================================
     # SECCIÓN 2.5: TREEMAP GENERAL DE PRODUCTOS
     # =====================================================================
-    st.header("🗺️ Vista General de Productos YTD")
+    # Determinar título según periodo seleccionado
+    if periodo_treemap == "ytd_actual":
+        titulo_treemap = f"🗺️ Vista General de Productos - YTD {año_actual}"
+    elif periodo_treemap == "historico_completo":
+        titulo_treemap = "🗺️ Vista General de Productos - Todo el Histórico"
+    else:  # año_especifico
+        titulo_treemap = f"🗺️ Vista General de Productos - Año {año_treemap}"
     
-    # Calcular YTD de todos los productos (no solo el seleccionado)
+    st.header(titulo_treemap)
+    
+    # Calcular datos según periodo seleccionado
     df_todos_productos = df.copy()
-    df_ytd_todos = calcular_ytd(df_todos_productos, año_actual)
+    
+    if periodo_treemap == "ytd_actual":
+        # Solo YTD del año actual
+        df_ytd_todos = calcular_ytd(df_todos_productos, año_actual)
+        periodo_label = f"YTD {año_actual}"
+    elif periodo_treemap == "historico_completo":
+        # Todo el histórico (primer registro hasta último)
+        fecha_inicio = df_todos_productos['fecha'].min()
+        fecha_fin = df_todos_productos['fecha'].max()
+        df_ytd_todos = df_todos_productos.copy()
+        periodo_label = f"Histórico ({fecha_inicio.year}-{fecha_fin.year})"
+        st.caption(f"📅 Periodo completo: {fecha_inicio.strftime('%d/%m/%Y')} hasta {fecha_fin.strftime('%d/%m/%Y')}")
+    else:  # año_especifico
+        # Año completo específico
+        df_ytd_todos = df_todos_productos[df_todos_productos['fecha'].dt.year == año_treemap].copy()
+        periodo_label = f"Año {año_treemap}"
+        if not df_ytd_todos.empty:
+            fecha_inicio_año = df_ytd_todos['fecha'].min()
+            fecha_fin_año = df_ytd_todos['fecha'].max()
+            st.caption(f"📅 Periodo: {fecha_inicio_año.strftime('%d/%m/%Y')} hasta {fecha_fin_año.strftime('%d/%m/%Y')}")
     
     if not df_ytd_todos.empty:
         # Crear treemap de productos top
-        fig_treemap_productos = crear_treemap_productos_top(df_ytd_todos, año_actual, top_n_productos)
+        fig_treemap_productos = crear_treemap_productos_top(df_ytd_todos, periodo_label, top_n_productos)
         st.plotly_chart(fig_treemap_productos, use_container_width=True)
         
         # Mostrar tabla resumen de productos
