@@ -293,7 +293,7 @@ def crear_treemap_productos_top(df_ytd, año, top_n=10):
     Args:
         df_ytd: DataFrame con datos YTD
         año: Año del análisis
-        top_n: Número de productos top a mostrar individualmente (1-20)
+        top_n: Número de productos top a mostrar individualmente (1-30)
     
     Returns:
         Figura de Plotly
@@ -1103,7 +1103,7 @@ def run(df, habilitar_ia=False, openai_api_key=None):
         top_n_productos = st.slider(
             "Top N",
             min_value=1,
-            max_value=20,
+            max_value=30,
             value=10,
             step=1,
             help="Productos top a mostrar. El resto se agrupa como 'Otros'",
