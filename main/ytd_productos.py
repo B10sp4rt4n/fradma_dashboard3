@@ -289,7 +289,6 @@ def crear_treemap_clientes_producto(df_ytd, producto):
 def crear_treemap_productos_top(df_ytd, año, top_n=10):
     """
     Crea treemap de productos top con resto agrupado como 'Otros'.
-    Filtra productos con ventas <= $1M.
     Escala de colores: $0 - $1.5M.
     
     Args:
@@ -302,10 +301,6 @@ def crear_treemap_productos_top(df_ytd, año, top_n=10):
     """
     # Agrupar por producto y calcular ventas totales
     ventas_productos = df_ytd.groupby('producto')['ventas_usd'].sum().reset_index()
-    
-    # Filtrar productos con ventas <= $1M
-    ventas_productos = ventas_productos[ventas_productos['ventas_usd'] <= 1_000_000]
-    
     ventas_productos = ventas_productos.sort_values('ventas_usd', ascending=False)
     
     # Separar top N y el resto
