@@ -917,29 +917,6 @@ def run(df, habilitar_ia=False, openai_api_key=None):
     elif comparar_año:
         st.sidebar.warning(f"⚠️ No hay datos para {año_actual - 1}")
     
-    # Filtros adicionales
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("🔍 Selección de Producto")
-    
-    productos_disponibles = sorted(df['producto'].unique())
-    
-    # Calcular producto con más ventas para usarlo como default
-    df_temp_ytd = calcular_ytd(df, año_actual)
-    if not df_temp_ytd.empty:
-        ventas_por_producto = df_temp_ytd.groupby('producto')['ventas_usd'].sum().sort_values(ascending=False)
-        producto_default = ventas_por_producto.index[0] if len(ventas_por_producto) > 0 else productos_disponibles[0]
-    else:
-        producto_default = productos_disponibles[0] if productos_disponibles else None
-    
-    producto_seleccionado = st.sidebar.selectbox(
-        "📦 Selecciona un Producto",
-        options=productos_disponibles,
-        index=productos_disponibles.index(producto_default) if producto_default in productos_disponibles else 0,
-        help="Selecciona un producto para ver su análisis detallado"
-    )
-    
-    st.sidebar.info(f"📊 Producto: **{producto_seleccionado}**")
-    
     # =====================================================================
     # CONFIGURACIÓN DE ANÁLISIS CON IA - TEMPORALMENTE DESHABILITADO
     # =====================================================================
@@ -980,6 +957,45 @@ def run(df, habilitar_ia=False, openai_api_key=None):
     
     # IA controlada desde el passkey premium en app.py (se recibe como parámetro)
     # habilitar_ia y openai_api_key vienen de los parámetros de la función
+    
+    # =====================================================================
+    # SECCIÓN 1.5: CONFIGURACIÓN DE PRODUCTO
+    # =====================================================================
+    st.header("🔧 Configuración del Análisis")
+    
+    # Selector de producto en la sección principal
+    productos_disponibles = sorted(df['producto'].unique())
+    
+    # Calcular producto con más ventas para usarlo como default
+    df_temp_ytd = calcular_ytd(df, año_actual)
+    if not df_temp_ytd.empty:
+        ventas_por_producto = df_temp_ytd.groupby('producto')['ventas_usd'].sum().sort_values(ascending=False)
+        producto_default = ventas_por_producto.index[0] if len(ventas_por_producto) > 0 else productos_disponibles[0]
+    else:
+        producto_default = productos_disponibles[0] if productos_disponibles else None
+    
+    # Layout en columnas para configuración
+    col_config1, col_config2 = st.columns([2, 1])
+    
+    with col_config1:
+        producto_seleccionado = st.selectbox(
+            "📦 Selecciona un Producto para Analizar",
+            options=productos_disponibles,
+            index=productos_disponibles.index(producto_default) if producto_default in productos_disponibles else 0,
+            help="Selecciona un producto específico para ver su análisis detallado individual"
+        )
+    
+    with col_config2:
+        # Mostrar resumen del periodo configurado
+        if año_anterior:
+            st.info(f"📅 Periodo: **{año_actual}** vs **{año_anterior}**")
+        else:
+            st.info(f"📅 Periodo: **{año_actual}**")
+    
+    # Resumen visual del producto seleccionado
+    st.success(f"✅ **Producto seleccionado:** {producto_seleccionado}")
+    
+    st.markdown("---")
     
     # Aplicar filtro de producto individual
     df_filtrado = df[df['producto'] == producto_seleccionado].copy()
