@@ -286,6 +286,74 @@ def crear_treemap_clientes_producto(df_ytd, producto):
     
     return fig
 
+def crear_treemap_productos_top(df_ytd, año, top_n=10):
+    """
+    Crea treemap de productos top con resto agrupado como 'Otros'.
+    
+    Args:
+        df_ytd: DataFrame con datos YTD
+        año: Año del análisis
+        top_n: Número de productos top a mostrar individualmente (1-20)
+    
+    Returns:
+        Figura de Plotly
+    """
+    # Agrupar por producto y calcular ventas totales
+    ventas_productos = df_ytd.groupby('producto')['ventas_usd'].sum().reset_index()
+    ventas_productos = ventas_productos.sort_values('ventas_usd', ascending=False)
+    
+    # Separar top N y el resto
+    top_productos = ventas_productos.head(top_n).copy()
+    otros_productos = ventas_productos.iloc[top_n:].copy()
+    
+    # Si hay productos en "Otros", agregarlos
+    if len(otros_productos) > 0:
+        ventas_otros = otros_productos['ventas_usd'].sum()
+        otros_row = pd.DataFrame({
+            'producto': ['Otros'],
+            'ventas_usd': [ventas_otros]
+        })
+        productos_para_treemap = pd.concat([top_productos, otros_row], ignore_index=True)
+    else:
+        productos_para_treemap = top_productos
+    
+    # Calcular participación
+    total_ventas = productos_para_treemap['ventas_usd'].sum()
+    productos_para_treemap['participacion'] = (productos_para_treemap['ventas_usd'] / total_ventas * 100).round(2)
+    
+    # Crear columna parent para el treemap (todos bajo "Total")
+    productos_para_treemap['parent'] = ''
+    
+    # Crear treemap
+    fig = px.treemap(
+        productos_para_treemap,
+        path=['parent', 'producto'],
+        values='ventas_usd',
+        title=f'<b>Productos Top {top_n} - YTD {año}</b>' + (f' ({len(otros_productos)} en "Otros")' if len(otros_productos) > 0 else ''),
+        color='ventas_usd',
+        color_continuous_scale='RdYlGn',
+        hover_data={'ventas_usd': ':$,.2f', 'participacion': ':.2f%'},
+        custom_data=['participacion']
+    )
+    
+    fig.update_traces(
+        textposition="middle center",
+        marker=dict(line=dict(width=2, color='white')),
+        hovertemplate='<b>%{label}</b><br>' +
+                     'Ventas: %{value:$,.2f}<br>' +
+                     'Participación: %{customdata[0]:.2f}%<extra></extra>',
+        textfont=dict(size=14, color='white')
+    )
+    
+    fig.update_layout(
+        height=500,
+        title_x=0.5,
+        title_font_size=18,
+        margin=dict(t=60, l=10, r=10, b=10)
+    )
+    
+    return fig
+
 def crear_grafico_lineas_acumulado(df, año_actual, año_anterior=None):
     """
     Crea gráfico de productos con ventas acumuladas por mes.
@@ -949,6 +1017,28 @@ def run(df, habilitar_ia=False, openai_api_key=None):
             help="Selecciona un producto específico para ver su análisis detallado"
         )
     
+    # Control adicional para treemap de productos
+    st.markdown("---")
+    st.markdown("**📊 Vista General de Productos**")
+    
+    col_treemap1, col_treemap2 = st.columns([3, 1])
+    
+    with col_treemap1:
+        st.markdown("Configura cuántos productos top mostrar en el treemap general:")
+    
+    with col_treemap2:
+        top_n_productos = st.slider(
+            "Top N",
+            min_value=1,
+            max_value=20,
+            value=10,
+            step=1,
+            help="Número de productos principales a mostrar. El resto se agrupará como 'Otros'",
+            label_visibility="collapsed"
+        )
+    
+    st.caption(f"📌 Mostrando top {top_n_productos} productos. El resto se agrupa como 'Otros'.")
+    
     # Resumen visual de la configuración
     st.markdown("---")
     col_resumen1, col_resumen2, col_resumen3 = st.columns(3)
@@ -1182,7 +1272,48 @@ def run(df, habilitar_ia=False, openai_api_key=None):
     st.markdown("---")
     
     # =====================================================================
-    # SECCIÓN 2.5: ANÁLISIS EJECUTIVO CON IA - FUNCIÓN PREMIUM
+    # SECCIÓN 2.5: TREEMAP GENERAL DE PRODUCTOS
+    # =====================================================================
+    st.header("🗺️ Vista General de Productos YTD")
+    
+    # Calcular YTD de todos los productos (no solo el seleccionado)
+    df_todos_productos = df.copy()
+    df_ytd_todos = calcular_ytd(df_todos_productos, año_actual)
+    
+    if not df_ytd_todos.empty:
+        # Crear treemap de productos top
+        fig_treemap_productos = crear_treemap_productos_top(df_ytd_todos, año_actual, top_n_productos)
+        st.plotly_chart(fig_treemap_productos, use_container_width=True)
+        
+        # Mostrar tabla resumen de productos
+        with st.expander("📋 Ver detalle de productos", expanded=False):
+            productos_resumen = df_ytd_todos.groupby('producto')['ventas_usd'].sum().reset_index()
+            productos_resumen = productos_resumen.sort_values('ventas_usd', ascending=False)
+            productos_resumen['participacion'] = (productos_resumen['ventas_usd'] / productos_resumen['ventas_usd'].sum() * 100).round(2)
+            productos_resumen['ranking'] = range(1, len(productos_resumen) + 1)
+            productos_resumen = productos_resumen[['ranking', 'producto', 'ventas_usd', 'participacion']]
+            productos_resumen.columns = ['Rank', 'Producto', 'Ventas USD', 'Participación %']
+            
+            # Highlight del producto seleccionado
+            def highlight_selected(row):
+                if row['Producto'] == producto_seleccionado:
+                    return ['background-color: #90EE90'] * len(row)
+                return [''] * len(row)
+            
+            productos_styled = productos_resumen.style\
+                .format({'Ventas USD': '${:,.2f}', 'Participación %': '{:.2f}%'})\
+                .apply(highlight_selected, axis=1)
+            
+            st.dataframe(productos_styled, hide_index=True, use_container_width=True)
+            
+            st.caption(f"💡 El producto **{producto_seleccionado}** está resaltado en verde. Total de productos: {len(productos_resumen)}")
+    else:
+        st.warning("⚠️ No hay datos de productos para mostrar")
+    
+    st.markdown("---")
+    
+    # =====================================================================
+    # SECCIÓN 2.6: ANÁLISIS EJECUTIVO CON IA - FUNCIÓN PREMIUM
     # =====================================================================
     user = get_current_user()
     puede_usar_ia = user and user.can_use_ai()
