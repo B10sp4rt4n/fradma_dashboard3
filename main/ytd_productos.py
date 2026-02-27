@@ -290,6 +290,7 @@ def crear_treemap_productos_top(df_ytd, año, top_n=10):
     """
     Crea treemap de productos top con resto agrupado como 'Otros'.
     Filtra productos con ventas <= $1M.
+    Escala de colores: $0 - $1.5M.
     
     Args:
         df_ytd: DataFrame con datos YTD
@@ -337,6 +338,7 @@ def crear_treemap_productos_top(df_ytd, año, top_n=10):
         title=f'<b>Productos Top {top_n} - YTD {año}</b>' + (f' ({len(otros_productos)} en "Otros")' if len(otros_productos) > 0 else ''),
         color='ventas_usd',
         color_continuous_scale='RdYlGn',
+        range_color=[0, 1_500_000],
         hover_data={'ventas_usd': ':$,.2f', 'participacion': ':.2f%'},
         custom_data=['participacion']
     )
