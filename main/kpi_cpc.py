@@ -28,6 +28,7 @@ from utils.ai_helper import generar_resumen_ejecutivo_cxc, validar_api_key
 from utils.filters_helper import obtener_lineas_filtradas, generar_contexto_filtros
 from utils.logger import configurar_logger
 from utils.auth import get_current_user
+from utils.roi_tracker import init_roi_tracker
 
 # Configurar logger
 logger = configurar_logger("kpi_cpc", nivel="INFO")
@@ -170,6 +171,24 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
         # Normalización de CxC alineada con Reporte Ejecutivo usando funciones helper
         # ---------------------------------------------------------------------
         df_deudas, df_np, mask_pagado = preparar_datos_cxc(df_deudas)
+        
+        # === TRACKING ROI: Registrar análisis de CxC ===
+        try:
+            roi_tracker = init_roi_tracker(st.session_state)
+            roi_info = roi_tracker.track_action(
+                module="cxc",
+                action="cxc_analysis",
+                quantity=1.0,
+                show_toast=False
+            )
+            # Mostrar toast al inicio
+            st.toast(
+                f"✨ Análisis CxC completado · 💰 Ahorraste {roi_info['hrs_saved']:.1f} hrs",
+                icon="💳"
+            )
+        except Exception as e:
+            # Continuar silenciosamente si hay error
+            pass
 
         # ---------------------------------------------------------------------
         # REPORTE DE CUENTAS POR COBRAR (USANDO COLUMNA CORRECTA)

@@ -22,6 +22,9 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
+# Importar ROI Tracker
+from utils.roi_tracker import init_roi_tracker
+
 # Importar módulos CFDI
 try:
     from cfdi.parser import parse_cfdi_batch
@@ -984,6 +987,42 @@ def main():
         
         progress_bar.progress(100, text="✅ Procesamiento completado")
         progress_bar.empty()
+        
+        # === TRACKING ROI: Registrar acción completada ===
+        try:
+            roi_tracker = init_roi_tracker(st.session_state)
+            num_archivos = len(ventas_parseadas)
+            
+            # Calcular cantidad basada en número de archivos procesados
+            if num_archivos >= 100:
+                action = "process_cfdis_100"
+                quantity = num_archivos / 100
+            elif num_archivos >= 50:
+                action = "process_cfdis_50"
+                quantity = num_archivos / 50
+            elif num_archivos >= 10:
+                action = "process_cfdis_10"
+                quantity = num_archivos / 10
+            else:
+                action = "analyze_cfdis"
+                quantity = 1.0
+            
+            # Trackear acción
+            roi_info = roi_tracker.track_action(
+                module="cfdi",
+                action=action,
+                quantity=quantity,
+                show_toast=False  # No mostrar toast aquí, mostrar mensaje custom
+            )
+            
+            # Mostrar mensaje de ROI
+            st.toast(
+                f"💰 {roi_info['message']}",
+                icon="✨"
+            )
+        except Exception as e:
+            # Si hay error, continuar silenciosamente
+            pass
         
         # Mostrar resultados
         st.markdown("---")

@@ -28,6 +28,7 @@ from utils.export_helper import crear_excel_metricas_cxc, crear_reporte_html
 from utils.cache_helper import GestorCache, decorador_medicion_tiempo
 from utils.auth import AuthManager, UserRole, get_current_user
 from utils.admin_panel import mostrar_info_usuario, mostrar_panel_usuarios, mostrar_panel_configuracion
+from utils.roi_tracker import init_roi_tracker
 
 # Configurar logger de la aplicación
 logger = configurar_logger("dashboard_app", nivel="INFO")
@@ -536,6 +537,64 @@ with st.sidebar:
                 st.session_state.pop("company_logo_name", None)
                 st.rerun()
 
+    st.markdown("---")
+    
+    # ----------------------------------------------------------------
+    # WIDGET ROI: Muestra el valor generado en tiempo real
+    # ----------------------------------------------------------------
+    try:
+        roi_tracker = init_roi_tracker(st.session_state)
+        roi_summary = roi_tracker.get_summary()
+        
+        with st.expander("💰 Tu ROI", expanded=True):
+            # Métricas de hoy
+            st.markdown("**⏱️ Hoy**")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric(
+                    "Horas",
+                    f"{roi_summary['today']['hrs']:.1f}",
+                    delta=None,
+                    help="Tiempo ahorrado hoy"
+                )
+            with col2:
+                st.metric(
+                    "Valor",
+                    f"${roi_summary['today']['value']:,.0f}",
+                    delta=None,
+                    help="Valor generado hoy"
+                )
+            
+            # Métricas del mes
+            st.markdown("---")
+            st.markdown("**📅 Este mes**")
+            st.metric(
+                "Ahorro acumulado",
+                f"${roi_summary['month']['value']:,.0f}",
+                delta=f"{roi_summary['month']['hrs']:.0f} hrs",
+                help="Valor total generado este mes"
+            )
+            
+            # Métricas del año
+            st.markdown("---")
+            st.markdown("**📊 Este año**")
+            st.metric(
+                "ROI Total",
+                f"${roi_summary['year']['value']:,.0f}",
+                delta=f"{roi_summary['year']['hrs']:.0f} hrs",
+                help="Valor total generado este año"
+            )
+            
+            # Nota de acción
+            if roi_summary['today']['actions'] > 0:
+                st.success(f"✨ {roi_summary['today']['actions']} acción(es) completada(s) hoy")
+            else:
+                st.info("💡 Completa acciones para ver tu ROI crecer")
+    except Exception as e:
+        # Si hay error, no mostrar widget (modo silencioso)
+        logger.warning(f"Error en widget ROI: {e}")
+        pass
+    
     st.markdown("---")
 
 st.sidebar.markdown("### 📂 Carga de Datos")

@@ -12,6 +12,7 @@ from utils.formatos import formato_moneda, formato_porcentaje, formato_compacto
 from utils.logger import configurar_logger
 from utils.ai_helper_premium import generar_insights_ejecutivo_consolidado
 from utils.cxc_helper import calcular_score_salud
+from utils.roi_tracker import init_roi_tracker
 
 # Configurar logger para este módulo
 logger = configurar_logger("reporte_ejecutivo", nivel="INFO")
@@ -31,6 +32,24 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
     # Trabajar sobre copias locales para evitar efectos colaterales
     df_ventas = df_ventas.copy() if df_ventas is not None else pd.DataFrame()
     df_cxc = df_cxc.copy() if df_cxc is not None else pd.DataFrame()
+    
+    # === TRACKING ROI: Registrar generación de reporte ejecutivo ===
+    try:
+        roi_tracker = init_roi_tracker(st.session_state)
+        roi_info = roi_tracker.track_action(
+            module="exec_report",
+            action="generate_exec_report",
+            quantity=1.0,
+            show_toast=False
+        )
+        # Mostrar toast al inicio
+        st.toast(
+            f"✨ Reporte Ejecutivo generado · 💰 Ahorraste {roi_info['hrs_saved']:.1f} hrs",
+            icon="📈"
+        )
+    except Exception as e:
+        # Continuar silenciosamente si hay error
+        pass
 
     # -----------------------------------------------------------------
     # Normalización defensiva de columnas requeridas
