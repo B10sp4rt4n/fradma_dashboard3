@@ -517,10 +517,10 @@ def crear_tabla_top_productos(df_ytd, n=10):
     if 'producto' not in df_ytd.columns:
         return None
     
-    top_productos = df_ytd.groupby(['producto', 'producto'])['ventas_usd'].sum().reset_index()
+    top_productos = df_ytd.groupby('producto')['ventas_usd'].sum().reset_index()
     top_productos = top_productos.sort_values('ventas_usd', ascending=False).head(n)
     # No formatear a string aquí para permitir estilos posteriores
-    top_productos.columns = ['Producto', 'Línea', 'Ventas USD']
+    top_productos.columns = ['Producto', 'Ventas USD']
     
     return top_productos
 
@@ -533,7 +533,7 @@ def crear_tabla_top_clientes(df_ytd, n=10):
     top_clientes = df_ytd.groupby(['cliente', 'producto'])['ventas_usd'].sum().reset_index()
     top_clientes = top_clientes.sort_values('ventas_usd', ascending=False).head(n)
     # No formatear a string aquí para permitir estilos posteriores
-    top_clientes.columns = ['Cliente', 'Línea', 'Ventas USD']
+    top_clientes.columns = ['Cliente', 'Producto', 'Ventas USD']
     
     return top_clientes
 
@@ -587,16 +587,16 @@ def exportar_excel_ytd(df_ytd, año, comparativo_df=None):
         
         # Hoja 5: Top Productos
         if 'producto' in df_ytd.columns:
-            top_prod = df_ytd.groupby(['producto', 'producto'])['ventas_usd'].sum().reset_index()
+            top_prod = df_ytd.groupby('producto')['ventas_usd'].sum().reset_index()
             top_prod = top_prod.sort_values('ventas_usd', ascending=False).head(20)
-            top_prod.columns = ['Producto', 'Línea', 'Ventas USD']
+            top_prod.columns = ['Producto', 'Ventas USD']
             top_prod.to_excel(writer, sheet_name='Top Productos', index=False)
         
         # Hoja 6: Top Clientes
         if 'cliente' in df_ytd.columns:
             top_cli = df_ytd.groupby(['cliente', 'producto'])['ventas_usd'].sum().reset_index()
             top_cli = top_cli.sort_values('ventas_usd', ascending=False).head(20)
-            top_cli.columns = ['Cliente', 'Línea', 'Ventas USD']
+            top_cli.columns = ['Cliente', 'Producto', 'Ventas USD']
             top_cli.to_excel(writer, sheet_name='Top Clientes', index=False)
     
     output.seek(0)
@@ -1379,7 +1379,7 @@ def run(df, habilitar_ia=False, openai_api_key=None):
 
             st_clientes = tabla_clientes.style\
                 .format({'Ventas USD': '${:,.2f}'})\
-                .applymap(aplicar_color_fondo_local, subset=['Línea'])
+                .applymap(aplicar_color_fondo_local, subset=['Producto'])
                 
             st.dataframe(
                 st_clientes, 
@@ -1396,15 +1396,8 @@ def run(df, habilitar_ia=False, openai_api_key=None):
         st.subheader("Top 10 Productos YTD")
         tabla_productos = crear_tabla_top_productos(df_ytd_actual, n=10)
         if tabla_productos is not None:
-            # Redefinir (o usar la misma si estuviera en scope, pero por seguridad repito lambda o def)
-            # Como st_clientes ya usó su propia def, aquí creo st_productos
-            
             st_productos = tabla_productos.style\
-                .format({'Ventas USD': '${:,.2f}'})\
-                .applymap(aplicar_color_fondo_local, subset=['Línea']) # aplicar_color_fondo_local está en el scope del with tab2? No necesariamente en Python block scope es function scope, pero tab2 y tab3 están al mismo nivel.
-            
-            # Python variables leak from blocks (except functions), so aplicar_color_fondo_local should be available if defined before
-            # Para estar seguro y limpio:
+                .format({'Ventas USD': '${:,.2f}'})
             
             st.dataframe(
                 st_productos, 
