@@ -1062,31 +1062,9 @@ def run(df, habilitar_ia=False, openai_api_key=None):
             st.error("❌ No hay productos disponibles")
             return
     
-    # Control adicional para treemap de productos
-    st.markdown("---")
-    st.markdown("**📊 Vista General de Productos**")
-    
-    col_treemap1, col_treemap2 = st.columns([3, 1])
-    
-    with col_treemap1:
-        st.markdown("Configura cuántos productos top mostrar en el treemap general:")
-    
-    with col_treemap2:
-        top_n_productos = st.slider(
-            "Top N",
-            min_value=1,
-            max_value=20,
-            value=10,
-            step=1,
-            help="Número de productos principales a mostrar. El resto se agrupará como 'Otros'",
-            label_visibility="collapsed"
-        )
-    
-    st.caption(f"📌 Mostrando top {top_n_productos} productos. El resto se agrupa como 'Otros'.")
-    
     # Resumen visual de la configuración
     st.markdown("---")
-    col_resumen1, col_resumen2, col_resumen3 = st.columns(3)
+    col_resumen1, col_resumen2, col_resumen3, col_resumen4 = st.columns(4)
     
     with col_resumen1:
         st.info(f"📅 **Periodo:** {año_actual}" + (f" vs {año_anterior}" if año_anterior else ""))
@@ -1101,6 +1079,17 @@ def run(df, habilitar_ia=False, openai_api_key=None):
     with col_resumen3:
         st.success(f"📦 **Producto:** {producto_seleccionado}")
     
+    with col_resumen4:
+        # Control compacto para treemap
+        top_n_productos = st.slider(
+            "🗺️ Top N Treemap",
+            min_value=1,
+            max_value=20,
+            value=10,
+            step=1,
+            help="Productos top a mostrar en el treemap general. El resto se agrupa como 'Otros'"
+        )
+    
     st.markdown("---")
     
     # =====================================================================
@@ -1112,6 +1101,7 @@ def run(df, habilitar_ia=False, openai_api_key=None):
         st.sidebar.markdown(f"**Comparación:** {año_anterior}")
         st.sidebar.markdown(f"**Modo:** {'YTD Equiv.' if modo_comparacion == 'ytd_equivalente' else 'Año Completo'}")
     st.sidebar.markdown(f"**Producto:** {producto_seleccionado}")
+    st.sidebar.markdown(f"**Treemap Top:** {top_n_productos} productos")
     st.sidebar.markdown("---")
     
     # =====================================================================
