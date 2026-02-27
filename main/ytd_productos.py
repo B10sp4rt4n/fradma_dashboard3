@@ -869,53 +869,115 @@ def run(df, habilitar_ia=False, openai_api_key=None):
         return
     
     # =====================================================================
-    # SECCIÓN 1: CONTROLES
+    # SECCIÓN 1: CONFIGURACIÓN DE ANÁLISIS (MAIN SECTION)
     # =====================================================================
-    st.sidebar.header("⚙️ Configuración")
+    st.header("🔧 Configuración del Análisis")
     
-    año_actual = st.sidebar.selectbox(
-        "📅 Año a Analizar",
-        options=años_disponibles,
-        index=0
-    )
+    # Layout en 3 columnas para configuración completa
+    col_año, col_comparacion, col_producto = st.columns([1, 1, 2])
     
-    comparar_año = st.sidebar.checkbox("📊 Comparar con año anterior", value=True)
-    
-    # Modo de comparación (DEFAULT: ytd_equiv para evitar comparaciones injustas)
-    modo_comparacion = "ytd_equivalente"
-    if comparar_año:
-        st.sidebar.markdown("---")
-        st.sidebar.markdown("**🎯 Tipo de Comparación:**")
-        modo_comparacion = st.sidebar.radio(
-            "Selecciona el modo",
-            options=["ytd_equivalente", "año_completo"],
-            format_func=lambda x: {
-                "año_completo": "📅 Año Anterior Completo",
-                "ytd_equivalente": "📆 YTD Equivalente ✓"
-            }[x],
-            help=(
-                "📆 YTD Equivalente (recomendado): Compara el MISMO periodo en ambos años "
-                "(ej: enero-febrero 2026 vs enero-febrero 2025)\n\n"
-                "📅 Año Completo: Compara YTD actual contra TODO el año anterior completo "
-                "(útil solo para análisis de fin de año)"
-            ),
-            label_visibility="collapsed",
-            index=0  # ytd_equivalente como opción seleccionada por defecto
+    with col_año:
+        año_actual = st.selectbox(
+            "📅 Año a Analizar",
+            options=años_disponibles,
+            index=0,
+            help="Selecciona el año principal para análisis YTD"
         )
-        
-        # Mostrar advertencia si selecciona año completo
-        if modo_comparacion == "año_completo":
-            st.sidebar.warning(
-                "⚠️ Comparando YTD actual vs año anterior **completo**. "
-                "Si estás en inicio de año, verás crecimientos negativos normales."
-            )
-        st.sidebar.markdown("---")
     
+    with col_comparacion:
+        comparar_año = st.checkbox(
+            "📊 Comparar con año anterior", 
+            value=True,
+            help="Activa para ver comparativo año vs año"
+        )
+    
+    # Determinar año anterior
     año_anterior = None
     if comparar_año and (año_actual - 1) in años_disponibles:
         año_anterior = año_actual - 1
     elif comparar_año:
-        st.sidebar.warning(f"⚠️ No hay datos para {año_actual - 1}")
+        st.warning(f"⚠️ No hay datos para {año_actual - 1}")
+        comparar_año = False
+    
+    # Modo de comparación (si está activado)
+    modo_comparacion = "ytd_equivalente"
+    if comparar_año:
+        col_modo1, col_modo2 = st.columns(2)
+        
+        with col_modo1:
+            st.markdown("**🎯 Tipo de Comparación:**")
+        
+        with col_modo2:
+            modo_comparacion = st.selectbox(
+                "Modo",
+                options=["ytd_equivalente", "año_completo"],
+                format_func=lambda x: {
+                    "año_completo": "📅 Año Anterior Completo",
+                    "ytd_equivalente": "📆 YTD Equivalente ✓"
+                }[x],
+                help=(
+                    "📆 YTD Equivalente (recomendado): Compara el MISMO periodo en ambos años\n\n"
+                    "📅 Año Completo: Compara YTD actual contra TODO el año anterior"
+                ),
+                index=0,
+                label_visibility="collapsed"
+            )
+        
+        # Advertencia si selecciona año completo
+        if modo_comparacion == "año_completo":
+            st.warning(
+                "⚠️ Comparando YTD actual vs año anterior **completo**. "
+                "Si estás en inicio de año, verás crecimientos negativos normales."
+            )
+    
+    # Selector de producto
+    with col_producto:
+        productos_disponibles = sorted(df['producto'].unique())
+        
+        # Calcular producto con más ventas para usarlo como default
+        df_temp_ytd = calcular_ytd(df, año_actual)
+        if not df_temp_ytd.empty:
+            ventas_por_producto = df_temp_ytd.groupby('producto')['ventas_usd'].sum().sort_values(ascending=False)
+            producto_default = ventas_por_producto.index[0] if len(ventas_por_producto) > 0 else productos_disponibles[0]
+        else:
+            producto_default = productos_disponibles[0] if productos_disponibles else None
+        
+        producto_seleccionado = st.selectbox(
+            "📦 Producto a Analizar",
+            options=productos_disponibles,
+            index=productos_disponibles.index(producto_default) if producto_default in productos_disponibles else 0,
+            help="Selecciona un producto específico para ver su análisis detallado"
+        )
+    
+    # Resumen visual de la configuración
+    st.markdown("---")
+    col_resumen1, col_resumen2, col_resumen3 = st.columns(3)
+    
+    with col_resumen1:
+        st.info(f"📅 **Periodo:** {año_actual}" + (f" vs {año_anterior}" if año_anterior else ""))
+    
+    with col_resumen2:
+        if año_anterior:
+            modo_texto = "YTD Equivalente" if modo_comparacion == "ytd_equivalente" else "Año Completo"
+            st.info(f"🎯 **Modo:** {modo_texto}")
+        else:
+            st.info("🎯 **Modo:** Individual")
+    
+    with col_resumen3:
+        st.success(f"📦 **Producto:** {producto_seleccionado}")
+    
+    st.markdown("---")
+    
+    # =====================================================================
+    # SIDEBAR: SOLO RESUMEN
+    # =====================================================================
+    st.sidebar.header("📊 Resumen de Configuración")
+    st.sidebar.markdown(f"**Año:** {año_actual}")
+    if año_anterior:
+        st.sidebar.markdown(f"**Comparación:** {año_anterior}")
+        st.sidebar.markdown(f"**Modo:** {'YTD Equiv.' if modo_comparacion == 'ytd_equivalente' else 'Año Completo'}")
+    st.sidebar.markdown(f"**Producto:** {producto_seleccionado}")
+    st.sidebar.markdown("---")
     
     # =====================================================================
     # CONFIGURACIÓN DE ANÁLISIS CON IA - TEMPORALMENTE DESHABILITADO
@@ -957,45 +1019,6 @@ def run(df, habilitar_ia=False, openai_api_key=None):
     
     # IA controlada desde el passkey premium en app.py (se recibe como parámetro)
     # habilitar_ia y openai_api_key vienen de los parámetros de la función
-    
-    # =====================================================================
-    # SECCIÓN 1.5: CONFIGURACIÓN DE PRODUCTO
-    # =====================================================================
-    st.header("🔧 Configuración del Análisis")
-    
-    # Selector de producto en la sección principal
-    productos_disponibles = sorted(df['producto'].unique())
-    
-    # Calcular producto con más ventas para usarlo como default
-    df_temp_ytd = calcular_ytd(df, año_actual)
-    if not df_temp_ytd.empty:
-        ventas_por_producto = df_temp_ytd.groupby('producto')['ventas_usd'].sum().sort_values(ascending=False)
-        producto_default = ventas_por_producto.index[0] if len(ventas_por_producto) > 0 else productos_disponibles[0]
-    else:
-        producto_default = productos_disponibles[0] if productos_disponibles else None
-    
-    # Layout en columnas para configuración
-    col_config1, col_config2 = st.columns([2, 1])
-    
-    with col_config1:
-        producto_seleccionado = st.selectbox(
-            "📦 Selecciona un Producto para Analizar",
-            options=productos_disponibles,
-            index=productos_disponibles.index(producto_default) if producto_default in productos_disponibles else 0,
-            help="Selecciona un producto específico para ver su análisis detallado individual"
-        )
-    
-    with col_config2:
-        # Mostrar resumen del periodo configurado
-        if año_anterior:
-            st.info(f"📅 Periodo: **{año_actual}** vs **{año_anterior}**")
-        else:
-            st.info(f"📅 Periodo: **{año_actual}**")
-    
-    # Resumen visual del producto seleccionado
-    st.success(f"✅ **Producto seleccionado:** {producto_seleccionado}")
-    
-    st.markdown("---")
     
     # Aplicar filtro de producto individual
     df_filtrado = df[df['producto'] == producto_seleccionado].copy()
