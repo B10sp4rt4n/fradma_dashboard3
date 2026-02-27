@@ -1150,7 +1150,7 @@ opciones_menu = [
     "📈 KPIs Generales",
     "📊 Comparativo Año vs Año",
     "📉 YTD por Línea de Negocio",
-    "� YTD por Producto",
+    "🔷 YTD por Producto",
     "🔥 Heatmap Ventas",
     "💳 KPI Cartera CxC",
     "👥 Vendedores + CxC",
@@ -1222,7 +1222,7 @@ with st.sidebar.expander("ℹ️ Acerca de esta vista"):
         - Top productos y clientes
         - Proyección anual
         """)
-    elif menu == "� YTD por Producto":
+    elif menu == "🔷 YTD por Producto":
         st.markdown("""
         **Reporte Year-to-Date (YTD) por Producto**
         
@@ -1405,7 +1405,7 @@ elif menu == "📉 YTD por Línea de Negocio":
         st.warning("⚠️ Primero sube un archivo para visualizar el reporte YTD.")
         st.info("📂 Este reporte requiere datos de ventas con: fecha, linea_de_negocio, ventas_usd")
 
-elif menu == "� YTD por Producto":
+elif menu == "🔷 YTD por Producto":
     if "df" in st.session_state:
         # Pasar parámetros de IA premium al módulo
         ia_habilitada = st.session_state.get("ia_premium_activada", False)
