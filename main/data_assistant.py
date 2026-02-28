@@ -343,6 +343,22 @@ def _render_connection_setup():
                 st.error("Ingresa la API Key de OpenAI")
                 return False
 
+            # Sanitizar URL: quitar prefijo "psql " si el usuario copió el comando CLI
+            neon_url = neon_url.strip()
+            if neon_url.lower().startswith("psql "):
+                neon_url = neon_url[5:].strip()
+            # Quitar comillas envolventes
+            if (neon_url.startswith('"') and neon_url.endswith('"')) or \
+               (neon_url.startswith("'") and neon_url.endswith("'")):
+                neon_url = neon_url[1:-1]
+            # Validar formato básico
+            if not neon_url.startswith(("postgresql://", "postgres://")):
+                st.error(
+                    "La URL debe comenzar con `postgresql://` o `postgres://`.\n\n"
+                    "Ejemplo: `postgresql://user:pass@host/db?sslmode=require`"
+                )
+                return False
+
             st.session_state["nl2sql_neon_url"] = neon_url
             st.session_state["nl2sql_api_key"] = api_key
             st.session_state["nl2sql_model"] = model
