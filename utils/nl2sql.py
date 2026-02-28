@@ -372,11 +372,19 @@ class NL2SQLEngine:
             # Limpiar el SQL (remover markdown code blocks si existen)
             sql = self._clean_sql(raw_sql)
 
-            logger.info(f"SQL generado: {sql[:100]}...")
+            try:
+                logger.info(f"SQL generado: {sql[:100]}...")
+            except UnicodeEncodeError:
+                logger.info("SQL generado (contiene caracteres especiales)")
             return sql
 
+        except UnicodeEncodeError as e:
+            raise ValueError(f"Error de codificación: {e}")
         except Exception as e:
-            logger.error(f"Error generando SQL: {e}")
+            try:
+                logger.error(f"Error generando SQL: {e}")
+            except UnicodeEncodeError:
+                logger.error("Error generando SQL (detalles no imprimibles)")
             raise ValueError(f"Error al generar SQL: {e}")
 
     def _build_system_prompt(self, empresa_id: Optional[str] = None) -> str:
@@ -400,7 +408,7 @@ REGLAS ESTRICTAS:
 6. Ordena resultados de forma lógica (generalmente por monto DESC o fecha DESC).
 7. Usa DATE_TRUNC para agrupaciones por periodo.
 8. Para porcentajes, calcula con ROUND(x * 100.0 / total, 2).
-9. Responde SOLO con la consulta SQL, sin explicación ni markdown.
+9. Responde SOLO con la consulta SQL, sin explicación ni markdown. NO uses emojis ni caracteres especiales.
 10. Si la pregunta no puede responderse con los datos disponibles, genera: SELECT 'Pregunta no compatible con los datos disponibles' AS mensaje;
 {empresa_filter}
 

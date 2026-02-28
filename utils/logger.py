@@ -8,6 +8,7 @@ Proporciona configuración centralizada de logging con:
 - Context tracking para debugging
 """
 
+import io
 import logging
 import logging.handlers
 import os
@@ -84,9 +85,13 @@ def configurar_logger(
     # Formato simplificado para consola
     formato_consola = "%(asctime)s | %(levelname)-8s | %(message)s"
     
-    # Handler para consola con colores
+    # Handler para consola con colores (forzar UTF-8 para evitar UnicodeEncodeError)
     if habilitar_consola:
-        console_handler = logging.StreamHandler(sys.stdout)
+        try:
+            stream = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+        except (AttributeError, TypeError):
+            stream = sys.stdout
+        console_handler = logging.StreamHandler(stream)
         console_handler.setLevel(logging.INFO)
         console_formatter = ColoredFormatter(
             formato_consola,
