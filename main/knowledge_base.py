@@ -6,11 +6,11 @@ en toda la documentación interna del sistema.
 
 Features:
 - Búsqueda full-text con ranking por relevancia
-- Navegación por categorías
-- Vista de documento completa con tabla de contenidos
-- Documentos relacionados
+- Selector dinámico de documentos (selectbox)
+- Vista de documento completa con tabla de contenidos navegable
+- Documentos relacionados con navegación cruzada
+- Navegación por categorías interactiva
 - Estadísticas del índice
-- Historial de búsquedas
 """
 
 import streamlit as st
@@ -21,7 +21,7 @@ from utils.knowledge_base import get_search_engine, invalidate_cache, SearchResu
 
 
 # =====================================================================
-# CONSTANTES Y CONFIGURACIÓN
+# CONSTANTES
 # =====================================================================
 
 CATEGORY_ICONS = {
@@ -53,388 +53,317 @@ CATEGORY_COLORS = {
 }
 
 
-# =====================================================================
-# FUNCIONES AUXILIARES DE RENDERIZADO
-# =====================================================================
-
-def _render_category_badge(category: str) -> str:
-    """Retorna HTML para badge de categoría."""
+def _badge_html(category: str) -> str:
     icon = CATEGORY_ICONS.get(category, "📝")
     color = CATEGORY_COLORS.get(category, "#95A5A6")
     return (
-        f'<span style="background-color: {color}; color: white; '
-        f'padding: 2px 10px; border-radius: 12px; font-size: 0.8em; '
-        f'font-weight: 500;">{icon} {category.title()}</span>'
+        f'<span style="background:{color};color:#fff;padding:2px 10px;'
+        f'border-radius:12px;font-size:0.78em;font-weight:500;">'
+        f'{icon} {category.title()}</span>'
     )
 
 
-def _render_score_bar(score: float, max_score: float) -> str:
-    """Retorna HTML para barra de relevancia."""
-    pct = min(100, (score / max_score * 100)) if max_score > 0 else 0
-    color = "#27AE60" if pct >= 70 else "#E67E22" if pct >= 40 else "#95A5A6"
-    return (
-        f'<div style="background: #eee; border-radius: 4px; height: 6px; width: 100px; display: inline-block;">'
-        f'<div style="background: {color}; height: 100%; width: {pct}%; border-radius: 4px;"></div></div>'
-        f' <span style="font-size: 0.75em; color: #888;">{pct:.0f}%</span>'
-    )
-
-
-def _format_word_count(count: int) -> str:
-    """Formatea conteo de palabras."""
-    if count >= 1000:
-        return f"{count / 1000:.1f}K palabras"
-    return f"{count} palabras"
-
-
-def _shorten_path(path: str) -> str:
-    """Acorta la ruta para mostrar solo la parte relevante."""
+def _short_path(path: str) -> str:
     parts = path.replace('\\', '/').split('/')
-    # Buscar desde docs/ o la raíz del proyecto
-    for i, part in enumerate(parts):
-        if part in ('docs', 'main', 'cfdi', 'fradma_dashboard3'):
+    for i, p in enumerate(parts):
+        if p in ('docs', 'main', 'cfdi', 'fradma_dashboard3'):
             return '/'.join(parts[i:])
     return parts[-1] if parts else path
 
 
+def _fmt_words(n: int) -> str:
+    return f"{n/1000:.1f}K" if n >= 1000 else str(n)
+
+
 # =====================================================================
-# VISTAS PRINCIPALES
+# CSS
 # =====================================================================
 
-def _render_search_view(engine):
-    """Vista principal de búsqueda."""
+_CSS = """
+<style>
+.kb-hero {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    padding: 1.5rem 2rem 1rem;
+    border-radius: 14px;
+    margin-bottom: 1rem;
+}
+.kb-hero h3 { color:#E8E8E8; margin:0 0 .3rem; }
+.kb-hero p  { color:#A0A0B0; font-size:.88rem; margin:0; }
+.doc-header {
+    background: linear-gradient(135deg, #0f3460 0%, #1a1a2e 100%);
+    padding: 1.2rem 1.5rem;
+    border-radius: 12px;
+    margin-bottom: 1rem;
+}
+.doc-header h2 { color:#FAFAFA; margin:0 0 .4rem; font-size:1.4rem; }
+.doc-meta { color:#9CA3AF; font-size:.8rem; }
+.section-card {
+    background: rgba(74,144,217,0.08);
+    border-left: 3px solid #4A90D9;
+    padding: .6rem .9rem;
+    margin: .35rem 0;
+    border-radius: 0 8px 8px 0;
+}
+.section-card strong { color:#E8E8E8; }
+.section-card .snippet { color:#D1D5DB; font-size:.85rem; line-height:1.45; margin-top:.3rem; }
+</style>
+"""
 
-    # Barra de búsqueda prominente
-    st.markdown("""
-    <style>
-    .search-container {
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-        padding: 2rem 2rem 1.5rem;
-        border-radius: 16px;
-        margin-bottom: 1.5rem;
-    }
-    .search-title {
-        color: #E8E8E8;
-        font-size: 1.5rem;
-        font-weight: 600;
-        margin-bottom: 0.5rem;
-    }
-    .search-subtitle {
-        color: #A0A0B0;
-        font-size: 0.9rem;
-        margin-bottom: 1rem;
-    }
-    .result-card {
-        background: #0E1117;
-        border: 1px solid #262730;
-        border-radius: 10px;
-        padding: 1.2rem;
-        margin-bottom: 0.8rem;
-        transition: border-color 0.2s;
-    }
-    .result-card:hover {
-        border-color: #4A90D9;
-    }
-    .result-title {
-        font-size: 1.1rem;
-        font-weight: 600;
-        color: #FAFAFA;
-        margin-bottom: 0.3rem;
-    }
-    .result-path {
-        font-size: 0.75rem;
-        color: #6B7280;
-        margin-bottom: 0.5rem;
-    }
-    .result-snippet {
-        font-size: 0.9rem;
-        color: #D1D5DB;
-        line-height: 1.5;
-        margin-top: 0.5rem;
-    }
-    .section-match {
-        background: rgba(74, 144, 217, 0.1);
-        border-left: 3px solid #4A90D9;
-        padding: 0.5rem 0.8rem;
-        margin: 0.4rem 0;
-        border-radius: 0 6px 6px 0;
-        font-size: 0.85rem;
-    }
-    .stat-box {
-        background: rgba(255,255,255,0.05);
-        border-radius: 8px;
-        padding: 0.8rem;
-        text-align: center;
-    }
-    .stat-value {
-        font-size: 1.8rem;
-        font-weight: 700;
-        color: #4A90D9;
-    }
-    .stat-label {
-        font-size: 0.75rem;
-        color: #999;
-        text-transform: uppercase;
-    }
-    </style>
-    """, unsafe_allow_html=True)
 
-    st.markdown("""
-    <div class="search-container">
-        <div class="search-title">🔍 Knowledge Base</div>
-        <div class="search-subtitle">Busca en toda la documentación del sistema — {} documentos indexados</div>
-    </div>
-    """.format(len(engine.documents)), unsafe_allow_html=True)
+# =====================================================================
+# VISTA: EXPLORADOR DE DOCUMENTOS
+# =====================================================================
 
-    # Controles de búsqueda
-    col_search, col_cat, col_max = st.columns([5, 2, 1])
+def _render_explorer(engine):
+    """Navegador de documentos con selector y categorías."""
 
-    with col_search:
-        query = st.text_input(
-            "Buscar",
-            placeholder="Ej: arquitectura, CFDI, multi-usuario, ROI, pricing...",
-            label_visibility="collapsed",
-            key="kb_search_query"
-        )
-
+    all_docs = sorted(engine.documents.values(), key=lambda d: d.title)
     categories = engine.get_categories()
-    cat_options = ["Todas las categorías"] + [
+
+    # ── Filtro por categoría ──
+    cat_options = ["📂 Todas las categorías"] + [
         f"{CATEGORY_ICONS.get(c, '📝')} {c.title()} ({n})"
         for c, n in categories.items()
     ]
+    selected_cat_str = st.selectbox(
+        "Filtrar por categoría",
+        cat_options,
+        key="kb_explorer_cat",
+        label_visibility="collapsed"
+    )
 
-    with col_cat:
-        selected_cat_display = st.selectbox(
-            "Categoría", cat_options, label_visibility="collapsed",
-            key="kb_search_cat"
+    # Parsear categoría
+    if selected_cat_str == "📂 Todas las categorías":
+        filtered_docs = all_docs
+    else:
+        cat_name = selected_cat_str.split(" ", 1)[-1].rsplit(" (", 1)[0].lower()
+        filtered_docs = [d for d in all_docs if d.category == cat_name]
+
+    if not filtered_docs:
+        st.info("No hay documentos en esta categoría.")
+        return
+
+    # ── Lista de documentos seleccionable ──
+    doc_labels = [
+        f"{CATEGORY_ICONS.get(d.category, '📝')} {d.title}  ({_fmt_words(d.word_count)} palabras)"
+        for d in filtered_docs
+    ]
+
+    # Preseleccionar si hay un doc activo
+    default_idx = 0
+    active_doc_id = st.session_state.get("kb_view_doc")
+    if active_doc_id:
+        for i, d in enumerate(filtered_docs):
+            if d.id == active_doc_id:
+                default_idx = i
+                break
+
+    selected_idx = st.selectbox(
+        "Selecciona un documento para visualizar:",
+        range(len(doc_labels)),
+        format_func=lambda i: doc_labels[i],
+        index=default_idx,
+        key="kb_doc_selector",
+    )
+
+    doc = filtered_docs[selected_idx]
+    st.session_state["kb_view_doc"] = doc.id
+
+    st.markdown("---")
+
+    # ── Renderizar documento seleccionado ──
+    _render_document(engine, doc)
+
+
+# =====================================================================
+# VISTA: BÚSQUEDA
+# =====================================================================
+
+def _render_search(engine):
+    """Búsqueda full-text con resultados y vista de documento inline."""
+
+    col_q, col_max = st.columns([6, 1])
+    with col_q:
+        query = st.text_input(
+            "Buscar",
+            placeholder="Ej: arquitectura, CFDI, multi-usuario, ROI, treemap, pricing...",
+            label_visibility="collapsed",
+            key="kb_search_q"
         )
-
     with col_max:
-        max_results = st.selectbox(
-            "Max", [5, 10, 20, 50], index=1, label_visibility="collapsed",
-            key="kb_search_max"
-        )
+        max_res = st.selectbox("Max", [5, 10, 20, 50], index=1,
+                               label_visibility="collapsed", key="kb_max")
 
-    # Parsear categoría seleccionada
-    selected_category = None
-    if selected_cat_display != "Todas las categorías":
-        # Extraer nombre de categoría del display
-        cat_name = selected_cat_display.split(" ", 1)[-1].rsplit(" (", 1)[0].lower()
-        selected_category = cat_name
+    if not query or not query.strip():
+        st.caption("Escribe una consulta para buscar en todos los documentos indexados.")
+        return
 
-    # Ejecutar búsqueda
-    if query and query.strip():
-        results = engine.search(query, max_results=max_results, category=selected_category)
+    results = engine.search(query, max_results=max_res)
 
-        if results:
-            max_score = results[0].score if results else 1
+    if not results:
+        st.warning(f'Sin resultados para "{query}". Intenta otras palabras clave.')
+        return
 
-            st.markdown(f"**{len(results)} resultado{'s' if len(results) > 1 else ''}** para *\"{query}\"*")
-            st.markdown("---")
+    max_score = results[0].score
+    history = engine.get_search_history(1)
+    search_ms = history[0].search_time_ms if history else 0
 
-            for i, result in enumerate(results):
-                doc = result.document
-                badge = _render_category_badge(doc.category)
-                score_bar = _render_score_bar(result.score, max_score)
-                short_path = _shorten_path(doc.path)
+    st.markdown(f"**{len(results)} resultado{'s' if len(results)>1 else ''}** · "
+                f"_{search_ms:.1f}ms_")
+    st.markdown("---")
 
-                st.markdown(f"""
-                <div class="result-card">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <div class="result-title">{doc.title}</div>
-                        <div>{badge}</div>
-                    </div>
-                    <div class="result-path">📁 {short_path} · {_format_word_count(doc.word_count)} · {score_bar}</div>
-                </div>
-                """, unsafe_allow_html=True)
+    # ── Selector de resultado ──
+    result_labels = [
+        f"#{i+1} — {r.document.title}  (relevancia: {min(100, r.score/max_score*100):.0f}%)"
+        for i, r in enumerate(results)
+    ]
 
-                # Mostrar secciones matcheadas con expander
-                if result.matched_sections:
-                    with st.expander(f"📑 {len(result.matched_sections)} secciones relevantes", expanded=(i < 2)):
-                        for ms in result.matched_sections[:4]:
-                            st.markdown(f"""
-                            <div class="section-match">
-                                <strong>§ {ms['heading']}</strong> <span style="color:#666; font-size:0.75em;">(línea ~{ms['line_number']})</span>
-                                <div class="result-snippet">{ms['snippet'][:300]}{'...' if len(ms['snippet']) > 300 else ''}</div>
-                            </div>
-                            """, unsafe_allow_html=True)
+    chosen = st.radio(
+        "Selecciona un resultado para ver el documento:",
+        range(len(result_labels)),
+        format_func=lambda i: result_labels[i],
+        key="kb_result_pick",
+        horizontal=False,
+    )
 
-                        # Botón para ver documento completo
-                        if st.button(f"📖 Ver documento completo", key=f"view_doc_{doc.id}_{i}"):
-                            st.session_state["kb_view_doc"] = doc.id
-                            st.session_state["kb_current_tab"] = "document"
-                            st.rerun()
-        else:
-            st.info(f"🔍 No se encontraron resultados para \"{query}\"")
-            st.markdown("""
-            **Sugerencias:**
-            - Intenta con palabras clave más generales
-            - Revisa la ortografía
-            - Prueba sinónimos (ej: "usuario" → "multi-usuario")
-            """)
+    result = results[chosen]
+    doc = result.document
 
-    else:
-        # Sin búsqueda: mostrar resumen y categorías
-        _render_homepage(engine)
+    # ── Secciones relevantes (snippets) ──
+    if result.matched_sections:
+        with st.expander(f"📑 {len(result.matched_sections)} secciones con coincidencias", expanded=True):
+            for ms in result.matched_sections[:5]:
+                snippet = ms['snippet'][:350]
+                # Resaltar tokens de la query
+                for token in engine._tokenize(query):
+                    pattern = re.compile(re.escape(token), re.IGNORECASE)
+                    snippet = pattern.sub(lambda m: f"**{m.group()}**", snippet)
 
-
-def _render_homepage(engine):
-    """Vista de inicio cuando no hay búsqueda activa."""
-    stats = engine.get_stats()
-
-    # KPIs del Knowledge Base
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("📚 Documentos", stats["total_documents"])
-    with col2:
-        st.metric("📝 Palabras", f"{stats['total_words']:,}")
-    with col3:
-        st.metric("📑 Secciones", stats["total_sections"])
-    with col4:
-        st.metric("🔤 Tokens únicos", f"{stats['unique_tokens']:,}")
+                st.markdown(f"""<div class="section-card">
+                    <strong>§ {ms['heading']}</strong>
+                    <span style="color:#666;font-size:.72em;"> (línea ~{ms['line_number']})</span>
+                    <div class="snippet">{snippet}</div>
+                </div>""", unsafe_allow_html=True)
 
     st.markdown("---")
 
-    # Navegación por categorías
-    st.subheader("📂 Navegar por Categoría")
-
-    categories = engine.get_categories()
-
-    # Grid de categorías
-    cols = st.columns(min(4, len(categories)))
-    for i, (cat, count) in enumerate(categories.items()):
-        col_idx = i % len(cols)
-        with cols[col_idx]:
-            icon = CATEGORY_ICONS.get(cat, "📝")
-            color = CATEGORY_COLORS.get(cat, "#95A5A6")
-            if st.button(
-                f"{icon} {cat.title()} ({count})",
-                key=f"cat_btn_{cat}",
-                use_container_width=True
-            ):
-                st.session_state["kb_browse_category"] = cat
-
-    # Mostrar documentos de categoría seleccionada
-    browse_cat = st.session_state.get("kb_browse_category", None)
-    if browse_cat:
-        st.markdown(f"### {CATEGORY_ICONS.get(browse_cat, '📝')} {browse_cat.title()}")
-        docs = engine.get_all_documents(category=browse_cat)
-
-        for doc in docs:
-            col_title, col_info, col_action = st.columns([4, 3, 1])
-            with col_title:
-                st.markdown(f"**{doc.title}**")
-            with col_info:
-                st.caption(f"{_format_word_count(doc.word_count)} · {_shorten_path(doc.path)}")
-            with col_action:
-                if st.button("📖", key=f"browse_{doc.id}", help="Ver documento"):
-                    st.session_state["kb_view_doc"] = doc.id
-                    st.session_state["kb_current_tab"] = "document"
-                    st.rerun()
-    else:
-        # Documentos recientes (por fecha de modificación)
-        st.subheader("🕐 Documentos Recientes")
-        all_docs = sorted(
-            engine.documents.values(),
-            key=lambda d: d.last_modified,
-            reverse=True
-        )[:8]
-
-        for doc in all_docs:
-            col_title, col_cat, col_info = st.columns([4, 2, 2])
-            with col_title:
-                if st.button(f"📄 {doc.title}", key=f"recent_{doc.id}", use_container_width=True):
-                    st.session_state["kb_view_doc"] = doc.id
-                    st.session_state["kb_current_tab"] = "document"
-                    st.rerun()
-            with col_cat:
-                st.markdown(_render_category_badge(doc.category), unsafe_allow_html=True)
-            with col_info:
-                st.caption(f"{_format_word_count(doc.word_count)}")
+    # ── Documento completo inline ──
+    _render_document(engine, doc)
 
 
-def _render_document_view(engine):
-    """Vista de documento completo tipo wiki."""
-    doc_id = st.session_state.get("kb_view_doc", None)
+# =====================================================================
+# RENDERIZADOR DE DOCUMENTO
+# =====================================================================
 
-    if not doc_id:
-        st.info("Selecciona un documento para visualizar.")
-        return
+def _render_document(engine, doc: Document):
+    """Renderiza un documento completo con TOC, contenido y docs relacionados."""
 
-    doc = engine.get_document_by_id(doc_id)
-    if not doc:
-        st.error("Documento no encontrado.")
-        return
-
-    # Botón de regreso
-    if st.button("← Volver a búsqueda", key="kb_back"):
-        st.session_state.pop("kb_view_doc", None)
-        st.session_state["kb_current_tab"] = "search"
-        st.rerun()
-
-    # Header del documento
-    badge = _render_category_badge(doc.category)
-    st.markdown(f"# {doc.title}")
-    st.markdown(f"""
-    {badge} &nbsp; 📁 `{_shorten_path(doc.path)}` &nbsp; 
-    📝 {_format_word_count(doc.word_count)} &nbsp;
-    🕐 {doc.last_modified[:10]}
-    """, unsafe_allow_html=True)
-
-    # Metadata si existe
+    badge = _badge_html(doc.category)
+    path_short = _short_path(doc.path)
     meta = doc.metadata
-    if meta.get("version") or meta.get("author"):
-        meta_parts = []
-        if meta.get("version"):
-            meta_parts.append(f"**Versión:** {meta['version']}")
-        if meta.get("author"):
-            meta_parts.append(f"**Autor:** {meta['author']}")
-        if meta.get("doc_date"):
-            meta_parts.append(f"**Fecha:** {meta['doc_date']}")
-        st.caption(" · ".join(meta_parts))
 
-    st.markdown("---")
+    # Header
+    st.markdown(f"""<div class="doc-header">
+        <h2>{doc.title}</h2>
+        <div class="doc-meta">
+            {badge} &nbsp;&nbsp; 📁 {path_short} &nbsp;&nbsp;
+            📝 {_fmt_words(doc.word_count)} palabras &nbsp;&nbsp;
+            📑 {len(doc.sections)} secciones &nbsp;&nbsp;
+            🕐 {doc.last_modified[:10]}
+            {f" &nbsp;&nbsp; 📌 v{meta['version']}" if meta.get('version') else ""}
+        </div>
+    </div>""", unsafe_allow_html=True)
 
-    # Layout: TOC + Contenido
+    # ── Layout: TOC a la izquierda, contenido a la derecha ──
     col_toc, col_content = st.columns([1, 3])
 
     with col_toc:
-        st.markdown("#### 📋 Contenido")
-        for section in doc.sections:
-            indent = "&nbsp;" * (section["level"] * 2) if section["level"] > 1 else ""
-            heading = section["heading"][:50]
-            st.markdown(
-                f'{indent}{"•" if section["level"] > 1 else "▸"} {heading}',
-                help=f'Línea ~{section["line_number"]}'
-            )
+        st.markdown("##### 📋 Índice")
+
+        # Generar TOC como radio buttons por sección
+        section_labels = []
+        for s in doc.sections:
+            prefix = "  " * max(0, s["level"] - 1)
+            heading_short = s["heading"][:45]
+            section_labels.append(f"{prefix}{'▸' if s['level'] <= 2 else '•'} {heading_short}")
+
+        # Agregar opción de "documento completo" al inicio
+        view_options = ["📄 Documento completo"] + section_labels
+
+        sec_choice = st.radio(
+            "Navegar:",
+            range(len(view_options)),
+            format_func=lambda i: view_options[i],
+            key=f"toc_{doc.id}",
+            label_visibility="collapsed",
+        )
+
+        # Metadata
+        st.markdown("---")
+        st.caption("**Info:**")
+        if meta.get("author"):
+            st.caption(f"✍️ {meta['author']}")
+        if meta.get("doc_date"):
+            st.caption(f"📅 {meta['doc_date']}")
+        if meta.get("tables"):
+            st.caption(f"📊 {meta['tables']} tablas")
+        if meta.get("code_blocks"):
+            st.caption(f"💻 {meta['code_blocks']} bloques de código")
+        st.caption(f"📏 {doc.word_count:,} palabras")
 
     with col_content:
-        # Renderizar contenido completo (Markdown nativo de Streamlit)
-        # Limitar el contenido para no sobrecargar la UI
-        content = doc.content
-        if len(content) > 50000:
-            # Para docs muy largos, mostrar por secciones
-            st.warning(f"Documento grande ({_format_word_count(doc.word_count)}). Mostrando por secciones.")
-            for section in doc.sections:
-                with st.expander(f"**{section['heading']}**", expanded=False):
-                    st.markdown(section["content"][:5000])
+        if sec_choice == 0:
+            # ── Documento completo ──
+            _render_full_content(doc)
         else:
-            st.markdown(content)
+            # ── Sección individual ──
+            section = doc.sections[sec_choice - 1]
 
-    # Documentos relacionados
+            st.markdown(f"### {section['heading']}")
+            st.caption(f"Línea ~{section['line_number']} · Nivel H{section['level']}")
+
+            content = section["content"]
+            if len(content) > 10000:
+                st.markdown(content[:10000])
+                st.info(f"⚠️ Sección truncada ({len(content):,} chars). "
+                        "Selecciona '📄 Documento completo' para ver todo.")
+            else:
+                st.markdown(content)
+
+            # Navegación rápida entre secciones
+            st.markdown("---")
+            col_prev, col_next = st.columns(2)
+            sec_idx = sec_choice - 1
+            with col_prev:
+                if sec_idx > 0:
+                    prev_name = doc.sections[sec_idx - 1]["heading"][:30]
+                    if st.button(f"⬅️ {prev_name}", key=f"prev_{doc.id}",
+                                 use_container_width=True):
+                        st.session_state[f"toc_{doc.id}"] = sec_choice - 1
+                        st.rerun()
+            with col_next:
+                if sec_idx < len(doc.sections) - 1:
+                    next_name = doc.sections[sec_idx + 1]["heading"][:30]
+                    if st.button(f"{next_name} ➡️", key=f"next_{doc.id}",
+                                 use_container_width=True):
+                        st.session_state[f"toc_{doc.id}"] = sec_choice + 1
+                        st.rerun()
+
+    # ── Documentos relacionados ──
     st.markdown("---")
-    st.subheader("🔗 Documentos Relacionados")
-    related = engine.get_related_documents(doc_id, max_results=5)
+    st.markdown("#### 🔗 Documentos Relacionados")
+    related = engine.get_related_documents(doc.id, max_results=6)
 
     if related:
-        cols = st.columns(min(5, len(related)))
+        cols = st.columns(min(3, len(related)))
         for i, (rel_doc, rel_score) in enumerate(related):
             with cols[i % len(cols)]:
                 icon = CATEGORY_ICONS.get(rel_doc.category, "📝")
                 if st.button(
-                    f"{icon} {rel_doc.title[:30]}{'...' if len(rel_doc.title) > 30 else ''}",
-                    key=f"related_{rel_doc.id}",
+                    f"{icon} {rel_doc.title[:35]}{'...' if len(rel_doc.title)>35 else ''}",
+                    key=f"rel_{doc.id}_{rel_doc.id}",
                     use_container_width=True,
-                    help=f"{rel_doc.category.title()} · {_format_word_count(rel_doc.word_count)}"
+                    help=f"{rel_doc.category.title()} · {_fmt_words(rel_doc.word_count)} palabras"
                 ):
                     st.session_state["kb_view_doc"] = rel_doc.id
                     st.rerun()
@@ -442,82 +371,81 @@ def _render_document_view(engine):
         st.caption("No se encontraron documentos relacionados.")
 
 
-def _render_stats_view(engine):
-    """Vista de estadísticas del Knowledge Base."""
+def _render_full_content(doc: Document):
+    """Renderiza el contenido completo de un documento."""
+    content = doc.content
+    if len(content) > 60000:
+        # Docs muy grandes: renderizar por secciones colapsables
+        st.warning(f"Documento grande ({doc.word_count:,} palabras). Mostrando por secciones.")
+        for section in doc.sections:
+            with st.expander(f"**{section['heading']}**", expanded=False):
+                sec_content = section["content"]
+                st.markdown(sec_content[:6000])
+                if len(sec_content) > 6000:
+                    st.caption(f"... ({len(sec_content):,} caracteres)")
+    else:
+        st.markdown(content)
+
+
+# =====================================================================
+# VISTA: ESTADÍSTICAS
+# =====================================================================
+
+def _render_stats(engine):
+    """Panel de estadísticas del Knowledge Base."""
     stats = engine.get_stats()
 
-    st.subheader("📊 Estadísticas del Knowledge Base")
-
-    # KPIs principales
     col1, col2, col3, col4, col5 = st.columns(5)
-    with col1:
-        st.metric("📚 Documentos", stats["total_documents"])
-    with col2:
-        st.metric("📝 Palabras totales", f"{stats['total_words']:,}")
-    with col3:
-        st.metric("📑 Secciones", stats["total_sections"])
-    with col4:
-        st.metric("🔤 Tokens indexados", f"{stats['unique_tokens']:,}")
-    with col5:
-        st.metric("🔍 Búsquedas", stats["total_searches"])
+    col1.metric("📚 Docs", stats["total_documents"])
+    col2.metric("📝 Palabras", f"{stats['total_words']:,}")
+    col3.metric("📑 Secciones", stats["total_sections"])
+    col4.metric("🔤 Tokens", f"{stats['unique_tokens']:,}")
+    col5.metric("🔍 Búsquedas", stats["total_searches"])
 
     st.markdown("---")
+    c1, c2 = st.columns(2)
 
-    col_cats, col_docs = st.columns(2)
-
-    with col_cats:
-        st.markdown("#### 📂 Documentos por Categoría")
-        categories = stats["categories"]
-        for cat, count in categories.items():
+    with c1:
+        st.markdown("##### 📂 Por Categoría")
+        for cat, count in stats["categories"].items():
             icon = CATEGORY_ICONS.get(cat, "📝")
-            pct = count / stats["total_documents"] * 100 if stats["total_documents"] > 0 else 0
-            st.markdown(
-                f'{icon} **{cat.title()}**: {count} doc{"s" if count > 1 else ""} ({pct:.0f}%)'
-            )
+            pct = count / stats["total_documents"] * 100
+            st.markdown(f'{icon} **{cat.title()}**: {count} ({pct:.0f}%)')
             st.progress(pct / 100)
 
-    with col_docs:
-        st.markdown("#### 📏 Top Documentos por Tamaño")
-        all_docs = sorted(engine.documents.values(), key=lambda d: d.word_count, reverse=True)[:10]
-        for i, doc in enumerate(all_docs, 1):
-            icon = CATEGORY_ICONS.get(doc.category, "📝")
-            st.markdown(
-                f'{i}. {icon} **{doc.title[:40]}{"..." if len(doc.title) > 40 else ""}** — '
-                f'{_format_word_count(doc.word_count)}'
-            )
+    with c2:
+        st.markdown("##### 📏 Top por Tamaño")
+        top_docs = sorted(engine.documents.values(), key=lambda d: d.word_count, reverse=True)[:10]
+        for i, d in enumerate(top_docs, 1):
+            icon = CATEGORY_ICONS.get(d.category, "📝")
+            st.markdown(f'{i}. {icon} **{d.title[:40]}** — {_fmt_words(d.word_count)}')
 
-    # Historial de búsquedas
     st.markdown("---")
-    st.markdown("#### 🕐 Historial de Búsquedas Recientes")
-    history = engine.get_search_history(limit=15)
+    st.markdown("##### 🕐 Historial de Búsquedas")
+    history = engine.get_search_history(15)
     if history:
-        for entry in history:
-            col_q, col_r, col_t = st.columns([4, 1, 2])
-            with col_q:
-                st.markdown(f'🔍 **"{entry.query}"**')
-            with col_r:
-                st.caption(f"{entry.total_results} resultados")
-            with col_t:
-                st.caption(f"⚡ {entry.search_time_ms:.1f}ms · {entry.timestamp[:16]}")
+        for h in history:
+            st.markdown(
+                f'🔍 **"{h.query}"** → {h.total_results} resultados '
+                f'· ⚡{h.search_time_ms:.1f}ms · {h.timestamp[:16]}'
+            )
     else:
-        st.caption("Aún no hay búsquedas registradas. ¡Prueba buscar algo!")
+        st.caption("Sin búsquedas registradas aún.")
 
-    # Botón reindexar
     st.markdown("---")
-    if st.button("🔄 Re-indexar documentos", help="Vuelve a leer todos los archivos MD"):
+    if st.button("🔄 Re-indexar todos los documentos"):
         invalidate_cache()
         st.rerun()
 
 
 # =====================================================================
-# FUNCIÓN PRINCIPAL
+# FUNCIÓN PRINCIPAL — SINGLE PAGE DINÁMICA
 # =====================================================================
 
 def run():
     """Punto de entrada del módulo Knowledge Base."""
 
-    st.title("📚 Knowledge Base")
-    st.caption("Wiki interna y buscador de documentación del sistema")
+    st.markdown(_CSS, unsafe_allow_html=True)
 
     # Inicializar engine
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -525,27 +453,29 @@ def run():
 
     if not engine.documents:
         st.error("❌ No se encontraron documentos para indexar.")
-        st.info("Asegúrate de tener archivos .md en el directorio docs/")
         return
 
-    # Tabs de navegación dentro del módulo
-    current_tab = st.session_state.get("kb_current_tab", "search")
+    # ── Header ──
+    total_words = sum(d.word_count for d in engine.documents.values())
+    st.markdown(f"""<div class="kb-hero">
+        <h3>📚 Knowledge Base</h3>
+        <p>Wiki interna — {len(engine.documents)} documentos · {total_words:,} palabras indexadas</p>
+    </div>""", unsafe_allow_html=True)
 
-    # Si hay un documento seleccionado, ir a la vista de documento
-    if st.session_state.get("kb_view_doc"):
-        current_tab = "document"
+    # ── Modo de navegación ──
+    modo = st.radio(
+        "Modo",
+        ["📂 Explorar Documentos", "🔍 Buscar", "📊 Estadísticas"],
+        horizontal=True,
+        key="kb_mode",
+        label_visibility="collapsed"
+    )
 
-    tab_search, tab_browse, tab_stats = st.tabs([
-        "🔍 Buscar",
-        "📖 Documento",
-        "📊 Estadísticas"
-    ])
+    st.markdown("---")
 
-    with tab_search:
-        _render_search_view(engine)
-
-    with tab_browse:
-        _render_document_view(engine)
-
-    with tab_stats:
-        _render_stats_view(engine)
+    if modo == "📂 Explorar Documentos":
+        _render_explorer(engine)
+    elif modo == "🔍 Buscar":
+        _render_search(engine)
+    else:
+        _render_stats(engine)
