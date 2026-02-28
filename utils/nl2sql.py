@@ -16,6 +16,7 @@ Autor: Fradma Dashboard Team
 Fecha: Febrero 2026
 """
 
+import json
 import logging
 import re
 import time
@@ -90,7 +91,8 @@ class NL2SQLResult:
     row_count: int = 0
     error: Optional[str] = None
     timestamp: datetime = field(default_factory=datetime.now)
-    chart_suggestion: str = ""  # bar, line, pie, table, metric
+    chart_suggestion: str = ""  # bar, hbar, line, area, pie, donut, scatter, treemap, funnel, waterfall, stacked_bar, grouped_bar, metric, table
+    chart_spec: dict = field(default_factory=dict)  # Especificación detallada de la gráfica
 
     @property
     def success(self) -> bool:
@@ -106,6 +108,7 @@ class NL2SQLResult:
             "error": self.error,
             "timestamp": self.timestamp.isoformat(),
             "chart_suggestion": self.chart_suggestion,
+            "chart_spec": self.chart_spec,
         }
 
 
@@ -573,7 +576,7 @@ SQL: SELECT COUNT(DISTINCT receptor_rfc) AS clientes_unicos FROM cfdi_ventas WHE
         question: str,
         sql: str,
         df: pd.DataFrame
-    ) -> Tuple[str, str]:
+    ) -> Tuple[str, str, dict]:
         """
         Genera una interpretación en lenguaje natural de los resultados.
 
@@ -583,10 +586,10 @@ SQL: SELECT COUNT(DISTINCT receptor_rfc) AS clientes_unicos FROM cfdi_ventas WHE
             df: DataFrame con resultados
 
         Returns:
-            Tupla (interpretación, sugerencia_de_gráfica)
+            Tupla (interpretación, tipo_gráfica, chart_spec_dict)
         """
         if df.empty:
-            return "No se encontraron datos para esta consulta.", "table"
+            return "No se encontraron datos para esta consulta.", "table", {}
 
         # Preparar resumen de datos (max 20 filas para el prompt)
         sample = df.head(20).to_string(index=False)
@@ -613,9 +616,38 @@ INSTRUCCIONES:
 5. Máximo 3-4 oraciones concisas.
 6. NO repitas la pregunta ni el SQL.
 
-Además, en la ÚLTIMA línea, indica el tipo de gráfica más apropiada para estos datos.
-Usa exactamente uno de estos valores: bar, line, pie, table, metric, scatter
-Formato de la última línea: CHART_TYPE: <tipo>
+AL FINAL, genera una especificación de gráfica en formato JSON en una sola línea.
+La línea DEBE comenzar exactamente con CHART_SPEC: seguido del JSON.
+
+Tipos de gráfica disponibles:
+- bar: barras verticales (ranking, comparaciones)
+- hbar: barras horizontales (ranking con nombres largos)
+- stacked_bar: barras apiladas (composición por categoría)
+- grouped_bar: barras agrupadas (comparar grupos lado a lado)
+- line: línea temporal (tendencias, evolución)
+- area: área rellena (tendencias acumulativas)
+- pie: pastel (distribución porcentual, max 8 categorías)
+- donut: dona (como pie pero más moderno)
+- scatter: dispersión (correlación entre 2 valores)
+- treemap: mapa de árbol (jerarquías, proporciones)
+- funnel: embudo (procesos secuenciales)
+- waterfall: cascada (contribuciones positivas/negativas)
+- metric: tarjeta de KPI (1 sola fila con valor clave)
+- table: tabla con formato (cuando no aplica gráfica)
+
+Campos del JSON:
+- type: tipo de gráfica (obligatorio)
+- x: nombre exacto de columna para eje X (obligatorio para bar/line/area/scatter)
+- y: nombre exacto de columna para eje Y/valores (obligatorio para bar/line/area/scatter)
+- color: columna para agrupar por color (opcional)
+- title: título descriptivo corto en español (obligatorio)
+- sort: "asc" o "desc" para ordenar datos (opcional)
+- top_n: número máximo de elementos a mostrar (opcional, default 30)
+
+EJEMPLO de línea final:
+CHART_SPEC: {{"type": "hbar", "x": "cliente", "y": "total_mxn", "title": "Top clientes por facturación", "sort": "desc", "top_n": 10}}
+
+Si el usuario pidió explícitamente un tipo de gráfica (ej: "muéstrame un pie chart", "hazme una gráfica de barras"), USA ESE TIPO.
 """
 
         try:
@@ -635,18 +667,29 @@ Formato de la última línea: CHART_TYPE: <tipo>
 
             text = response.choices[0].message.content.strip()
 
-            # Extraer tipo de gráfica
+            # Extraer CHART_SPEC JSON
             chart_type = "table"
-            chart_match = re.search(r'CHART_TYPE:\s*(\w+)', text)
-            if chart_match:
-                chart_type = chart_match.group(1).lower()
-                text = re.sub(r'\n?CHART_TYPE:\s*\w+', '', text).strip()
+            chart_spec = {}
+            spec_match = re.search(r'CHART_SPEC:\s*(\{.*\})', text)
+            if spec_match:
+                try:
+                    chart_spec = json.loads(spec_match.group(1))
+                    chart_type = chart_spec.get("type", "table")
+                except (json.JSONDecodeError, ValueError):
+                    chart_type = "table"
+                text = re.sub(r'\n?CHART_SPEC:\s*\{.*\}', '', text).strip()
+            else:
+                # Fallback: buscar CHART_TYPE legacy
+                chart_match = re.search(r'CHART_TYPE:\s*(\w+)', text)
+                if chart_match:
+                    chart_type = chart_match.group(1).lower()
+                    text = re.sub(r'\n?CHART_TYPE:\s*\w+', '', text).strip()
 
-            return text, chart_type
+            return text, chart_type, chart_spec
 
         except Exception as e:
             logger.error(f"Error interpretando resultados: {e}")
-            return f"Se obtuvieron {row_count} resultados.", "table"
+            return f"Se obtuvieron {row_count} resultados.", "table", {}
 
     # -----------------------------------------------------------------
     # 5. Pipeline completo: ask()
@@ -688,9 +731,10 @@ Formato de la última línea: CHART_TYPE: <tipo>
             result.row_count = len(df)
 
             # Paso 4: Interpretar resultados
-            interpretation, chart_type = self.interpret_results(question, sql, df)
+            interpretation, chart_type, chart_spec = self.interpret_results(question, sql, df)
             result.interpretation = interpretation
             result.chart_suggestion = chart_type
+            result.chart_spec = chart_spec
 
         except ValueError as e:
             result.error = f"❌ Error generando SQL: {e}"

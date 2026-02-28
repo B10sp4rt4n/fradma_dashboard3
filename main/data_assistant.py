@@ -10,6 +10,7 @@ Fecha: Febrero 2026
 """
 
 import os
+import json
 import streamlit as st
 import pandas as pd
 
@@ -169,34 +170,68 @@ def _invalidate_engine():
 
 
 # =====================================================================
-# Visualización automática
+# Visualización automática (con specs de IA)
 # =====================================================================
-def _auto_chart(df: pd.DataFrame, chart_type: str, question: str):
+
+# Paleta de colores profesional
+CHART_COLORS = [
+    "#2196F3", "#4CAF50", "#FF9800", "#E91E63", "#9C27B0",
+    "#00BCD4", "#FF5722", "#607D8B", "#795548", "#8BC34A",
+    "#3F51B5", "#FFEB3B", "#009688", "#F44336", "#673AB7",
+]
+
+def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: dict = None):
     """
-    Genera automáticamente la gráfica más apropiada.
+    Genera gráficas inteligentes basadas en especificaciones de la IA.
 
     Args:
         df: DataFrame con resultados
-        chart_type: Tipo sugerido (bar, line, pie, table, metric, scatter)
+        chart_type: Tipo de gráfica (bar, hbar, line, area, pie, donut,
+                     scatter, treemap, funnel, stacked_bar, grouped_bar,
+                     waterfall, metric, table)
         question: Pregunta original para título
+        chart_spec: Especificaciones detalladas de la gráfica generadas por IA
+                    {x, y, color, title, orientation, labels, sort, top_n, ...}
     """
     if not PLOTLY_AVAILABLE or df.empty:
         st.dataframe(df, use_container_width=True, hide_index=True)
         return
 
-    # Identificar columnas numéricas y categóricas
+    spec = chart_spec or {}
     num_cols = df.select_dtypes(include=['int64', 'float64', 'int32', 'float32']).columns.tolist()
     cat_cols = df.select_dtypes(include=['object', 'datetime64']).columns.tolist()
 
-    # Si es solo 1 fila con 1 columna numérica → metric
+    # Auto-detect mejores columnas si spec no las indica
+    x_col = spec.get("x") or (cat_cols[0] if cat_cols else df.columns[0])
+    y_col = spec.get("y") or (num_cols[0] if num_cols else df.columns[-1])
+    color_col = spec.get("color")
+    title = spec.get("title") or question[:100]
+    top_n = spec.get("top_n", 30)
+    sort_order = spec.get("sort")  # "asc" | "desc" | None
+
+    # Validar que columnas existen
+    if x_col not in df.columns:
+        x_col = cat_cols[0] if cat_cols else df.columns[0]
+    if y_col not in df.columns:
+        y_col = num_cols[0] if num_cols else df.columns[-1]
+    if color_col and color_col not in df.columns:
+        color_col = None
+
+    # Si 1 fila y numéricos → metric cards
     if len(df) == 1 and len(num_cols) >= 1:
         chart_type = "metric"
-
-    # Si solo tiene 1 fila sin numéricos → table
     if len(df) <= 2 and not num_cols:
         chart_type = "table"
 
+    # Preparar subset
+    plot_df = df.head(top_n).copy()
+    if sort_order == "desc" and y_col in plot_df.columns:
+        plot_df = plot_df.sort_values(y_col, ascending=False)
+    elif sort_order == "asc" and y_col in plot_df.columns:
+        plot_df = plot_df.sort_values(y_col, ascending=True)
+
     try:
+        # --- METRIC CARDS ---
         if chart_type == "metric" and num_cols:
             cols = st.columns(min(len(num_cols), 4))
             for i, col_name in enumerate(num_cols[:4]):
@@ -211,65 +246,178 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str):
                         st.metric(col_name, str(value))
             return
 
-        if chart_type == "bar" and cat_cols and num_cols:
-            x_col = cat_cols[0]
-            y_col = num_cols[0]
+        # --- BAR (vertical) ---
+        if chart_type == "bar" and num_cols:
             fig = px.bar(
-                df.head(30),
-                x=x_col,
-                y=y_col,
-                title=question[:80],
-                color=y_col,
-                color_continuous_scale="Viridis",
+                plot_df, x=x_col, y=y_col,
+                title=title,
+                color=color_col or y_col,
+                color_continuous_scale="Viridis" if not color_col else None,
+                color_discrete_sequence=CHART_COLORS if color_col else None,
+                text_auto=True,
+            )
+            fig.update_layout(xaxis_tickangle=-45, showlegend=bool(color_col))
+            fig.update_traces(textposition="outside", texttemplate="%{y:,.0f}")
+            st.plotly_chart(fig, use_container_width=True)
+            return
+
+        # --- HBAR (horizontal) ---
+        if chart_type == "hbar" and num_cols:
+            fig = px.bar(
+                plot_df, x=y_col, y=x_col,
+                title=title,
+                orientation="h",
+                color=color_col or y_col,
+                color_continuous_scale="Viridis" if not color_col else None,
+                text_auto=True,
+            )
+            fig.update_layout(yaxis=dict(autorange="reversed"), showlegend=bool(color_col))
+            fig.update_traces(textposition="outside", texttemplate="%{x:,.0f}")
+            st.plotly_chart(fig, use_container_width=True)
+            return
+
+        # --- STACKED BAR ---
+        if chart_type == "stacked_bar" and color_col and num_cols:
+            fig = px.bar(
+                plot_df, x=x_col, y=y_col,
+                color=color_col,
+                title=title,
+                color_discrete_sequence=CHART_COLORS,
+                barmode="stack",
+                text_auto=True,
             )
             fig.update_layout(xaxis_tickangle=-45)
             st.plotly_chart(fig, use_container_width=True)
             return
 
+        # --- GROUPED BAR ---
+        if chart_type == "grouped_bar" and color_col and num_cols:
+            fig = px.bar(
+                plot_df, x=x_col, y=y_col,
+                color=color_col,
+                title=title,
+                color_discrete_sequence=CHART_COLORS,
+                barmode="group",
+                text_auto=True,
+            )
+            fig.update_layout(xaxis_tickangle=-45)
+            st.plotly_chart(fig, use_container_width=True)
+            return
+
+        # --- LINE ---
         if chart_type == "line" and num_cols:
-            x_col = cat_cols[0] if cat_cols else df.columns[0]
-            y_col = num_cols[0]
             fig = px.line(
-                df,
-                x=x_col,
-                y=y_col,
-                title=question[:80],
+                plot_df, x=x_col, y=y_col,
+                title=title,
+                color=color_col,
+                color_discrete_sequence=CHART_COLORS,
                 markers=True,
             )
-            fig.update_traces(line_width=3)
+            fig.update_traces(line_width=3, marker_size=8)
             st.plotly_chart(fig, use_container_width=True)
             return
 
+        # --- AREA ---
+        if chart_type == "area" and num_cols:
+            fig = px.area(
+                plot_df, x=x_col, y=y_col,
+                title=title,
+                color=color_col,
+                color_discrete_sequence=CHART_COLORS,
+            )
+            st.plotly_chart(fig, use_container_width=True)
+            return
+
+        # --- PIE ---
         if chart_type == "pie" and cat_cols and num_cols:
             fig = px.pie(
-                df.head(15),
-                names=cat_cols[0],
-                values=num_cols[0],
-                title=question[:80],
-                hole=0.4,
+                plot_df.head(15),
+                names=x_col,
+                values=y_col,
+                title=title,
+                color_discrete_sequence=CHART_COLORS,
             )
+            fig.update_traces(textposition="inside", textinfo="percent+label")
             st.plotly_chart(fig, use_container_width=True)
             return
 
+        # --- DONUT ---
+        if chart_type == "donut" and cat_cols and num_cols:
+            fig = px.pie(
+                plot_df.head(15),
+                names=x_col,
+                values=y_col,
+                title=title,
+                hole=0.45,
+                color_discrete_sequence=CHART_COLORS,
+            )
+            fig.update_traces(textposition="inside", textinfo="percent+label")
+            st.plotly_chart(fig, use_container_width=True)
+            return
+
+        # --- SCATTER ---
         if chart_type == "scatter" and len(num_cols) >= 2:
+            x_s = num_cols[0] if not spec.get("x") else x_col
+            y_s = num_cols[1] if not spec.get("y") else y_col
             fig = px.scatter(
-                df,
-                x=num_cols[0],
-                y=num_cols[1],
-                title=question[:80],
-                hover_data=cat_cols[:1] if cat_cols else None,
+                plot_df, x=x_s, y=y_s,
+                title=title,
+                color=color_col,
+                color_discrete_sequence=CHART_COLORS,
+                size=num_cols[2] if len(num_cols) >= 3 else None,
+                hover_data=cat_cols[:2] if cat_cols else None,
+            )
+            fig.update_traces(marker_size=10)
+            st.plotly_chart(fig, use_container_width=True)
+            return
+
+        # --- TREEMAP ---
+        if chart_type == "treemap" and cat_cols and num_cols:
+            path_cols = [x_col]
+            if color_col and color_col in cat_cols and color_col != x_col:
+                path_cols = [color_col, x_col]
+            fig = px.treemap(
+                plot_df, path=path_cols,
+                values=y_col,
+                title=title,
+                color=y_col,
+                color_continuous_scale="RdYlGn",
             )
             st.plotly_chart(fig, use_container_width=True)
             return
 
-    except Exception as e:
-        # Fallback a tabla si la gráfica falla
-        pass
+        # --- FUNNEL ---
+        if chart_type == "funnel" and cat_cols and num_cols:
+            fig = px.funnel(
+                plot_df, x=y_col, y=x_col,
+                title=title,
+                color_discrete_sequence=CHART_COLORS,
+            )
+            st.plotly_chart(fig, use_container_width=True)
+            return
+
+        # --- WATERFALL ---
+        if chart_type == "waterfall" and num_cols:
+            fig = go.Figure(go.Waterfall(
+                name="", orientation="v",
+                x=plot_df[x_col].astype(str).tolist(),
+                y=plot_df[y_col].tolist(),
+                connector={"line": {"color": "rgb(63, 63, 63)"}},
+                increasing={"marker": {"color": "#4CAF50"}},
+                decreasing={"marker": {"color": "#F44336"}},
+                totals={"marker": {"color": "#2196F3"}},
+            ))
+            fig.update_layout(title=title, showlegend=False)
+            st.plotly_chart(fig, use_container_width=True)
+            return
+
+    except Exception:
+        pass  # Fallback a tabla
 
     # Default: tabla con formato
     col_config = {}
     for col in num_cols:
-        if any(kw in col.lower() for kw in ['total', 'monto', 'factur', 'venta', 'importe', 'saldo', 'mxn']):
+        if any(kw in col.lower() for kw in ['total', 'monto', 'factur', 'venta', 'importe', 'saldo', 'mxn', 'compra']):
             col_config[col] = st.column_config.NumberColumn(format="$%.2f")
         elif 'pct' in col.lower() or 'porcentaje' in col.lower() or '%' in col:
             col_config[col] = st.column_config.NumberColumn(format="%.1f%%")
@@ -502,6 +650,7 @@ def _build_result_message(result: NL2SQLResult) -> dict:
         "execution_time": result.execution_time,
         "row_count": result.row_count,
         "chart_suggestion": result.chart_suggestion,
+        "chart_spec": result.chart_spec,
         "error": result.error,
     }
 
@@ -533,15 +682,16 @@ def _render_result_message(msg: dict, msg_idx: int = 0):
             df = None
 
     if df is not None and not df.empty:
-        # Gráfica automática
+        # Gráfica automática con spec de IA
         chart_type = msg.get("chart_suggestion", "table")
+        chart_spec = msg.get("chart_spec", {})
         question = msg.get("content", "")
 
         # Pestañas: Gráfica | Tabla | SQL
         tab_chart, tab_table, tab_sql = st.tabs(["📊 Gráfica", "📋 Tabla", "🔍 SQL"])
 
         with tab_chart:
-            _auto_chart(df, chart_type, question)
+            _auto_chart(df, chart_type, question, chart_spec=chart_spec)
 
         with tab_table:
             st.dataframe(df, use_container_width=True, hide_index=True)
