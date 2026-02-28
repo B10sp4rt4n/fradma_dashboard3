@@ -491,9 +491,12 @@ SQL: SELECT COUNT(DISTINCT receptor_rfc) AS clientes_unicos FROM cfdi_ventas WHE
             return False, "Solo se permite una sentencia SQL"
 
         # Verificar tablas referenciadas
+        # Excluir FROM dentro de EXTRACT(...FROM...) y DATE_TRUNC
+        # Primero, remover contenido de funciones EXTRACT para evitar falsos positivos
+        sql_cleaned = re.sub(r'EXTRACT\s*\([^)]+\)', '', sql, flags=re.IGNORECASE)
         tables_in_query = re.findall(
             r'\bFROM\s+(\w+)|\bJOIN\s+(\w+)',
-            sql,
+            sql_cleaned,
             re.IGNORECASE
         )
         for match_groups in tables_in_query:
@@ -821,9 +824,11 @@ def validate_sql_static(sql: str) -> Tuple[bool, str]:
     if len(statements) > 1:
         return False, "Solo se permite una sentencia SQL"
 
+    # Remover EXTRACT(...) para evitar falsos positivos con FROM dentro de funciones
+    sql_cleaned = re.sub(r'EXTRACT\s*\([^)]+\)', '', sql, flags=re.IGNORECASE)
     tables_in_query = re.findall(
         r'\bFROM\s+(\w+)|\bJOIN\s+(\w+)',
-        sql,
+        sql_cleaned,
         re.IGNORECASE
     )
     for match_groups in tables_in_query:
