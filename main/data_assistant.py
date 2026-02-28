@@ -447,13 +447,13 @@ def _render_chat_interface():
         st.session_state["nl2sql_messages"] = []
 
     # Mostrar mensajes existentes
-    for msg in st.session_state["nl2sql_messages"]:
+    for msg_idx, msg in enumerate(st.session_state["nl2sql_messages"]):
         if msg["role"] == "user":
             with st.chat_message("user", avatar="🧑‍💼"):
                 st.markdown(msg["content"])
         else:
             with st.chat_message("assistant", avatar="🤖"):
-                _render_result_message(msg)
+                _render_result_message(msg, msg_idx)
 
     # Verificar si hay pregunta pendiente (de ejemplo)
     pending = st.session_state.pop("nl2sql_pending_question", None)
@@ -486,7 +486,8 @@ def _render_chat_interface():
 
             # Renderizar resultado
             msg_data = _build_result_message(result)
-            _render_result_message(msg_data)
+            new_idx = len(st.session_state["nl2sql_messages"])
+            _render_result_message(msg_data, new_idx)
 
             st.session_state["nl2sql_messages"].append(msg_data)
 
@@ -511,7 +512,7 @@ def _build_result_message(result: NL2SQLResult) -> dict:
     return msg
 
 
-def _render_result_message(msg: dict):
+def _render_result_message(msg: dict, msg_idx: int = 0):
     """Renderiza un mensaje de resultado del asistente."""
     if msg.get("error"):
         st.error(msg["error"])
@@ -552,7 +553,7 @@ def _render_result_message(msg: dict):
                 csv,
                 "resultado_consulta.csv",
                 "text/csv",
-                key=f"dl_{hash(msg.get('sql', ''))}",
+                key=f"dl_{msg_idx}_{hash(msg.get('sql', ''))}",
             )
 
         with tab_sql:
