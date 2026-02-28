@@ -15,6 +15,7 @@ from main import main_kpi, main_comparativo, heatmap_ventas
 from main import kpi_cpc, reporte_ejecutivo, ytd_lineas, ytd_productos, reporte_consolidado
 from main import vendedores_cxc, herramientas_financieras, ingesta_cfdi
 from main import knowledge_base
+from main import data_assistant
 from utils.data_cleaner import limpiar_columnas_texto, detectar_duplicados_similares
 from utils.data_normalizer import normalizar_columnas
 from utils.logger import configurar_logger, log_dataframe_info, log_execution_time
@@ -1157,6 +1158,7 @@ opciones_menu = [
     "👥 Vendedores + CxC",
     "🧰 Herramientas Financieras",
     "📦 Ingesta CFDIs (ZIP)",
+    "🤖 Asistente de Datos",
     "📚 Knowledge Base"
 ]
 
@@ -1290,6 +1292,16 @@ with st.sidebar.expander("ℹ️ Acerca de esta vista"):
         - Vista de documentos con tabla de contenidos
         - Documentos relacionados automáticos
         - Sin necesidad de datos cargados
+        """)
+    elif menu == "🤖 Asistente de Datos":
+        st.markdown("""
+        **Consultas en lenguaje natural sobre datos CFDI**
+        
+        - Pregunta en español sobre tus facturas
+        - Traduce automáticamente a SQL seguro
+        - Tablas, gráficas e interpretación IA
+        - SQL Playground para consultas directas
+        - Historial de consultas y exportación CSV
         """)
     elif menu == "⚙️ Gestión de Usuarios":
         st.markdown("""
@@ -1452,6 +1464,10 @@ elif menu == "🧰 Herramientas Financieras":
 elif menu == "📦 Ingesta CFDIs (ZIP)":
     # La ingesta de CFDIs no requiere datos cargados previamente
     ingesta_cfdi.main()
+
+elif menu == "🤖 Asistente de Datos":
+    # Asistente de consultas en lenguaje natural sobre DB CFDI
+    data_assistant.run()
 
 elif menu == "📚 Knowledge Base":
     # Knowledge Base no requiere datos cargados
