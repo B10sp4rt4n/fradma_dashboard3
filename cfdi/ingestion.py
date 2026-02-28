@@ -86,11 +86,44 @@ class NeonIngestion:
             True si existe, False si no
         """
         cursor.execute(
-            "SELECT 1 FROM cfdi_ventas WHERE uuid = %s LIMIT 1",
+            "SELECT 1 FROM cfdi_ventas WHERE uuid_sat = %s LIMIT 1",
             (uuid,)
         )
         return cursor.fetchone() is not None
-        
+
+    def _upsert_cliente(self, cursor, empresa_id: str, rfc: str,
+                        nombre: str, uso_cfdi: str = '',
+                        domicilio_fiscal: str = '',
+                        regimen_fiscal: str = '',
+                        fecha_emision=None, total=None) -> None:
+        """
+        Inserta o actualiza un cliente en clientes_master.
+        Extrae datos del receptor del CFDI.
+        """
+        if not rfc or rfc == 'XAXX010101000':  # Público en general
+            return
+
+        cursor.execute("""
+            INSERT INTO clientes_master (
+                empresa_id, rfc, razon_social, domicilio_fiscal,
+                total_ventas_historico, total_facturas,
+                fecha_primera_venta, fecha_ultima_venta
+            ) VALUES (
+                %s, %s, %s, %s, COALESCE(%s, 0), 1, %s, %s
+            )
+            ON CONFLICT (empresa_id, rfc) DO UPDATE SET
+                razon_social = COALESCE(EXCLUDED.razon_social, clientes_master.razon_social),
+                domicilio_fiscal = COALESCE(EXCLUDED.domicilio_fiscal, clientes_master.domicilio_fiscal),
+                total_ventas_historico = clientes_master.total_ventas_historico + COALESCE(EXCLUDED.total_ventas_historico, 0),
+                total_facturas = clientes_master.total_facturas + 1,
+                fecha_primera_venta = LEAST(clientes_master.fecha_primera_venta, EXCLUDED.fecha_primera_venta),
+                fecha_ultima_venta = GREATEST(clientes_master.fecha_ultima_venta, EXCLUDED.fecha_ultima_venta),
+                updated_at = NOW();
+        """, (
+            empresa_id, rfc, nombre, domicilio_fiscal or None,
+            total, fecha_emision, fecha_emision
+        ))
+
     def insert_venta(
         self,
         empresa_id: str,
@@ -98,25 +131,22 @@ class NeonIngestion:
         skip_duplicates: bool = True
     ) -> Tuple[bool, Optional[str]]:
         """
-        Inserta una factura de venta (CFDI) con sus conceptos.
+        Inserta una factura de venta (CFDI) con sus conceptos y actualiza clientes.
+        
+        El parser produce un dict con:
+          - Datos planos del comprobante (subtotal, total, moneda, etc.)
+          - 'emisor': {rfc, nombre, regimen_fiscal}
+          - 'receptor': {rfc, nombre, uso_cfdi, domicilio_fiscal_receptor, regimen_fiscal_receptor}
+          - 'timbre': {uuid, fecha_timbrado}
+          - 'conceptos': [{clave_prod_serv, no_identificacion, cantidad, ...}]
         
         Args:
-            empresa_id: ID de la empresa en tabla empresas
+            empresa_id: UUID de la empresa en tabla empresas
             venta_data: Diccionario con datos parseados del CFDI
-                Debe incluir claves: uuid, fecha, subtotal, iva, total,
-                moneda, tipo_cambio, emisor_rfc, emisor_nombre,
-                receptor_rfc, receptor_nombre, conceptos (lista)
             skip_duplicates: Si True, ignora CFDIs con UUID duplicado
             
         Returns:
             Tupla (éxito: bool, mensaje: str o None)
-            
-        Ejemplo:
-            >>> from cfdi.parser import CFDIParser
-            >>> parser = CFDIParser()
-            >>> venta = parser.parse_cfdi_venta(xml_content)
-            >>> ingestion = NeonIngestion(conn_string)
-            >>> success, msg = ingestion.insert_venta(empresa_id=1, venta_data=venta)
         """
         if not self.conn:
             raise RuntimeError("No hay conexión activa. Usa connect() o context manager.")
@@ -124,96 +154,144 @@ class NeonIngestion:
         cursor = self.conn.cursor()
         
         try:
-            # Verificar duplicados
-            uuid = venta_data.get('uuid')
-            if not uuid:
+            # Extraer sub-dicts del parser
+            emisor = venta_data.get('emisor', {})
+            receptor = venta_data.get('receptor', {})
+            timbre = venta_data.get('timbre', {})
+
+            # UUID del timbre fiscal (identificador único del CFDI)
+            uuid_sat = timbre.get('uuid') or venta_data.get('uuid') or venta_data.get('uuid_sat')
+            if not uuid_sat:
                 return False, "UUID faltante en venta_data"
                 
-            if skip_duplicates and self._uuid_exists(cursor, uuid):
-                logger.info(f"UUID {uuid} ya existe, saltando inserción")
-                return True, f"UUID {uuid} ya existe (duplicado)"
+            if skip_duplicates and self._uuid_exists(cursor, uuid_sat):
+                logger.info(f"UUID {uuid_sat} ya existe, saltando inserción")
+                return True, f"UUID {uuid_sat} ya existe (duplicado)"
             
-            # Insertar en cfdi_ventas
+            # Mapear datos del parser → columnas reales del schema
+            fecha_emision = venta_data.get('fecha') or venta_data.get('fecha_emision')
+            fecha_timbrado = timbre.get('fecha_timbrado') or venta_data.get('fecha_timbrado')
+            subtotal = venta_data.get('subtotal', Decimal('0'))
+            descuento = venta_data.get('descuento', Decimal('0'))
+            total = venta_data.get('total', Decimal('0'))
+            # impuestos = total - subtotal + descuento (si no viene directo)
+            impuestos = venta_data.get('impuestos') or (total - subtotal + descuento)
+
+            emisor_rfc = emisor.get('rfc') or venta_data.get('emisor_rfc', '')
+            emisor_nombre = emisor.get('nombre') or venta_data.get('emisor_nombre', '')
+            emisor_regimen = emisor.get('regimen_fiscal') or venta_data.get('emisor_regimen_fiscal', '')
+            receptor_rfc = receptor.get('rfc') or venta_data.get('receptor_rfc', '')
+            receptor_nombre = receptor.get('nombre') or venta_data.get('receptor_nombre', '')
+            receptor_uso_cfdi = receptor.get('uso_cfdi') or venta_data.get('uso_cfdi', '')
+            receptor_domicilio = receptor.get('domicilio_fiscal_receptor') or venta_data.get('receptor_domicilio_fiscal', '')
+            receptor_regimen = receptor.get('regimen_fiscal_receptor') or venta_data.get('receptor_regimen_fiscal', '')
+
+            exportacion = venta_data.get('exportacion', '01')
+            es_exportacion = exportacion != '01'
+
+            # 1) Insertar en cfdi_ventas (columnas reales del schema)
             insert_venta_sql = """
                 INSERT INTO cfdi_ventas (
-                    empresa_id, uuid, fecha_emision, fecha_timbrado,
-                    subtotal, iva, total, moneda, tipo_cambio,
-                    emisor_rfc, emisor_nombre, receptor_rfc, receptor_nombre,
-                    forma_pago, metodo_pago, uso_cfdi, lugar_expedicion,
-                    serie, folio, tipo_comprobante, xml_original
+                    empresa_id, uuid_sat, serie, folio,
+                    fecha_emision, fecha_timbrado,
+                    emisor_rfc, emisor_nombre, emisor_regimen_fiscal,
+                    receptor_rfc, receptor_nombre, receptor_uso_cfdi,
+                    receptor_domicilio_fiscal, receptor_regimen_fiscal,
+                    subtotal, descuento, impuestos, total,
+                    moneda, tipo_cambio, tipo_comprobante,
+                    metodo_pago, forma_pago, lugar_expedicion,
+                    es_exportacion, xml_original
                 ) VALUES (
                     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s
                 ) RETURNING id
             """
             
             cursor.execute(insert_venta_sql, (
                 empresa_id,
-                venta_data.get('uuid'),
-                venta_data.get('fecha_emision'),
-                venta_data.get('fecha_timbrado'),
-                venta_data.get('subtotal'),
-                venta_data.get('iva'),
-                venta_data.get('total'),
+                uuid_sat,
+                venta_data.get('serie', ''),
+                venta_data.get('folio', ''),
+                fecha_emision,
+                fecha_timbrado,
+                emisor_rfc,
+                emisor_nombre,
+                emisor_regimen,
+                receptor_rfc,
+                receptor_nombre,
+                receptor_uso_cfdi,
+                receptor_domicilio,
+                receptor_regimen,
+                subtotal,
+                descuento,
+                impuestos,
+                total,
                 venta_data.get('moneda', 'MXN'),
                 venta_data.get('tipo_cambio', Decimal('1.0')),
-                venta_data.get('emisor_rfc'),
-                venta_data.get('emisor_nombre'),
-                venta_data.get('receptor_rfc'),
-                venta_data.get('receptor_nombre'),
-                venta_data.get('forma_pago'),
-                venta_data.get('metodo_pago'),
-                venta_data.get('uso_cfdi'),
-                venta_data.get('lugar_expedicion'),
-                venta_data.get('serie'),
-                venta_data.get('folio'),
-                venta_data.get('tipo_comprobante', 'I'),
+                venta_data.get('tipo_de_comprobante') or venta_data.get('tipo_comprobante', 'I'),
+                venta_data.get('metodo_pago', ''),
+                venta_data.get('forma_pago', ''),
+                venta_data.get('lugar_expedicion', ''),
+                es_exportacion,
                 venta_data.get('xml_original')
             ))
             
             cfdi_id = cursor.fetchone()[0]
-            logger.info(f"CFDI insertado con ID {cfdi_id}")
             
-            # Insertar conceptos
+            # 2) Insertar conceptos (columnas reales del schema)
             conceptos = venta_data.get('conceptos', [])
             if conceptos:
                 insert_conceptos_sql = """
                     INSERT INTO cfdi_conceptos (
-                        cfdi_id, numero_linea, clave_prod_serv, clave_unidad,
-                        cantidad, unidad, descripcion, valor_unitario, importe
+                        cfdi_venta_id, clave_prod_serv, no_identificacion,
+                        descripcion, cantidad, clave_unidad, unidad,
+                        valor_unitario, importe, descuento, objeto_imp
                     ) VALUES %s
                 """
                 
                 conceptos_values = [
                     (
                         cfdi_id,
-                        i + 1,
-                        c.get('clave_prod_serv'),
-                        c.get('clave_unidad'),
-                        c.get('cantidad'),
-                        c.get('unidad'),
-                        c.get('descripcion'),
-                        c.get('valor_unitario'),
-                        c.get('importe')
+                        c.get('clave_prod_serv', ''),
+                        c.get('no_identificacion', ''),
+                        c.get('descripcion', ''),
+                        c.get('cantidad', 0),
+                        c.get('clave_unidad', ''),
+                        c.get('unidad', ''),
+                        c.get('valor_unitario', 0),
+                        c.get('importe', 0),
+                        c.get('descuento', 0),
+                        c.get('objeto_imp', '02')
                     )
-                    for i, c in enumerate(conceptos)
+                    for c in conceptos
                 ]
                 
                 extras.execute_values(
                     cursor,
                     insert_conceptos_sql,
                     conceptos_values,
-                    template="(%s, %s, %s, %s, %s, %s, %s, %s, %s)"
+                    template="(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
                 )
-                
-                logger.info(f"{len(conceptos)} conceptos insertados para CFDI {uuid}")
+
+            # 3) Upsert cliente en clientes_master
+            self._upsert_cliente(
+                cursor, empresa_id,
+                rfc=receptor_rfc,
+                nombre=receptor_nombre,
+                uso_cfdi=receptor_uso_cfdi,
+                domicilio_fiscal=receptor_domicilio,
+                regimen_fiscal=receptor_regimen,
+                fecha_emision=fecha_emision,
+                total=total
+            )
             
             self.conn.commit()
-            return True, f"CFDI {uuid} insertado correctamente"
+            return True, f"CFDI {uuid_sat} insertado correctamente ({len(conceptos)} conceptos)"
             
         except Exception as e:
             self.conn.rollback()
-            logger.error(f"Error insertando CFDI {uuid}: {e}")
+            logger.error(f"Error insertando CFDI: {e}")
             return False, str(e)
             
         finally:

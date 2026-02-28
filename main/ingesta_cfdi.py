@@ -145,6 +145,98 @@ def mostrar_estadisticas_procesamiento(ventas_parseadas: list, conceptos_enrique
             )
 
 
+def _render_ingesta_summary(neon_url: str, empresa_id: str, stats: dict):
+    """
+    Muestra resumen cuantificado post-ingesta: clientes, montos, métricas.
+    """
+    try:
+        import psycopg2 as _pg_sum
+        conn = _pg_sum.connect(neon_url)
+        cur = conn.cursor()
+        
+        # Totales de la empresa
+        cur.execute("""
+            SELECT 
+                COUNT(*) as facturas,
+                COUNT(DISTINCT receptor_rfc) as clientes,
+                COALESCE(SUM(total), 0) as total_facturado,
+                COALESCE(SUM(CASE WHEN moneda='MXN' THEN total ELSE total * tipo_cambio END), 0) as total_mxn,
+                COUNT(DISTINCT moneda) as monedas,
+                MIN(fecha_emision)::date as fecha_min,
+                MAX(fecha_emision)::date as fecha_max,
+                COUNT(DISTINCT metodo_pago) as metodos_pago
+            FROM cfdi_ventas 
+            WHERE empresa_id = %s;
+        """, (empresa_id,))
+        row = cur.fetchone()
+        
+        if row and row[0] > 0:
+            facturas, clientes, total_fac, total_mxn, monedas, f_min, f_max, metodos = row
+            
+            st.markdown("---")
+            st.markdown("### 📊 Resumen de Datos en Neon")
+            
+            # Métricas principales
+            c1, c2, c3, c4 = st.columns(4)
+            with c1:
+                st.metric("📄 Facturas", f"{facturas:,}")
+            with c2:
+                st.metric("👥 Clientes", f"{clientes:,}")
+            with c3:
+                st.metric("💰 Total Facturado", f"${total_mxn:,.2f} MXN")
+            with c4:
+                st.metric("📅 Periodo", f"{f_min} → {f_max}")
+            
+            # Desglose por moneda
+            cur.execute("""
+                SELECT moneda, COUNT(*) as n, SUM(total) as total
+                FROM cfdi_ventas WHERE empresa_id = %s
+                GROUP BY moneda ORDER BY total DESC;
+            """, (empresa_id,))
+            monedas_data = cur.fetchall()
+            
+            if len(monedas_data) > 1:
+                st.markdown("**Por moneda:**")
+                cols_m = st.columns(len(monedas_data))
+                for i, (mon, n, tot) in enumerate(monedas_data):
+                    with cols_m[i]:
+                        st.metric(f"{mon}", f"${tot:,.2f}", f"{n} facturas")
+            
+            # Top 5 clientes
+            cur.execute("""
+                SELECT receptor_nombre, receptor_rfc, COUNT(*) as n, 
+                       SUM(CASE WHEN moneda='MXN' THEN total ELSE total*tipo_cambio END) as total_mxn
+                FROM cfdi_ventas WHERE empresa_id = %s
+                GROUP BY receptor_nombre, receptor_rfc
+                ORDER BY total_mxn DESC LIMIT 5;
+            """, (empresa_id,))
+            top_clientes = cur.fetchall()
+            
+            if top_clientes:
+                st.markdown("**Top 5 clientes por facturación:**")
+                for i, (nombre, rfc, n, tot) in enumerate(top_clientes, 1):
+                    st.markdown(f"{i}. **{nombre}** ({rfc}) — {n} facturas — ${tot:,.2f} MXN")
+            
+            # Clientes en clientes_master
+            cur.execute("SELECT COUNT(*) FROM clientes_master WHERE empresa_id = %s;", (empresa_id,))
+            n_clientes_master = cur.fetchone()[0]
+            st.info(f"📋 **{n_clientes_master} clientes** registrados en catálogo maestro")
+            
+            # Conceptos
+            cur.execute("""
+                SELECT COUNT(*) FROM cfdi_conceptos cc
+                JOIN cfdi_ventas cv ON cc.cfdi_venta_id = cv.id
+                WHERE cv.empresa_id = %s;
+            """, (empresa_id,))
+            n_conceptos = cur.fetchone()[0]
+            st.info(f"📦 **{n_conceptos:,} líneas de producto** registradas")
+        
+        cur.close()
+        conn.close()
+    except Exception as e:
+        st.warning(f"No se pudo generar resumen: {e}")
+
+
 def crear_dataframe_conceptos(ventas_parseadas: list) -> pd.DataFrame:
     """
     Crea un DataFrame completo con todos los conceptos de las facturas.
@@ -1047,8 +1139,10 @@ def main():
                 try:
                     import psycopg2 as _pg3
                     first = ventas_parseadas[0]
-                    rfc = locals().get('nuevo_rfc', '') or first.get('emisor_rfc', 'SIN-RFC')
-                    razon = locals().get('nueva_razon', '') or first.get('emisor_nombre', 'Sin nombre')
+                    # El parser anida emisor como dict
+                    emisor = first.get('emisor', {})
+                    rfc = locals().get('nuevo_rfc', '') or emisor.get('rfc') or first.get('emisor_rfc', 'SIN-RFC')
+                    razon = locals().get('nueva_razon', '') or emisor.get('nombre') or first.get('emisor_nombre', 'Sin nombre')
                     _conn3 = _pg3.connect(neon_url)
                     _cur3 = _conn3.cursor()
                     # Verificar si ya existe por RFC
@@ -1086,8 +1180,16 @@ def main():
                             f"{stats['duplicados']} duplicados, "
                             f"{stats['errores']} errores"
                         )
+                        
+                        # Cuantificación detallada post-ingesta
+                        if stats['insertados'] > 0:
+                            _render_ingesta_summary(neon_url, empresa_id, stats)
+                        
                 except Exception as e:
                     st.error(f"❌ Error guardando en Neon: {e}")
+                    import traceback
+                    with st.expander("Detalle del error"):
+                        st.code(traceback.format_exc())
         
         progress_bar.progress(100, text="✅ Procesamiento completado")
         progress_bar.empty()
