@@ -1629,11 +1629,11 @@ def run(df, habilitar_ia=False, openai_api_key=None):
             }
         )
         
-        # Estadísticas adicionales
+        # Estadísticas adicionales (consistente con periodo del treemap)
         st.markdown("---")
         st.markdown("**📊 Estadísticas de Clientes**")
-        total_clientes = len(df_ytd_actual['cliente'].unique())
-        ticket_promedio = df_ytd_actual['ventas_usd'].sum() / total_clientes if total_clientes > 0 else 0
+        total_clientes = len(df_analisis_clientes['cliente'].unique())
+        ticket_promedio = df_analisis_clientes['ventas_usd'].sum() / total_clientes if total_clientes > 0 else 0
         
         col_stat1, col_stat2 = st.columns(2)
         with col_stat1:
@@ -1745,7 +1745,8 @@ def run(df, habilitar_ia=False, openai_api_key=None):
     tab1, tab2 = st.tabs(["📋 Desglose Mensual", "👥 Detalle Clientes"])
     
     with tab1:
-        st.subheader(f"Ventas Mensuales - {producto_seleccionado}")
+        st.subheader(f"Ventas Mensuales - {producto_seleccionado} (YTD {año_actual})")
+        st.caption(f"📅 Desglose mensual del año {año_actual}. Para cambiar el periodo del análisis de clientes, usa el selector de periodo en Configuración.")
         df_ytd_copy = df_ytd_actual.copy()
         df_ytd_copy['mes'] = df_ytd_copy['fecha'].dt.month
         df_ytd_copy['mes_nombre'] = df_ytd_copy['fecha'].dt.strftime('%B')
@@ -1788,10 +1789,18 @@ def run(df, habilitar_ia=False, openai_api_key=None):
         st.plotly_chart(fig_barras_mes, use_container_width=True)
     
     with tab2:
-        st.subheader(f"Detalle de Clientes - {producto_seleccionado}")
+        # Usar datos consistentes con el periodo del treemap
+        if periodo_treemap == "ytd_actual":
+            periodo_tab_label = f"YTD {año_actual}"
+        elif periodo_treemap == "historico_completo":
+            periodo_tab_label = "Histórico Completo"
+        else:
+            periodo_tab_label = f"Año {año_treemap}"
         
-        # Análisis por cliente con más detalle
-        clientes_detalle = df_ytd_actual.groupby('cliente').agg({
+        st.subheader(f"Detalle de Clientes - {producto_seleccionado} ({periodo_tab_label})")
+        
+        # Análisis por cliente usando datos del periodo configurado
+        clientes_detalle = df_analisis_clientes.groupby('cliente').agg({
             'ventas_usd': ['sum', 'count', 'mean']
         }).reset_index()
         
@@ -1937,20 +1946,55 @@ def run(df, habilitar_ia=False, openai_api_key=None):
         
         with col_exp2:
             st.subheader("📊 Datos Brutos")
-            csv_buffer = df_ytd_actual.to_csv(index=False).encode('utf-8')
             
+            # Opción 1: CSV YTD actual
+            csv_buffer = df_ytd_actual.to_csv(index=False).encode('utf-8')
             st.download_button(
-                label="📥 Descargar CSV",
+                label=f"📥 CSV - YTD {año_actual}",
                 data=csv_buffer,
                 file_name=f"Datos_YTD_{año_actual}_{datetime.now().strftime('%Y%m%d')}.csv",
-                mime="text/csv"
+                mime="text/csv",
+                key="csv_ytd_actual"
             )
-            st.caption(f"Datos crudos YTD {año_actual} ({len(df_ytd_actual)} registros)")
+            st.caption(f"Datos YTD {año_actual} ({len(df_ytd_actual)} registros)")
+            
+            # Opción 2: CSV del periodo del treemap (si es diferente)
+            if periodo_treemap != "ytd_actual":
+                csv_periodo = df_analisis_clientes.to_csv(index=False).encode('utf-8')
+                if periodo_treemap == "historico_completo":
+                    label_csv = "📥 CSV - Histórico Completo"
+                    fname_csv = f"Datos_Historico_{producto_seleccionado}_{datetime.now().strftime('%Y%m%d')}.csv"
+                else:
+                    label_csv = f"📥 CSV - Año {año_treemap}"
+                    fname_csv = f"Datos_{año_treemap}_{producto_seleccionado}_{datetime.now().strftime('%Y%m%d')}.csv"
+                
+                st.download_button(
+                    label=label_csv,
+                    data=csv_periodo,
+                    file_name=fname_csv,
+                    mime="text/csv",
+                    key="csv_periodo_treemap"
+                )
+                st.caption(f"Datos del periodo configurado ({len(df_analisis_clientes)} registros)")
     else:
         st.warning("⚠️ Las funciones de exportación están disponibles solo para usuarios con rol **Analyst** o **Admin**")
         st.info("💡 Contacta al administrador para solicitar acceso a exportaciones")
     
     # Footer con información
     st.markdown("---")
-    st.caption(f"📅 Reporte generado: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | "
-              f"Período analizado: 01/01/{año_actual} - {datetime.now().strftime('%d/%m/%Y')}")
+    # Footer: mostrar periodo real analizado
+    if periodo_treemap == "ytd_actual":
+        periodo_footer = f"YTD {año_actual} (01/01/{año_actual} - {datetime.now().strftime('%d/%m/%Y')})"
+    elif periodo_treemap == "historico_completo":
+        fecha_min_hist = df['fecha'].min()
+        fecha_max_hist = df['fecha'].max()
+        periodo_footer = f"Histórico Completo ({fecha_min_hist.strftime('%d/%m/%Y')} - {fecha_max_hist.strftime('%d/%m/%Y')})"
+    else:
+        periodo_footer = f"Año {año_treemap}"
+    
+    st.caption(
+        f"📅 Reporte generado: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | "
+        f"Producto: {producto_seleccionado} | "
+        f"Periodo principal: YTD {año_actual} | "
+        f"Periodo treemap/clientes: {periodo_footer}"
+    )
