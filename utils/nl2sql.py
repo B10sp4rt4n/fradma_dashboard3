@@ -493,10 +493,10 @@ SQL: SELECT DATE_TRUNC('month', fecha_emision) AS mes, COUNT(*) AS facturas, SUM
         conn = None
         try:
             conn = psycopg2.connect(self.connection_string)
-            conn.set_session(readonly=True)
 
-            # Establecer timeout via SQL (compatible con Neon pooler)
+            # Establecer readonly y timeout via SQL (compatible con Neon pooler)
             cursor = conn.cursor()
+            cursor.execute("SET default_transaction_read_only = true;")
             cursor.execute(f"SET statement_timeout = '{self.timeout * 1000}ms';")
             cursor.close()
 
@@ -716,8 +716,8 @@ Formato de la última línea: CHART_TYPE: <tipo>
         counts = {}
         try:
             conn = psycopg2.connect(self.connection_string)
-            conn.set_session(readonly=True)
             cursor = conn.cursor()
+            cursor.execute("SET default_transaction_read_only = true;")
 
             for table in ALLOWED_TABLES:
                 if table.startswith('v_'):
@@ -747,8 +747,8 @@ Formato de la última línea: CHART_TYPE: <tipo>
         conn = None
         try:
             conn = psycopg2.connect(self.connection_string)
-            conn.set_session(readonly=True)
             cursor = conn.cursor()
+            cursor.execute("SET default_transaction_read_only = true;")
             cursor.execute(
                 "SELECT MIN(fecha_emision)::date, MAX(fecha_emision)::date "
                 "FROM cfdi_ventas;"
