@@ -93,7 +93,7 @@ class NeonIngestion:
         
     def insert_venta(
         self,
-        empresa_id: int,
+        empresa_id: str,
         venta_data: Dict,
         skip_duplicates: bool = True
     ) -> Tuple[bool, Optional[str]]:
@@ -221,7 +221,7 @@ class NeonIngestion:
             
     def insert_ventas_batch(
         self,
-        empresa_id: int,
+        empresa_id: str,
         ventas_list: List[Dict],
         skip_duplicates: bool = True
     ) -> Dict[str, any]:
@@ -303,7 +303,7 @@ class NeonIngestion:
         
     def insert_pago(
         self,
-        empresa_id: int,
+        empresa_id: str,
         pago_data: Dict,
         skip_duplicates: bool = True
     ) -> Tuple[bool, Optional[str]]:
@@ -403,7 +403,7 @@ class NeonIngestion:
         finally:
             cursor.close()
             
-    def get_empresa_stats(self, empresa_id: int) -> Dict:
+    def get_empresa_stats(self, empresa_id: str) -> Dict:
         """
         Obtiene estadísticas de la empresa.
         

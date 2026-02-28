@@ -897,12 +897,67 @@ def main():
                     )
                     neon_url = None
             
-            empresa_id = st.number_input(
-                "ID de Empresa",
-                min_value=1,
-                value=1,
-                help="ID de la empresa en tabla empresas"
-            )
+            empresa_id = None
+            
+            # Obtener empresas existentes de Neon
+            empresas_opciones = {}
+            if neon_url:
+                try:
+                    import psycopg2 as _pg
+                    _conn = _pg.connect(neon_url)
+                    _cur = _conn.cursor()
+                    _cur.execute("SELECT id, rfc, razon_social FROM empresas ORDER BY razon_social;")
+                    for row in _cur.fetchall():
+                        label = f"{row[2]} ({row[1]})" if row[2] else str(row[1])
+                        empresas_opciones[label] = str(row[0])
+                    _cur.close()
+                    _conn.close()
+                except Exception:
+                    pass
+            
+            if empresas_opciones:
+                opciones = list(empresas_opciones.keys()) + ["➕ Crear nueva empresa..."]
+                seleccion = st.selectbox(
+                    "Empresa",
+                    opciones,
+                    help="Selecciona la empresa a la que pertenecen estos CFDIs"
+                )
+                
+                if seleccion == "➕ Crear nueva empresa...":
+                    col_rfc, col_razon = st.columns(2)
+                    with col_rfc:
+                        nuevo_rfc = st.text_input("RFC de la empresa", max_chars=13)
+                    with col_razon:
+                        nueva_razon = st.text_input("Razón social")
+                    
+                    if nuevo_rfc and nueva_razon:
+                        if st.button("➕ Crear empresa"):
+                            try:
+                                import psycopg2 as _pg2
+                                _conn2 = _pg2.connect(neon_url)
+                                _cur2 = _conn2.cursor()
+                                _cur2.execute(
+                                    "INSERT INTO empresas (rfc, razon_social) VALUES (%s, %s) RETURNING id;",
+                                    (nuevo_rfc.upper().strip(), nueva_razon.strip())
+                                )
+                                new_id = _cur2.fetchone()[0]
+                                _conn2.commit()
+                                _cur2.close()
+                                _conn2.close()
+                                empresa_id = str(new_id)
+                                st.success(f"✅ Empresa creada con ID: {empresa_id}")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error creando empresa: {e}")
+                else:
+                    empresa_id = empresas_opciones[seleccion]
+            else:
+                st.warning("No hay empresas registradas en Neon. Se creará automáticamente al ingestar.")
+                col_rfc, col_razon = st.columns(2)
+                with col_rfc:
+                    nuevo_rfc = st.text_input("RFC de la empresa", max_chars=13, key="rfc_new")
+                with col_razon:
+                    nueva_razon = st.text_input("Razón social", key="razon_new")
             
             if neon_url and st.button("🔌 Probar conexión"):
                 with st.spinner("Probando conexión a Neon..."):
@@ -912,7 +967,7 @@ def main():
                         st.error("❌ No se pudo conectar a Neon. Verifica que la URL sea correcta y que el servidor esté activo.")
         else:
             neon_url = None
-            empresa_id = 1  # ID por defecto si no se guarda en Neon
+            empresa_id = None  # Sin Neon, no se necesita
     
     # Botón principal de procesamiento
     st.markdown("---")
@@ -986,22 +1041,53 @@ def main():
         # Guardar a Neon si está configurado
         if guardar_neon and neon_url:
             progress_bar.progress(90, text="Guardando en Neon...")
-            try:
-                with NeonIngestion(neon_url) as ingestion:
-                    stats = ingestion.insert_ventas_batch(
-                        empresa_id=empresa_id,
-                        ventas_list=ventas_parseadas,
-                        skip_duplicates=True
-                    )
-                    
-                    st.success(
-                        f"💾 Guardado en Neon: "
-                        f"{stats['insertados']} insertados, "
-                        f"{stats['duplicados']} duplicados, "
-                        f"{stats['errores']} errores"
-                    )
-            except Exception as e:
-                st.error(f"❌ Error guardando en Neon: {e}")
+            
+            # Si no hay empresa_id, auto-crear desde los datos del primer CFDI
+            if not empresa_id and ventas_parseadas:
+                try:
+                    import psycopg2 as _pg3
+                    first = ventas_parseadas[0]
+                    rfc = locals().get('nuevo_rfc', '') or first.get('emisor_rfc', 'SIN-RFC')
+                    razon = locals().get('nueva_razon', '') or first.get('emisor_nombre', 'Sin nombre')
+                    _conn3 = _pg3.connect(neon_url)
+                    _cur3 = _conn3.cursor()
+                    # Verificar si ya existe por RFC
+                    _cur3.execute("SELECT id FROM empresas WHERE rfc = %s LIMIT 1;", (rfc.upper().strip(),))
+                    existing = _cur3.fetchone()
+                    if existing:
+                        empresa_id = str(existing[0])
+                    else:
+                        _cur3.execute(
+                            "INSERT INTO empresas (rfc, razon_social) VALUES (%s, %s) RETURNING id;",
+                            (rfc.upper().strip(), razon.strip())
+                        )
+                        empresa_id = str(_cur3.fetchone()[0])
+                        _conn3.commit()
+                    _cur3.close()
+                    _conn3.close()
+                    st.info(f"Empresa: {razon} (RFC: {rfc}) → ID: {empresa_id}")
+                except Exception as e:
+                    st.error(f"Error creando empresa: {e}")
+            
+            if not empresa_id:
+                st.error("No se pudo determinar el ID de empresa. Verifica la configuración.")
+            else:
+                try:
+                    with NeonIngestion(neon_url) as ingestion:
+                        stats = ingestion.insert_ventas_batch(
+                            empresa_id=empresa_id,
+                            ventas_list=ventas_parseadas,
+                            skip_duplicates=True
+                        )
+                        
+                        st.success(
+                            f"💾 Guardado en Neon: "
+                            f"{stats['insertados']} insertados, "
+                            f"{stats['duplicados']} duplicados, "
+                            f"{stats['errores']} errores"
+                        )
+                except Exception as e:
+                    st.error(f"❌ Error guardando en Neon: {e}")
         
         progress_bar.progress(100, text="✅ Procesamiento completado")
         progress_bar.empty()
