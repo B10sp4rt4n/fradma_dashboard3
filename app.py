@@ -1234,7 +1234,7 @@ with st.sidebar.expander("ℹ️ Acerca de esta vista"):
         - Top clientes por producto
         - Proyección y tendencias
         """)
-    elif menu == "�🔥 Heatmap Ventas":
+    elif menu == "🔥 Heatmap Ventas":
         st.markdown("""
         **Mapa de calor de ventas**
         
@@ -1427,7 +1427,7 @@ elif menu == "🔷 YTD por Producto":
         st.warning("⚠️ Primero sube un archivo para visualizar el reporte YTD por Producto.")
         st.info("📂 Este reporte requiere datos de ventas con: fecha, producto, ventas_usd")
 
-elif menu == "�🔥 Heatmap Ventas":
+elif menu == "🔥 Heatmap Ventas":
     if "df" in st.session_state:
         heatmap_ventas.run(st.session_state["df"])
     else:
@@ -1453,11 +1453,11 @@ elif menu == "📦 Ingesta CFDIs (ZIP)":
     # La ingesta de CFDIs no requiere datos cargados previamente
     ingesta_cfdi.main()
 
-elif menu == "� Knowledge Base":
+elif menu == "📚 Knowledge Base":
     # Knowledge Base no requiere datos cargados
     knowledge_base.run()
 
-elif menu == "�📊 Reporte Consolidado":
+elif menu == "📊 Reporte Consolidado":
     if "df" in st.session_state and "archivo_excel" in st.session_state:
         with st.spinner("📊 Generando reporte consolidado..."):
             try:
