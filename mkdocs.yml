@@ -1,0 +1,104 @@
+site_name: "CIMA Analytics / Fradma Dashboard — Knowledge Base"
+site_description: "Documentación técnica y wiki interna de la plataforma de BI"
+site_author: "CIMA Analytics"
+
+theme:
+  name: material
+  language: es
+  palette:
+    - scheme: slate
+      primary: indigo
+      accent: blue
+      toggle:
+        icon: material/brightness-4
+        name: Cambiar a modo claro
+    - scheme: default
+      primary: indigo
+      accent: blue
+      toggle:
+        icon: material/brightness-7
+        name: Cambiar a modo oscuro
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - toc.follow
+  icon:
+    repo: fontawesome/brands/github
+
+repo_url: https://github.com/B10sp4rt4n/fradma_dashboard3
+repo_name: fradma_dashboard3
+
+plugins:
+  - search:
+      lang:
+        - es
+        - en
+      separator: '[\s\-\.\_]+'
+  - tags
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - admonition
+  - pymdownx.details
+  - tables
+  - toc:
+      permalink: true
+      toc_depth: 3
+
+nav:
+  - Inicio: index.md
+  - Arquitectura:
+    - Arquitectura General: ARCHITECTURE.md
+    - Arquitectura Escalable: ARQUITECTURA_ESCALABLE.md
+    - Distribución Empaquetada: ARQUITECTURA_DISTRIBUCION_EMPAQUETADA.md
+    - Marketplace / Comunidad: ARQUITECTURA_MARKETPLACE_COMUNIDAD.md
+  - Análisis:
+    - Plataforma Integrada: ANALISIS_PLATAFORMA_INTEGRADA.md
+    - Valor Completo: ANALISIS_VALOR_COMPLETO.md
+    - Módulo CFDI: ANALISIS_MODULO_CFDI.md
+    - Competitivo CFDI: ANALISIS_COMPETITIVO_CFDI.md
+    - Competitivo Global: COMPETITIVE_ANALYSIS_GLOBAL.md
+  - Guías:
+    - README Principal: README_PRINCIPAL.md
+    - Guía de Testing: TESTING_GUIDE.md
+    - Guía Multi-Usuario: GUIA_USUARIO_MULTIUSUARIO.md
+    - Columnas Requeridas: COLUMNAS_REQUERIDAS.md
+    - Filtros Avanzados: FILTROS_AVANZADOS.md
+  - Reportes:
+    - Reporte Consolidado: README_REPORTE_CONSOLIDADO.md
+    - IA Analysis: README_AI_ANALYSIS.md
+  - Roadmap:
+    - Roadmap V2: ROADMAP_V2.md
+    - Plan de Mejoras: PLAN_MEJORAS_PROGRESO.md
+    - Plan de Lanzamiento: PLAN_LANZAMIENTO.md
+    - Roadmap Reportes Cliente: ROADMAP_REPORTES_CLIENTE.md
+  - Pricing y ROI:
+    - Estrategia Pricing: PRICING_STRATEGY.md
+    - ROI Calculator MVP: ROI_CALCULATOR_MVP.md
+    - ROI Valor Mercado: ROI_CALCULATOR_VALOR_MERCADO.md
+  - Multi-Usuario:
+    - Implementación: MULTIUSUARIO_IMPLEMENTADO.md
+    - Testing Multi-Usuario: TESTING_MULTIUSUARIO.md
+  - Refactoring:
+    - Refactoring Feb 2026: REFACTORING_2026-02-09.md
+    - Estrategia Robustecimiento: ESTRATEGIA_ROBUSTECIMIENTO.md
+    - Plan Tests Sugeridos: PLAN_TESTS_SUGERIDOS.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/B10sp4rt4n/fradma_dashboard3

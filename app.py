@@ -14,6 +14,7 @@ _DEFAULT_LOGO = open(_LOGO_PATH, "rb").read() if os.path.exists(_LOGO_PATH) else
 from main import main_kpi, main_comparativo, heatmap_ventas
 from main import kpi_cpc, reporte_ejecutivo, ytd_lineas, ytd_productos, reporte_consolidado
 from main import vendedores_cxc, herramientas_financieras, ingesta_cfdi
+from main import knowledge_base
 from utils.data_cleaner import limpiar_columnas_texto, detectar_duplicados_similares
 from utils.data_normalizer import normalizar_columnas
 from utils.logger import configurar_logger, log_dataframe_info, log_execution_time
@@ -1155,7 +1156,8 @@ opciones_menu = [
     "💳 KPI Cartera CxC",
     "👥 Vendedores + CxC",
     "🧰 Herramientas Financieras",
-    "📦 Ingesta CFDIs (ZIP)"
+    "📦 Ingesta CFDIs (ZIP)",
+    "📚 Knowledge Base"
 ]
 
 # Si el usuario es admin, agregar opciones de administración
@@ -1278,6 +1280,16 @@ with st.sidebar.expander("ℹ️ Acerca de esta vista"):
         - Clasificación IA con GPT-4
         - Guardado opcional en Neon PostgreSQL
         - Reportes consolidados por línea de negocio
+        """)
+    elif menu == "📚 Knowledge Base":
+        st.markdown("""
+        **Wiki interna y buscador de documentación**
+        
+        - Búsqueda full-text en toda la documentación
+        - Navegación por categorías
+        - Vista de documentos con tabla de contenidos
+        - Documentos relacionados automáticos
+        - Sin necesidad de datos cargados
         """)
     elif menu == "⚙️ Gestión de Usuarios":
         st.markdown("""
@@ -1441,7 +1453,11 @@ elif menu == "📦 Ingesta CFDIs (ZIP)":
     # La ingesta de CFDIs no requiere datos cargados previamente
     ingesta_cfdi.main()
 
-elif menu == "📊 Reporte Consolidado":
+elif menu == "� Knowledge Base":
+    # Knowledge Base no requiere datos cargados
+    knowledge_base.run()
+
+elif menu == "�📊 Reporte Consolidado":
     if "df" in st.session_state and "archivo_excel" in st.session_state:
         with st.spinner("📊 Generando reporte consolidado..."):
             try:
