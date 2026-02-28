@@ -1,6 +1,6 @@
 # Wiki Activo — Fradma Dashboard (Cima Analytics)
 
-> Generado automáticamente: **2026-02-28T05:08:35**
+> Generado automáticamente: **2026-02-28T05:12:55**
 > Este documento se regenera desde el código fuente real.
 
 ---
@@ -9,12 +9,12 @@
 
 | Métrica | Valor |
 |---------|-------|
-| Líneas de código Python | **23,248** |
+| Líneas de código Python | **23,271** |
 | Módulos Python | **35** |
 | Tests | **439** en 22 archivos |
 | Cobertura | **20.3%** |
-| Commits | **287** |
-| Último commit | 2026-02-28 04:55:22 |
+| Commits | **288** |
+| Último commit | 2026-02-28 05:11:20 |
 | Inicio del proyecto | 2025-06-05 |
 | Items del menú | **14** módulos |
 
@@ -37,7 +37,7 @@
 
 ## 📊 Módulos Principales (main/)
 
-**Total: 13,551 líneas en 14 módulos**
+**Total: 13,574 líneas en 14 módulos**
 
 ### `heatmap_ventas.py` (404 líneas)
 __Sin docstring__
@@ -84,11 +84,11 @@ _Módulo de ingesta de CFDIs desde ZIP._
   - `mostrar_analisis_precios()` (L660) — _Muestra análisis de precios y variaciones._
   - `main()` (L826) — _Función principal de la página._
 
-### `knowledge_base.py` (721 líneas)
+### `knowledge_base.py` (744 líneas)
 _Módulo: Knowledge Base / Wiki — Interfaz Streamlit_
 
 - **Funciones públicas (1):**
-  - `run()` (L681) — _Punto de entrada del módulo Knowledge Base._
+  - `run()` (L704) — _Punto de entrada del módulo Knowledge Base._
 - Funciones privadas (15): `_badge_html`, `_short_path`, `_fmt_words`, `_clean_anchor_links`, `_render_explorer`, `_render_search`, `_render_document`, `_render_full_content`, `_render_stats`, `_render_history` +5
 
 ### `kpi_cpc.py` (2,326 líneas)
@@ -493,7 +493,7 @@ _Parser de CFDI 4.0 - Extrae datos estructurados de XMLs de SAT_
 
 | Autor | Commits |
 |-------|---------|
-| B10sp4rt4n | 280 |
+| B10sp4rt4n | 281 |
 
 ## 🧪 Estado de Tests
 
@@ -501,5 +501,5 @@ _Parser de CFDI 4.0 - Extrae datos estructurados de XMLs de SAT_
 - Cobertura: **20.3%**
 
 ---
-_Wiki generado por `scripts/generate_wiki.py` el 2026-02-28T05:08:35_
+_Wiki generado por `scripts/generate_wiki.py` el 2026-02-28T05:12:55_
 _Para regenerar: `python scripts/generate_wiki.py`_
