@@ -475,9 +475,32 @@ def _render_stats(engine):
         st.caption("Sin búsquedas registradas aún.")
 
     st.markdown("---")
-    if st.button("🔄 Re-indexar todos los documentos"):
-        invalidate_cache()
-        st.rerun()
+    col_reindex, col_wiki = st.columns(2)
+    with col_reindex:
+        if st.button("🔄 Re-indexar documentos", use_container_width=True):
+            invalidate_cache()
+            st.rerun()
+    with col_wiki:
+        if st.button("📝 Regenerar Wiki Activo", use_container_width=True):
+            try:
+                from scripts.generate_wiki import generate_inventory, generate_markdown
+                inv = generate_inventory()
+                md = generate_markdown(inv)
+                wiki_path = os.path.join(
+                    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    "docs", "WIKI_ACTIVO.md"
+                )
+                with open(wiki_path, "w", encoding="utf-8") as f:
+                    f.write(md)
+                invalidate_cache()
+                st.success(
+                    f"✅ Wiki regenerado: {inv['project']['total_python_lines']:,} líneas · "
+                    f"{inv['project']['total_modules']} módulos · "
+                    f"{inv['tests']['total_tests']} tests"
+                )
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error regenerando wiki: {e}")
 
 
 # =====================================================================
