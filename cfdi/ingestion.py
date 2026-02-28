@@ -41,7 +41,13 @@ class NeonIngestion:
             connection_string: String de conexión PostgreSQL
                 Ejemplo: "postgresql://user:pass@host:5432/dbname?sslmode=require"
         """
-        self.connection_string = connection_string
+        self.connection_string = connection_string.strip()
+        # Sanitizar: quitar prefijo psql y comillas
+        if self.connection_string.lower().startswith("psql "):
+            self.connection_string = self.connection_string[5:].strip()
+        if (self.connection_string.startswith('"') and self.connection_string.endswith('"')) or \
+           (self.connection_string.startswith("'") and self.connection_string.endswith("'")):
+            self.connection_string = self.connection_string[1:-1]
         self.conn: Optional[connection] = None
         
     def __enter__(self):
@@ -485,7 +491,15 @@ def verify_connection(connection_string: str) -> bool:
         True si la conexión es exitosa, False en caso contrario
     """
     try:
-        conn = psycopg2.connect(connection_string)
+        # Sanitizar input
+        cs = connection_string.strip()
+        if cs.lower().startswith("psql "):
+            cs = cs[5:].strip()
+        if (cs.startswith('"') and cs.endswith('"')) or \
+           (cs.startswith("'") and cs.endswith("'")):
+            cs = cs[1:-1]
+
+        conn = psycopg2.connect(cs)
         cursor = conn.cursor()
         cursor.execute("SELECT version();")
         version = cursor.fetchone()

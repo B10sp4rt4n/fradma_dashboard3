@@ -875,9 +875,27 @@ def main():
             neon_url = st.text_input(
                 "URL de conexión Neon",
                 type="password",
-                help="postgresql://user:pass@host/db",
+                help="postgresql://user:pass@host/db?sslmode=require",
                 value=os.getenv('NEON_DATABASE_URL', '')
             )
+            
+            # Sanitizar URL de conexión
+            if neon_url:
+                neon_url = neon_url.strip()
+                # Quitar prefijo "psql " si el usuario copió el comando CLI
+                if neon_url.lower().startswith("psql "):
+                    neon_url = neon_url[5:].strip()
+                # Quitar comillas envolventes
+                if (neon_url.startswith('"') and neon_url.endswith('"')) or \
+                   (neon_url.startswith("'") and neon_url.endswith("'")):
+                    neon_url = neon_url[1:-1]
+                # Validar formato
+                if not neon_url.startswith(("postgresql://", "postgres://")):
+                    st.error(
+                        "La URL debe comenzar con `postgresql://` o `postgres://`.\n\n"
+                        "Ejemplo: `postgresql://user:pass@host/db?sslmode=require`"
+                    )
+                    neon_url = None
             
             empresa_id = st.number_input(
                 "ID de Empresa",
@@ -891,7 +909,7 @@ def main():
                     if verify_connection(neon_url):
                         st.success("✅ Conexión exitosa a Neon")
                     else:
-                        st.error("❌ No se pudo conectar a Neon")
+                        st.error("❌ No se pudo conectar a Neon. Verifica que la URL sea correcta y que el servidor esté activo.")
         else:
             neon_url = None
             empresa_id = 1  # ID por defecto si no se guarda en Neon
