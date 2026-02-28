@@ -230,6 +230,16 @@ Ventas agrupadas por línea de negocio y mes.
 - tipo_comprobante='I' es ingreso (venta), 'E' es egreso (nota de crédito).
 - fecha_emision es la fecha de facturación.
 - receptor_nombre es el nombre del cliente final.
+
+### IMPORTANTE — Terminología compras vs ventas:
+- Esta base contiene las VENTAS (facturas emitidas por la empresa).
+- Cuando el usuario pregunta "qué empresa compró más/menos" se refiere al RECEPTOR (cliente).
+- "Compras de una empresa" = facturas donde esa empresa es receptor_nombre/receptor_rfc.
+- "Ventas a un cliente" = lo mismo: CFDIs donde el cliente es el receptor.
+- SIEMPRE busca en cfdi_ventas usando receptor_nombre o receptor_rfc para identificar clientes.
+- NUNCA respondas que no hay datos sin antes intentar una consulta sobre cfdi_ventas.
+- Si la pregunta menciona un mes (ej. "enero"), usa EXTRACT(MONTH FROM fecha_emision) = N.
+- Si no se especifica año, asume el año actual: EXTRACT(YEAR FROM fecha_emision) = EXTRACT(YEAR FROM CURRENT_DATE).
 """
 
 
@@ -409,7 +419,9 @@ REGLAS ESTRICTAS:
 7. Usa DATE_TRUNC para agrupaciones por periodo.
 8. Para porcentajes, calcula con ROUND(x * 100.0 / total, 2).
 9. Responde SOLO con la consulta SQL, sin explicación ni markdown. NO uses emojis ni caracteres especiales.
-10. Si la pregunta no puede responderse con los datos disponibles, genera: SELECT 'Pregunta no compatible con los datos disponibles' AS mensaje;
+10. SIEMPRE intenta generar una consulta SQL válida. Solo como ÚLTIMO recurso si la pregunta es completamente irrelevante, genera: SELECT 'Pregunta no compatible con los datos disponibles' AS mensaje;
+11. Cuando pregunten por "empresas", "clientes" o "quién compró", busca en receptor_nombre de cfdi_ventas.
+12. Para meses por nombre (enero=1, febrero=2, ... diciembre=12), usa EXTRACT(MONTH FROM fecha_emision).
 {empresa_filter}
 
 {SCHEMA_CONTEXT}
@@ -423,6 +435,15 @@ SQL: SELECT receptor_nombre AS cliente, COUNT(*) AS num_facturas, SUM(total * ti
 
 Pregunta: Ventas mensuales de este año
 SQL: SELECT DATE_TRUNC('month', fecha_emision) AS mes, COUNT(*) AS facturas, SUM(total * tipo_cambio) AS total_mxn FROM cfdi_ventas WHERE EXTRACT(YEAR FROM fecha_emision) = EXTRACT(YEAR FROM CURRENT_DATE) GROUP BY mes ORDER BY mes LIMIT {self.max_rows};
+
+Pregunta: ¿Cuál empresa compró menos en enero?
+SQL: SELECT receptor_nombre AS cliente, COUNT(*) AS num_facturas, SUM(total) AS total_comprado FROM cfdi_ventas WHERE EXTRACT(MONTH FROM fecha_emision) = 1 AND EXTRACT(YEAR FROM fecha_emision) = EXTRACT(YEAR FROM CURRENT_DATE) GROUP BY receptor_nombre ORDER BY total_comprado ASC LIMIT 1;
+
+Pregunta: ¿Cuánto le vendimos a DISTRIBUIDORA FESA?
+SQL: SELECT receptor_nombre AS cliente, COUNT(*) AS facturas, SUM(total) AS total_vendido, MIN(fecha_emision) AS primera_compra, MAX(fecha_emision) AS ultima_compra FROM cfdi_ventas WHERE UPPER(receptor_nombre) LIKE '%FESA%' GROUP BY receptor_nombre LIMIT {self.max_rows};
+
+Pregunta: ¿Cuántos clientes diferentes compraron este mes?
+SQL: SELECT COUNT(DISTINCT receptor_rfc) AS clientes_unicos FROM cfdi_ventas WHERE DATE_TRUNC('month', fecha_emision) = DATE_TRUNC('month', CURRENT_DATE) LIMIT {self.max_rows};
 """
 
     def _clean_sql(self, raw: str) -> str:
