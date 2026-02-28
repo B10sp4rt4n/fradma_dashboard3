@@ -135,6 +135,19 @@ _CSS = """
 }
 .toc-container::-webkit-scrollbar { width: 4px; }
 .toc-container::-webkit-scrollbar-thumb { background: #4A90D9; border-radius: 4px; }
+.git-entry {
+    background: rgba(74,144,217,0.06);
+    border-left: 3px solid #4A90D9;
+    padding: .5rem .8rem;
+    margin: .3rem 0;
+    border-radius: 0 8px 8px 0;
+    font-size: .88rem;
+}
+.git-entry .hash { color:#E67E22; font-family:monospace; font-weight:600; }
+.git-entry .date { color:#9CA3AF; }
+.git-entry .msg  { color:#E8E8E8; }
+.git-entry .stat-add { color:#27AE60; }
+.git-entry .stat-del { color:#C0392B; }
 </style>
 """
 
@@ -468,6 +481,200 @@ def _render_stats(engine):
 
 
 # =====================================================================
+# VISTA: HISTORIAL GIT
+# =====================================================================
+
+def _render_history(engine):
+    """Muestra historial de cambios git por documento."""
+
+    all_docs = sorted(engine.documents.values(), key=lambda d: d.title)
+    doc_labels = [
+        f"{CATEGORY_ICONS.get(d.category, '📝')} {d.title}"
+        for d in all_docs
+    ]
+
+    selected_idx = st.selectbox(
+        "Selecciona documento:",
+        range(len(doc_labels)),
+        format_func=lambda i: doc_labels[i],
+        key="kb_history_doc",
+    )
+
+    doc = all_docs[selected_idx]
+    history = engine.get_document_history(doc.id, max_entries=30)
+
+    if not history:
+        st.info(f'📄 **{doc.title}** — Sin historial git disponible para este archivo.')
+        st.caption('Posible causa: el archivo no está bajo control de versiones o no ha sido committed.')
+        return
+
+    st.markdown(f'##### 🕰️ Historial de **{doc.title}** ({len(history)} commits)')
+
+    total_add = sum(e["insertions"] for e in history)
+    total_del = sum(e["deletions"] for e in history)
+    c1, c2, c3 = st.columns(3)
+    c1.metric("📝 Commits", len(history))
+    c2.metric("➕ Líneas agregadas", f"{total_add:,}")
+    c3.metric("➖ Líneas eliminadas", f"{total_del:,}")
+
+    st.markdown("---")
+
+    for entry in history:
+        add_str = f'+{entry["insertions"]}' if entry["insertions"] else ''
+        del_str = f'-{entry["deletions"]}' if entry["deletions"] else ''
+        st.markdown(f"""<div class="git-entry">
+            <span class="hash">{entry['hash']}</span>
+            <span class="date"> · {entry['date']}</span>
+            <span class="msg"> · {entry['message'][:80]}</span>
+            {f'<span class="stat-add"> {add_str}</span>' if add_str else ''}
+            {f'<span class="stat-del"> {del_str}</span>' if del_str else ''}
+        </div>""", unsafe_allow_html=True)
+
+
+# =====================================================================
+# VISTA: EDITOR DE DOCUMENTOS
+# =====================================================================
+
+def _render_editor(engine):
+    """Editor inline para crear y modificar documentos."""
+
+    editor_mode = st.radio(
+        "Acción:",
+        ["✏️ Editar existente", "➕ Crear nuevo"],
+        horizontal=True,
+        key="kb_editor_mode",
+        label_visibility="collapsed"
+    )
+
+    if editor_mode == "✏️ Editar existente":
+        _render_edit_existing(engine)
+    else:
+        _render_create_new(engine)
+
+
+def _render_edit_existing(engine):
+    """Editor para documentos existentes."""
+
+    all_docs = sorted(engine.documents.values(), key=lambda d: d.title)
+    doc_labels = [
+        f"{CATEGORY_ICONS.get(d.category, '📝')} {d.title}  ({_fmt_words(d.word_count)})"
+        for d in all_docs
+    ]
+
+    selected_idx = st.selectbox(
+        "Documento a editar:",
+        range(len(doc_labels)),
+        format_func=lambda i: doc_labels[i],
+        key="kb_edit_doc",
+    )
+
+    doc = all_docs[selected_idx]
+    path_short = _short_path(doc.path)
+
+    st.caption(f"📁 {path_short} · {doc.word_count:,} palabras · {len(doc.sections)} secciones")
+
+    # Editor de texto
+    edited_content = st.text_area(
+        "Contenido Markdown:",
+        value=doc.content,
+        height=500,
+        key=f"kb_editor_content_{doc.id}",
+    )
+
+    col_save, col_preview, col_revert = st.columns(3)
+
+    with col_save:
+        if st.button("💾 Guardar cambios", use_container_width=True, type="primary"):
+            if edited_content != doc.content:
+                success = engine.save_document(doc.id, edited_content)
+                if success:
+                    st.success(f"✅ Documento guardado: {doc.title}")
+                    st.rerun()
+                else:
+                    st.error("❌ Error al guardar el documento.")
+            else:
+                st.info("Sin cambios para guardar.")
+
+    with col_preview:
+        preview = st.button("👁️ Vista previa", use_container_width=True)
+
+    with col_revert:
+        if st.button("↩️ Revertir", use_container_width=True):
+            st.rerun()
+
+    if preview:
+        st.markdown("---")
+        st.markdown("##### Vista previa:")
+        st.markdown(_clean_anchor_links(edited_content))
+
+
+def _render_create_new(engine):
+    """Formulario para crear un nuevo documento."""
+
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    docs_dir = os.path.join(base_dir, "docs")
+
+    # Directorio destino
+    dir_options = {
+        "docs/": docs_dir,
+        "Raíz del proyecto": base_dir,
+    }
+    selected_dir_label = st.selectbox(
+        "Directorio destino:",
+        list(dir_options.keys()),
+        key="kb_new_dir"
+    )
+    target_dir = dir_options[selected_dir_label]
+
+    # Nombre del archivo
+    filename = st.text_input(
+        "Nombre del archivo (sin .md):",
+        placeholder="Ej: MI_NUEVO_DOCUMENTO",
+        key="kb_new_filename"
+    )
+
+    # Template
+    template = f"""# {filename.replace('_', ' ').title() if filename else 'Nuevo Documento'}
+
+## Resumen
+
+Descripción del documento.
+
+## Contenido
+
+Contenido principal aquí.
+
+## Referencias
+
+- Referencia 1
+- Referencia 2
+"""
+
+    content = st.text_area(
+        "Contenido:",
+        value=template,
+        height=400,
+        key="kb_new_content"
+    )
+
+    if st.button("➕ Crear documento", type="primary", use_container_width=True):
+        if not filename or not filename.strip():
+            st.error("Ingresa un nombre de archivo.")
+            return
+
+        # Sanitizar nombre
+        safe_name = re.sub(r'[^\w\-]', '_', filename.strip())
+        doc = engine.create_document(target_dir, safe_name, content)
+
+        if doc:
+            st.success(f'✅ Documento creado: **{doc.title}** en {selected_dir_label}{safe_name}.md')
+            st.session_state["kb_view_doc"] = doc.id
+            st.rerun()
+        else:
+            st.error("❌ Error al crear el documento. ¿El archivo ya existe?")
+
+
+# =====================================================================
 # FUNCIÓN PRINCIPAL — SINGLE PAGE DINÁMICA
 # =====================================================================
 
@@ -494,7 +701,7 @@ def run():
     # ── Modo de navegación ──
     modo = st.radio(
         "Modo",
-        ["📂 Explorar Documentos", "🔍 Buscar", "📊 Estadísticas"],
+        ["📂 Explorar", "🔍 Buscar", "🕰️ Historial", "✏️ Editor", "📊 Estadísticas"],
         horizontal=True,
         key="kb_mode",
         label_visibility="collapsed"
@@ -502,9 +709,13 @@ def run():
 
     st.markdown("---")
 
-    if modo == "📂 Explorar Documentos":
+    if modo == "📂 Explorar":
         _render_explorer(engine)
     elif modo == "🔍 Buscar":
         _render_search(engine)
+    elif modo == "🕰️ Historial":
+        _render_history(engine)
+    elif modo == "✏️ Editor":
+        _render_editor(engine)
     else:
         _render_stats(engine)

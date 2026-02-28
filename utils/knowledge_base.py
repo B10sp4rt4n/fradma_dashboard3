@@ -559,6 +559,143 @@ class SearchEngine:
         sorted_related = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:max_results]
         return [(self.documents[did], score) for did, score in sorted_related]
 
+    def get_document_history(self, doc_id: str, max_entries: int = 20) -> List[Dict]:
+        """
+        Obtiene el historial de cambios (git log) de un documento.
+        
+        Returns:
+            Lista de dicts: [{hash, date, author, message, insertions, deletions}]
+        """
+        import subprocess
+
+        if doc_id not in self.documents:
+            return []
+
+        doc = self.documents[doc_id]
+        filepath = doc.path
+
+        try:
+            result = subprocess.run(
+                [
+                    "git", "log",
+                    f"--max-count={max_entries}",
+                    "--format=%H|%ai|%an|%s",
+                    "--numstat",
+                    "--", filepath
+                ],
+                capture_output=True, text=True, timeout=10,
+                cwd=os.path.dirname(filepath)
+            )
+            if result.returncode != 0:
+                return []
+
+            entries = []
+            current = None
+            for line in result.stdout.strip().split('\n'):
+                if not line.strip():
+                    continue
+                if '|' in line and len(line.split('|')) == 4:
+                    # commit line
+                    if current:
+                        entries.append(current)
+                    parts = line.split('|')
+                    current = {
+                        "hash": parts[0][:8],
+                        "date": parts[1][:10],
+                        "author": parts[2],
+                        "message": parts[3],
+                        "insertions": 0,
+                        "deletions": 0,
+                    }
+                elif current and '\t' in line:
+                    # numstat line: insertions\tdeletions\tfilename
+                    stat_parts = line.split('\t')
+                    if len(stat_parts) >= 2:
+                        try:
+                            current["insertions"] += int(stat_parts[0]) if stat_parts[0] != '-' else 0
+                            current["deletions"] += int(stat_parts[1]) if stat_parts[1] != '-' else 0
+                        except ValueError:
+                            pass
+
+            if current:
+                entries.append(current)
+
+            return entries[:max_entries]
+
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+            logger.warning(f"No se pudo obtener historial git para {filepath}: {e}")
+            return []
+
+    def save_document(self, doc_id: str, new_content: str) -> bool:
+        """
+        Guarda cambios en un documento existente.
+        
+        Args:
+            doc_id: ID del documento
+            new_content: Nuevo contenido markdown
+            
+        Returns:
+            True si se guardó exitosamente
+        """
+        if doc_id not in self.documents:
+            return False
+
+        doc = self.documents[doc_id]
+        try:
+            Path(doc.path).write_text(new_content, encoding='utf-8')
+
+            # Re-parsear el documento actualizado
+            updated = MarkdownParser.parse_file(doc.path)
+            if updated:
+                # Mantener el mismo ID
+                updated_doc = Document(
+                    id=doc.id,
+                    title=updated.title,
+                    path=updated.path,
+                    content=updated.content,
+                    category=updated.category,
+                    sections=updated.sections,
+                    metadata=updated.metadata,
+                    word_count=updated.word_count,
+                    last_modified=updated.last_modified,
+                    checksum=updated.checksum,
+                )
+                self.documents[doc.id] = updated_doc
+                self._build_inverted_index()
+            return True
+
+        except Exception as e:
+            logger.error(f"Error guardando documento {doc.path}: {e}")
+            return False
+
+    def create_document(self, directory: str, filename: str, content: str) -> Optional[Document]:
+        """
+        Crea un nuevo documento markdown.
+        
+        Args:
+            directory: Directorio donde crear el archivo
+            filename: Nombre del archivo (sin .md se agrega automáticamente)
+            content: Contenido markdown
+            
+        Returns:
+            Document creado o None si falló
+        """
+        if not filename.endswith('.md'):
+            filename += '.md'
+
+        filepath = os.path.join(directory, filename)
+        if os.path.exists(filepath):
+            logger.warning(f"Archivo ya existe: {filepath}")
+            return None
+
+        try:
+            Path(filepath).write_text(content, encoding='utf-8')
+            doc = self.index_file(filepath)
+            return doc
+        except Exception as e:
+            logger.error(f"Error creando documento {filepath}: {e}")
+            return None
+
 
 # =====================================================================
 # SINGLETON PARA STREAMLIT
