@@ -75,6 +75,15 @@ def _fmt_words(n: int) -> str:
     return f"{n/1000:.1f}K" if n >= 1000 else str(n)
 
 
+def _clean_anchor_links(text: str) -> str:
+    """Convierte links de ancla internos [texto](#ancla) en texto con negrita.
+    Streamlit no soporta navegación por anclas, así que los convertimos
+    a texto legible. Links externos (http/https) se mantienen."""
+    # [texto](#ancla) → **texto**
+    text = re.sub(r'\[([^\]]+)\]\(#[^)]*\)', r'**\1**', text)
+    return text
+
+
 # =====================================================================
 # CSS
 # =====================================================================
@@ -106,6 +115,26 @@ _CSS = """
 }
 .section-card strong { color:#E8E8E8; }
 .section-card .snippet { color:#D1D5DB; font-size:.85rem; line-height:1.45; margin-top:.3rem; }
+/* Fix column overflow — TOC must not bleed into content */
+[data-testid="column"] {
+    overflow: hidden;
+    min-width: 0;
+}
+[data-testid="column"] .stRadio label,
+[data-testid="column"] .stSelectbox {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+}
+.toc-container {
+    max-height: 60vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: .3rem;
+}
+.toc-container::-webkit-scrollbar { width: 4px; }
+.toc-container::-webkit-scrollbar-thumb { background: #4A90D9; border-radius: 4px; }
 </style>
 """
 
@@ -274,112 +303,112 @@ def _render_document(engine, doc: Document):
         </div>
     </div>""", unsafe_allow_html=True)
 
-    # ── Layout: TOC a la izquierda, contenido a la derecha ──
-    col_toc, col_content = st.columns([1, 3])
+    # ── Layout: Contenido principal arriba, TOC como selectbox ──
+    # Selector de sección (ocupa ancho completo, sin solapamiento)
+    section_labels = []
+    for s in doc.sections:
+        indent = "· " * max(0, s["level"] - 1)
+        heading_short = s["heading"][:60]
+        section_labels.append(f"{indent}{heading_short}")
 
-    with col_toc:
-        st.markdown("##### 📋 Índice")
+    view_options = ["📄 Documento completo"] + section_labels
 
-        # Generar TOC como radio buttons por sección
-        section_labels = []
-        for s in doc.sections:
-            prefix = "  " * max(0, s["level"] - 1)
-            heading_short = s["heading"][:45]
-            section_labels.append(f"{prefix}{'▸' if s['level'] <= 2 else '•'} {heading_short}")
+    sec_choice = st.selectbox(
+        "📋 Navegar secciones:",
+        range(len(view_options)),
+        format_func=lambda i: view_options[i],
+        key=f"toc_{doc.id}",
+    )
 
-        # Agregar opción de "documento completo" al inicio
-        view_options = ["📄 Documento completo"] + section_labels
+    # Info compacta en una fila
+    info_parts = [f"📏 {doc.word_count:,} palabras", f"📑 {len(doc.sections)} secciones"]
+    if meta.get("tables"):
+        info_parts.append(f"📊 {meta['tables']} tablas")
+    if meta.get("code_blocks"):
+        info_parts.append(f"💻 {meta['code_blocks']} bloques código")
+    if meta.get("author"):
+        info_parts.append(f"✍️ {meta['author']}")
+    st.caption(" · ".join(info_parts))
 
-        sec_choice = st.radio(
-            "Navegar:",
-            range(len(view_options)),
-            format_func=lambda i: view_options[i],
-            key=f"toc_{doc.id}",
-            label_visibility="collapsed",
-        )
+    # ── Contenido del documento ──
+    if sec_choice == 0:
+        _render_full_content(doc)
+    else:
+        section = doc.sections[sec_choice - 1]
 
-        # Metadata
-        st.markdown("---")
-        st.caption("**Info:**")
-        if meta.get("author"):
-            st.caption(f"✍️ {meta['author']}")
-        if meta.get("doc_date"):
-            st.caption(f"📅 {meta['doc_date']}")
-        if meta.get("tables"):
-            st.caption(f"📊 {meta['tables']} tablas")
-        if meta.get("code_blocks"):
-            st.caption(f"💻 {meta['code_blocks']} bloques de código")
-        st.caption(f"📏 {doc.word_count:,} palabras")
+        st.markdown(f"### {section['heading']}")
+        st.caption(f"Línea ~{section['line_number']} · Nivel H{section['level']}")
 
-    with col_content:
-        if sec_choice == 0:
-            # ── Documento completo ──
-            _render_full_content(doc)
+        content = _clean_anchor_links(section["content"])
+        if len(content) > 10000:
+            st.markdown(content[:10000])
+            st.info(f"⚠️ Sección truncada ({len(content):,} chars). "
+                    "Selecciona '📄 Documento completo' para ver todo.")
         else:
-            # ── Sección individual ──
-            section = doc.sections[sec_choice - 1]
+            st.markdown(content)
 
-            st.markdown(f"### {section['heading']}")
-            st.caption(f"Línea ~{section['line_number']} · Nivel H{section['level']}")
+        # Navegación rápida entre secciones (usa on_click callback para
+        # modificar session_state ANTES de que el widget se instancie en el rerun)
+        def _nav_section(doc_id, target):
+            st.session_state[f"toc_{doc_id}"] = target
 
-            content = section["content"]
-            if len(content) > 10000:
-                st.markdown(content[:10000])
-                st.info(f"⚠️ Sección truncada ({len(content):,} chars). "
-                        "Selecciona '📄 Documento completo' para ver todo.")
-            else:
-                st.markdown(content)
-
-            # Navegación rápida entre secciones
-            st.markdown("---")
-            col_prev, col_next = st.columns(2)
-            sec_idx = sec_choice - 1
-            with col_prev:
-                if sec_idx > 0:
-                    prev_name = doc.sections[sec_idx - 1]["heading"][:30]
-                    if st.button(f"⬅️ {prev_name}", key=f"prev_{doc.id}",
-                                 use_container_width=True):
-                        st.session_state[f"toc_{doc.id}"] = sec_choice - 1
-                        st.rerun()
-            with col_next:
-                if sec_idx < len(doc.sections) - 1:
-                    next_name = doc.sections[sec_idx + 1]["heading"][:30]
-                    if st.button(f"{next_name} ➡️", key=f"next_{doc.id}",
-                                 use_container_width=True):
-                        st.session_state[f"toc_{doc.id}"] = sec_choice + 1
-                        st.rerun()
+        st.markdown("---")
+        col_prev, col_next = st.columns(2)
+        sec_idx = sec_choice - 1
+        with col_prev:
+            if sec_idx > 0:
+                prev_name = doc.sections[sec_idx - 1]["heading"][:30]
+                st.button(f"⬅️ {prev_name}", key=f"prev_{doc.id}",
+                          use_container_width=True,
+                          on_click=_nav_section,
+                          args=(doc.id, sec_choice - 1))
+        with col_next:
+            if sec_idx < len(doc.sections) - 1:
+                next_name = doc.sections[sec_idx + 1]["heading"][:30]
+                st.button(f"{next_name} ➡️", key=f"next_{doc.id}",
+                          use_container_width=True,
+                          on_click=_nav_section,
+                          args=(doc.id, sec_choice + 1))
 
     # ── Documentos relacionados ──
     st.markdown("---")
     st.markdown("#### 🔗 Documentos Relacionados")
     related = engine.get_related_documents(doc.id, max_results=6)
 
+    def _navigate_to_doc(target_doc_id):
+        """Callback: navega a otro documento reseteando filtros."""
+        st.session_state["kb_view_doc"] = target_doc_id
+        # Resetear categoría a 'Todas' para que el doc siempre sea visible
+        st.session_state["kb_explorer_cat"] = "📂 Todas las categorías"
+        # Borrar selector para que recalcule index en el siguiente render
+        st.session_state.pop("kb_doc_selector", None)
+
     if related:
         cols = st.columns(min(3, len(related)))
         for i, (rel_doc, rel_score) in enumerate(related):
             with cols[i % len(cols)]:
                 icon = CATEGORY_ICONS.get(rel_doc.category, "📝")
-                if st.button(
+                st.button(
                     f"{icon} {rel_doc.title[:35]}{'...' if len(rel_doc.title)>35 else ''}",
                     key=f"rel_{doc.id}_{rel_doc.id}",
                     use_container_width=True,
-                    help=f"{rel_doc.category.title()} · {_fmt_words(rel_doc.word_count)} palabras"
-                ):
-                    st.session_state["kb_view_doc"] = rel_doc.id
-                    st.rerun()
+                    help=f"{rel_doc.category.title()} · {_fmt_words(rel_doc.word_count)} palabras",
+                    on_click=_navigate_to_doc,
+                    args=(rel_doc.id,)
+                )
     else:
         st.caption("No se encontraron documentos relacionados.")
 
 
 def _render_full_content(doc: Document):
     """Renderiza el contenido completo de un documento."""
-    content = doc.content
+    content = _clean_anchor_links(doc.content)
     if len(content) > 60000:
         # Docs muy grandes: renderizar por secciones colapsables
         st.warning(f"Documento grande ({doc.word_count:,} palabras). Mostrando por secciones.")
         for section in doc.sections:
             with st.expander(f"**{section['heading']}**", expanded=False):
-                sec_content = section["content"]
+                sec_content = _clean_anchor_links(section["content"])
                 st.markdown(sec_content[:6000])
                 if len(sec_content) > 6000:
                     st.caption(f"... ({len(sec_content):,} caracteres)")
