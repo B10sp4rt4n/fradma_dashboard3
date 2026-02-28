@@ -492,11 +492,13 @@ SQL: SELECT DATE_TRUNC('month', fecha_emision) AS mes, COUNT(*) AS facturas, SUM
         """
         conn = None
         try:
-            conn = psycopg2.connect(
-                self.connection_string,
-                options=f"-c statement_timeout={self.timeout * 1000}"
-            )
+            conn = psycopg2.connect(self.connection_string)
             conn.set_session(readonly=True)
+
+            # Establecer timeout via SQL (compatible con Neon pooler)
+            cursor = conn.cursor()
+            cursor.execute(f"SET statement_timeout = '{self.timeout * 1000}ms';")
+            cursor.close()
 
             # Ejecutar query
             df = pd.read_sql_query(sql, conn)
