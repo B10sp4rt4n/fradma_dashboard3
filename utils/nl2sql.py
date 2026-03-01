@@ -734,7 +734,14 @@ Tipos de gráfica disponibles:
 - funnel: embudo (procesos secuenciales)
 - waterfall: cascada (contribuciones positivas/negativas)
 - metric: tarjeta de KPI (1 sola fila con valor clave)
+- stats_summary: dashboard estadístico (cuando hay media, mediana, desviación, percentiles)
+- box: diagrama de caja (distribución con outliers)
+- histogram: histograma (distribución de frecuencias)
+- gauge: velocímetro (indicador con rangos)
+- heatmap: mapa de calor (2 dimensiones categóricas + valor)
 - table: tabla con formato (cuando no aplica gráfica)
+
+PARA ESTADÍSTICAS: Cuando la consulta devuelve media, mediana, desviación estándar, percentiles, usa stats_summary. Cuando devuelve datos por grupo con estadísticas (ej. promedio por cliente), también usa stats_summary.
 
 Campos del JSON:
 - type: tipo de gráfica (obligatorio)

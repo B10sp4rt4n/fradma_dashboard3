@@ -190,7 +190,8 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
         df: DataFrame con resultados
         chart_type: Tipo de gráfica (bar, hbar, line, area, pie, donut,
                      scatter, treemap, funnel, stacked_bar, grouped_bar,
-                     waterfall, metric, table)
+                     waterfall, metric, table, stats_summary, box,
+                     histogram, gauge, heatmap)
         question: Pregunta original para título
         chart_spec: Especificaciones detalladas de la gráfica generadas por IA
                     {x, y, color, title, orientation, labels, sort, top_n, ...}
@@ -219,8 +220,21 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
     if color_col and color_col not in df.columns:
         color_col = None
 
-    # Si 1 fila y numéricos → metric cards
-    if len(df) == 1 and len(num_cols) >= 1:
+    # --- Auto-detect estadísticas ---
+    stat_keywords = ['media', 'mediana', 'promedio', 'desviacion', 'stddev',
+                     'varianza', 'percentil', 'minimo', 'maximo', 'moda']
+    is_stats_query = any(kw in question.lower() for kw in ['estadistic', 'media', 'mediana',
+                                                            'desviacion', 'promedio', 'percentil'])
+    has_stat_cols = any(any(kw in col.lower() for kw in stat_keywords) for col in df.columns)
+
+    # Si es consulta estadística con 1 fila → stats_summary
+    if len(df) == 1 and len(num_cols) >= 3 and (is_stats_query or has_stat_cols):
+        chart_type = "stats_summary"
+    # Si tiene varias filas con columnas estadísticas → aún puede ser stats o box
+    elif len(df) > 1 and has_stat_cols and chart_type in ("table", "metric"):
+        chart_type = "stats_summary"
+    # Si 1 fila y numéricos pero NO stats → metric cards
+    elif len(df) == 1 and len(num_cols) >= 1 and chart_type not in ("stats_summary", "gauge"):
         chart_type = "metric"
     if len(df) <= 2 and not num_cols:
         chart_type = "table"
@@ -246,6 +260,88 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                             st.metric(col_name, f"{value:,.2f}")
                     else:
                         st.metric(col_name, str(value))
+            return
+
+        # --- STATS SUMMARY (resumen estadístico visual) ---
+        if chart_type == "stats_summary" and num_cols:
+            _render_stats_chart(df, num_cols, cat_cols, title, spec)
+            return
+
+        # --- BOX PLOT ---
+        if chart_type == "box" and num_cols:
+            if cat_cols:
+                fig = px.box(
+                    plot_df, x=x_col, y=y_col,
+                    title=title,
+                    color=x_col,
+                    color_discrete_sequence=CHART_COLORS,
+                    points="outliers",
+                )
+            else:
+                fig = px.box(
+                    plot_df, y=y_col,
+                    title=title,
+                    color_discrete_sequence=CHART_COLORS,
+                    points="outliers",
+                )
+            fig.update_layout(showlegend=False)
+            st.plotly_chart(fig, use_container_width=True)
+            return
+
+        # --- HISTOGRAM ---
+        if chart_type == "histogram" and num_cols:
+            fig = px.histogram(
+                plot_df, x=y_col,
+                title=title,
+                nbins=spec.get("bins", 20),
+                color_discrete_sequence=[CHART_COLORS[0]],
+                marginal="box",
+            )
+            fig.update_layout(bargap=0.05)
+            st.plotly_chart(fig, use_container_width=True)
+            return
+
+        # --- GAUGE (indicador tipo velocímetro) ---
+        if chart_type == "gauge" and num_cols:
+            value = df[num_cols[0]].iloc[0]
+            max_val = spec.get("max_val", value * 1.5 if value > 0 else 100)
+            fig = go.Figure(go.Indicator(
+                mode="gauge+number+delta",
+                value=value,
+                title={"text": title},
+                gauge={
+                    "axis": {"range": [0, max_val]},
+                    "bar": {"color": "#2196F3"},
+                    "steps": [
+                        {"range": [0, max_val*0.33], "color": "#E8F5E9"},
+                        {"range": [max_val*0.33, max_val*0.66], "color": "#FFF9C4"},
+                        {"range": [max_val*0.66, max_val], "color": "#FFEBEE"},
+                    ],
+                    "threshold": {
+                        "line": {"color": "red", "width": 4},
+                        "thickness": 0.75,
+                        "value": max_val * 0.8,
+                    },
+                },
+            ))
+            fig.update_layout(height=300)
+            st.plotly_chart(fig, use_container_width=True)
+            return
+
+        # --- HEATMAP ---
+        if chart_type == "heatmap" and num_cols and len(cat_cols) >= 2:
+            pivot_df = plot_df.pivot_table(
+                index=cat_cols[0], columns=cat_cols[1],
+                values=y_col, aggfunc="sum"
+            ).fillna(0)
+            fig = px.imshow(
+                pivot_df,
+                title=title,
+                color_continuous_scale="RdYlGn",
+                text_auto=".0f",
+                aspect="auto",
+            )
+            st.plotly_chart(fig, use_container_width=True)
             return
 
         # --- BAR (vertical) ---
@@ -425,6 +521,219 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
             col_config[col] = st.column_config.NumberColumn(format="%.1f%%")
 
     st.dataframe(df, use_container_width=True, hide_index=True, column_config=col_config)
+
+
+def _render_stats_chart(df: pd.DataFrame, num_cols: list, cat_cols: list,
+                        title: str, spec: dict):
+    """
+    Renderiza visualización estadística inteligente.
+
+    Maneja 3 escenarios:
+    A) 1 fila, múltiples métricas → bullet/gauge cards + bar de métricas
+    B) Múltiples filas con stats por grupo (ej. por cliente) → grouped bar + tabla
+    C) Datos raw → box plot + histograma automático
+    """
+    try:
+        # --- ESCENARIO A: 1 fila con múltiples estadísticas ---
+        if len(df) == 1:
+            st.markdown(f"#### 📊 {title}")
+
+            # Clasificar columnas por tipo de estadística
+            count_cols = [c for c in num_cols if any(k in c.lower() for k in ['count', 'num_factura', 'num_concepto', 'total_factura', 'total_concepto'])]
+            central_cols = [c for c in num_cols if any(k in c.lower() for k in ['media', 'promedio', 'avg', 'mediana', 'median', 'moda', 'precio_promedio', 'precio_mediana'])]
+            dispersion_cols = [c for c in num_cols if any(k in c.lower() for k in ['desviacion', 'stddev', 'varianza', 'variance'])]
+            range_cols = [c for c in num_cols if any(k in c.lower() for k in ['minimo', 'min', 'maximo', 'max'])]
+            percentile_cols = [c for c in num_cols if any(k in c.lower() for k in ['percentil', 'quartil', 'p25', 'p50', 'p75'])]
+            other_cols = [c for c in num_cols if c not in count_cols + central_cols + dispersion_cols + range_cols + percentile_cols]
+
+            # Tarjetas de conteo
+            if count_cols:
+                st.markdown("**📋 Muestra**")
+                cols_ui = st.columns(len(count_cols))
+                for i, col in enumerate(count_cols):
+                    with cols_ui[i]:
+                        v = df[col].iloc[0]
+                        st.metric(col.replace('_', ' ').title(), f"{v:,.0f}" if isinstance(v, (int, float)) else str(v))
+
+            # Medidas de tendencia central
+            if central_cols:
+                st.markdown("**📍 Tendencia Central**")
+                cols_ui = st.columns(min(len(central_cols), 4))
+                for i, col in enumerate(central_cols[:4]):
+                    with cols_ui[i]:
+                        v = df[col].iloc[0]
+                        st.metric(col.replace('_', ' ').title(),
+                                  f"${v:,.2f}" if isinstance(v, (int, float)) and abs(v) > 1 else f"{v:,.4f}")
+
+            # Dispersión
+            if dispersion_cols:
+                st.markdown("**📏 Dispersión**")
+                cols_ui = st.columns(min(len(dispersion_cols), 4))
+                for i, col in enumerate(dispersion_cols[:4]):
+                    with cols_ui[i]:
+                        v = df[col].iloc[0]
+                        st.metric(col.replace('_', ' ').title(),
+                                  f"${v:,.2f}" if isinstance(v, (int, float)) and abs(v) > 1 else f"{v:,.4f}")
+
+            # Rango
+            if range_cols:
+                st.markdown("**↕️ Rango**")
+                cols_ui = st.columns(min(len(range_cols), 4))
+                for i, col in enumerate(range_cols[:4]):
+                    with cols_ui[i]:
+                        v = df[col].iloc[0]
+                        st.metric(col.replace('_', ' ').title(),
+                                  f"${v:,.2f}" if isinstance(v, (int, float)) and abs(v) > 1 else f"{v:,.4f}")
+
+            # Percentiles
+            if percentile_cols:
+                st.markdown("**📊 Percentiles**")
+                cols_ui = st.columns(min(len(percentile_cols), 4))
+                for i, col in enumerate(percentile_cols[:4]):
+                    with cols_ui[i]:
+                        v = df[col].iloc[0]
+                        st.metric(col.replace('_', ' ').title(),
+                                  f"${v:,.2f}" if isinstance(v, (int, float)) and abs(v) > 1 else f"{v:,.4f}")
+
+            # Otros
+            if other_cols:
+                cols_ui = st.columns(min(len(other_cols), 4))
+                for i, col in enumerate(other_cols[:4]):
+                    with cols_ui[i]:
+                        v = df[col].iloc[0]
+                        st.metric(col.replace('_', ' ').title(),
+                                  f"${v:,.2f}" if isinstance(v, (int, float)) and abs(v) > 1 else f"{v:,.4f}")
+
+            # Gráfica de barras horizontal con todas las métricas
+            stat_data = []
+            for col in num_cols:
+                if col not in count_cols:
+                    stat_data.append({"Métrica": col.replace('_', ' ').title(), "Valor": float(df[col].iloc[0])})
+            if stat_data:
+                stat_df = pd.DataFrame(stat_data)
+                fig = px.bar(
+                    stat_df, x="Valor", y="Métrica",
+                    orientation="h",
+                    title=f"📐 {title}",
+                    color="Valor",
+                    color_continuous_scale="Viridis",
+                    text_auto="$,.2f",
+                )
+                fig.update_layout(
+                    yaxis=dict(autorange="reversed"),
+                    showlegend=False,
+                    height=max(300, len(stat_data) * 50),
+                )
+                fig.update_traces(textposition="outside")
+                st.plotly_chart(fig, use_container_width=True)
+
+            # Si hay percentiles → box plot simulado
+            p25_col = next((c for c in percentile_cols if '25' in c), None)
+            p50_col = next((c for c in percentile_cols + central_cols if any(k in c.lower() for k in ['mediana', 'median', '50'])), None)
+            p75_col = next((c for c in percentile_cols if '75' in c), None)
+            min_col = next((c for c in range_cols if any(k in c.lower() for k in ['min'])), None)
+            max_col = next((c for c in range_cols if any(k in c.lower() for k in ['max'])), None)
+
+            if p25_col and p75_col:
+                p25 = float(df[p25_col].iloc[0])
+                p75 = float(df[p75_col].iloc[0])
+                p50 = float(df[p50_col].iloc[0]) if p50_col else (p25 + p75) / 2
+                mn = float(df[min_col].iloc[0]) if min_col else p25 - 1.5 * (p75 - p25)
+                mx = float(df[max_col].iloc[0]) if max_col else p75 + 1.5 * (p75 - p25)
+                avg_val = float(df[central_cols[0]].iloc[0]) if central_cols else p50
+
+                fig = go.Figure()
+                fig.add_trace(go.Box(
+                    q1=[p25], median=[p50], q3=[p75],
+                    lowerfence=[mn], upperfence=[mx], mean=[avg_val],
+                    name="Distribución",
+                    marker_color="#2196F3",
+                    boxmean=True,
+                ))
+                fig.update_layout(
+                    title=f"📦 Distribución — {title}",
+                    showlegend=False,
+                    height=300,
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+            return
+
+        # --- ESCENARIO B: Múltiples filas con stats por grupo ---
+        if len(df) > 1 and cat_cols:
+            group_col = cat_cols[0]
+            st.markdown(f"#### 📊 {title}")
+
+            # Detectar columnas de stats
+            stat_y_cols = [c for c in num_cols if any(k in c.lower() for k in
+                          ['promedio', 'media', 'avg', 'desviacion', 'stddev',
+                           'minimo', 'min', 'maximo', 'max', 'mediana'])]
+            main_y = stat_y_cols[0] if stat_y_cols else num_cols[0]
+
+            # Bar chart principal
+            fig = px.bar(
+                df.head(20), x=group_col, y=main_y,
+                title=title,
+                color=main_y,
+                color_continuous_scale="Viridis",
+                text_auto="$,.2f",
+            )
+            fig.update_layout(xaxis_tickangle=-45, showlegend=False)
+            fig.update_traces(textposition="outside")
+
+            # Si hay min y max, agregar barras de error
+            min_c = next((c for c in num_cols if any(k in c.lower() for k in ['minimo', 'min'])), None)
+            max_c = next((c for c in num_cols if any(k in c.lower() for k in ['maximo', 'max'])), None)
+            if min_c and max_c and main_y not in (min_c, max_c):
+                error_minus = (df[main_y] - df[min_c]).clip(lower=0).head(20)
+                error_plus = (df[max_c] - df[main_y]).clip(lower=0).head(20)
+                fig.update_traces(
+                    error_y=dict(
+                        type="data",
+                        symmetric=False,
+                        array=error_plus.tolist(),
+                        arrayminus=error_minus.tolist(),
+                        color="rgba(0,0,0,0.3)",
+                    )
+                )
+
+            st.plotly_chart(fig, use_container_width=True)
+
+            # Si hay desviación, mostrar gráfica adicional
+            dev_col = next((c for c in num_cols if any(k in c.lower() for k in ['desviacion', 'stddev'])), None)
+            if dev_col:
+                fig2 = px.bar(
+                    df.head(20), x=group_col, y=dev_col,
+                    title=f"📏 Dispersión: {dev_col.replace('_', ' ').title()}",
+                    color=dev_col,
+                    color_continuous_scale="Reds",
+                    text_auto="$,.2f",
+                )
+                fig2.update_layout(xaxis_tickangle=-45, showlegend=False)
+                st.plotly_chart(fig2, use_container_width=True)
+
+            return
+
+        # --- ESCENARIO C: Datos raw → box + histogram ---
+        if len(df) > 5 and num_cols:
+            y_stat = spec.get("y") or num_cols[0]
+            if y_stat in df.columns:
+                fig = px.histogram(
+                    df, x=y_stat,
+                    title=f"📊 Distribución de {y_stat}",
+                    nbins=min(30, len(df)),
+                    color_discrete_sequence=[CHART_COLORS[0]],
+                    marginal="box",
+                )
+                fig.update_layout(bargap=0.05)
+                st.plotly_chart(fig, use_container_width=True)
+                return
+
+    except Exception:
+        pass  # Fallback a tabla si falla
+
+    # Fallback: tabla formateada
+    st.dataframe(df, use_container_width=True, hide_index=True)
 
 
 # =====================================================================
