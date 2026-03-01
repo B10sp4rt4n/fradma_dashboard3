@@ -32,6 +32,8 @@ from utils.nl2sql import (
     OPENAI_AVAILABLE,
 )
 
+from utils.roi_tracker import init_roi_tracker
+
 
 # =====================================================================
 # CSS personalizado
@@ -583,6 +585,175 @@ def _render_schema_explorer():
     with st.expander("📖 Ver esquema completo"):
         st.code(SCHEMA_CONTEXT, language="markdown")
 
+    # Track ROI de exploración de esquema
+    try:
+        tracker = init_roi_tracker(st.session_state)
+        tracker.track_action(
+            module="data_assistant",
+            action="nl2sql_schema_explore",
+            quantity=1.0,
+        )
+    except Exception:
+        pass
+
+
+# =====================================================================
+# ROI Tracking helpers
+# =====================================================================
+def _track_query_roi(result: NL2SQLResult):
+    """Rastrea el ROI de una consulta NL2SQL."""
+    try:
+        tracker = init_roi_tracker(st.session_state)
+
+        if result.success:
+            # Determinar complejidad: si tiene JOIN/GROUP BY/subquery → complex
+            sql_upper = (result.sql or "").upper()
+            is_complex = any(kw in sql_upper for kw in ["JOIN", "GROUP BY", "HAVING", "UNION", "WITH "])
+            action = "nl2sql_complex_query" if is_complex else "nl2sql_query"
+
+            roi_info = tracker.track_action(
+                module="data_assistant",
+                action=action,
+                quantity=1.0,
+            )
+
+            # Interpretación IA
+            if result.interpretation:
+                tracker.track_action(
+                    module="data_assistant",
+                    action="nl2sql_interpretation",
+                    quantity=1.0,
+                )
+
+            # Generación de gráfica
+            if result.chart_spec or result.chart_suggestion:
+                tracker.track_action(
+                    module="data_assistant",
+                    action="nl2sql_chart",
+                    quantity=1.0,
+                )
+
+            # Feedback inline: mostrar ahorro de esta consulta
+            total_hrs = roi_info.get("hrs_saved", 0)
+            total_val = roi_info.get("value", 0)
+            if result.interpretation:
+                total_hrs += 0.3
+                total_val += 0.3 * tracker.get_user_hourly_rate()
+            if result.chart_spec or result.chart_suggestion:
+                total_hrs += 0.25
+                total_val += 0.25 * tracker.get_user_hourly_rate()
+
+            st.toast(
+                f"💰 Ahorraste {total_hrs:.1f} hrs ≈ ${total_val:,.0f} MXN con esta consulta",
+                icon="✅",
+            )
+    except Exception:
+        pass  # No interrumpir el flujo por errores de tracking
+
+
+def _track_export_roi():
+    """Rastrea el ROI de una exportación CSV."""
+    try:
+        tracker = init_roi_tracker(st.session_state)
+        tracker.track_action(
+            module="data_assistant",
+            action="nl2sql_export",
+            quantity=1.0,
+        )
+    except Exception:
+        pass
+
+
+def _render_roi_panel():
+    """Renderiza el panel de ROI en tiempo real para el Data Assistant."""
+    try:
+        tracker = init_roi_tracker(st.session_state)
+        summary = tracker.get_summary()
+        recent = tracker.get_recent_actions(limit=5)
+
+        # Filtrar acciones del data_assistant
+        da_actions = [a for a in tracker.session_state.roi_data.get("actions", [])
+                      if a.get("module") == "data_assistant"]
+        da_hrs = sum(a.get("hrs_saved", 0) for a in da_actions)
+        da_value = sum(a.get("value", 0) for a in da_actions)
+        da_count = len(da_actions)
+
+        st.markdown("### 💰 ROI en Tiempo Real")
+
+        # Métricas del Data Assistant esta sesión
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric(
+                "⏱️ Hrs ahorradas",
+                f"{da_hrs:.1f}",
+                help="Horas ahorradas con el Asistente de Datos esta sesión",
+            )
+        with col2:
+            st.metric(
+                "💵 Valor generado",
+                f"${da_value:,.0f}",
+                help="Valor monetario ahorrado (MXN)",
+            )
+        with col3:
+            st.metric(
+                "🔢 Consultas",
+                f"{da_count}",
+                help="Total de consultas procesadas",
+            )
+
+        # Desglose
+        if da_actions:
+            with st.expander("📋 Detalle de acciones", expanded=False):
+                for a in reversed(da_actions[-10:]):
+                    ts = a.get("timestamp")
+                    ts_str = ts.strftime("%H:%M:%S") if hasattr(ts, "strftime") else str(ts)
+                    action_label = {
+                        "nl2sql_query": "🔍 Consulta SQL",
+                        "nl2sql_complex_query": "🧠 Consulta compleja",
+                        "nl2sql_interpretation": "💡 Interpretación IA",
+                        "nl2sql_chart": "📊 Gráfica generada",
+                        "nl2sql_export": "📥 Exportación CSV",
+                        "nl2sql_schema_explore": "🗄️ Exploración schema",
+                    }.get(a.get("action", ""), a.get("action", ""))
+                    st.markdown(
+                        f"**{ts_str}** · {action_label} · "
+                        f"`{a.get('hrs_saved', 0):.2f} hrs` · "
+                        f"`${a.get('value', 0):,.0f} MXN`"
+                    )
+
+        # Resumen global (toda la plataforma)
+        with st.expander("🌐 ROI global de la plataforma", expanded=False):
+            gcol1, gcol2 = st.columns(2)
+            with gcol1:
+                st.metric("Hoy total", f"${summary['today']['value']:,.0f}",
+                          delta=f"{summary['today']['hrs']:.1f} hrs")
+            with gcol2:
+                st.metric("Este mes", f"${summary['month']['value']:,.0f}",
+                          delta=f"{summary['month']['hrs']:.0f} hrs")
+            if summary['today']['actions'] > 0:
+                st.success(f"✨ {summary['today']['actions']} acciones hoy en toda la plataforma")
+
+    except Exception:
+        pass  # Silencioso si falla
+
+
+def _render_roi_compact():
+    """Widget ROI compacto para la barra lateral del chat."""
+    try:
+        tracker = init_roi_tracker(st.session_state)
+        da_actions = [a for a in tracker.session_state.roi_data.get("actions", [])
+                      if a.get("module") == "data_assistant"]
+        da_hrs = sum(a.get("hrs_saved", 0) for a in da_actions)
+        da_value = sum(a.get("value", 0) for a in da_actions)
+        da_count = len(da_actions)
+
+        st.markdown("### 💰 Tu ROI")
+        st.metric("⏱️ Hrs ahorradas", f"{da_hrs:.1f}")
+        st.metric("💵 Valor", f"${da_value:,.0f} MXN")
+        st.caption(f"🔢 {da_count} consulta(s) esta sesión")
+    except Exception:
+        pass
+
 
 def _render_chat_interface():
     """Interfaz principal de chat."""
@@ -631,6 +802,9 @@ def _render_chat_interface():
             with st.spinner("🔍 Analizando pregunta y consultando datos..."):
                 empresa_id = st.session_state.get("nl2sql_empresa_id")
                 result = engine.ask(question, empresa_id=empresa_id)
+
+            # --- ROI Tracking ---
+            _track_query_roi(result)
 
             # Renderizar resultado
             msg_data = _build_result_message(result)
@@ -872,7 +1046,7 @@ def run():
     # Navegación horizontal
     mode = st.radio(
         "Modo:",
-        ["💬 Chat", "🛠️ SQL Playground", "🗄️ Esquema", "🕰️ Historial"],
+        ["💬 Chat", "🛠️ SQL Playground", "🗄️ Esquema", "🕰️ Historial", "💰 ROI"],
         horizontal=True,
         key="nl2sql_mode",
     )
@@ -888,6 +1062,8 @@ def run():
 
         with col_side:
             _render_sidebar_examples()
+            st.markdown("---")
+            _render_roi_compact()
 
     elif mode == "🛠️ SQL Playground":
         _render_sql_playground()
@@ -897,6 +1073,9 @@ def run():
 
     elif mode == "🕰️ Historial":
         _render_history()
+
+    elif mode == "💰 ROI":
+        _render_roi_panel()
 
 
 if __name__ == "__main__":

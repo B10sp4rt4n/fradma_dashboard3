@@ -33,6 +33,14 @@ class ROITracker:
         "cxc_aging_report": 0.8,        # Reporte antigüedad saldos
         "detect_risk_clients": 4.0,     # Identificar clientes riesgo (manual)
         
+        # Módulo Asistente de Datos (NL2SQL)
+        "nl2sql_query": 0.5,            # Consulta SQL manual → automática
+        "nl2sql_interpretation": 0.3,   # Interpretación de resultados por IA
+        "nl2sql_chart": 0.25,           # Generación automática de gráfica
+        "nl2sql_export": 0.15,          # Exportar datos a CSV
+        "nl2sql_schema_explore": 0.2,   # Explorar esquema manualmente
+        "nl2sql_complex_query": 1.0,    # Consulta compleja (joins, aggregates)
+        
         # Otros módulos
         "year_comparison": 2.8,         # Comparativo año vs año
         "vendors_dashboard": 2.4,       # Dashboard vendedores
