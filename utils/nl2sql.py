@@ -314,6 +314,36 @@ EXAMPLE_QUESTIONS = [
             "¿Cuál es la moda de forma de pago?",
         ]
     },
+    {
+        "category": "Crecimiento",
+        "icon": "🚀",
+        "questions": [
+            "Crecimiento de ventas mes a mes (MoM)",
+            "Ventas acumuladas por mes este año",
+            "Promedio móvil de 3 meses de facturación",
+            "¿Cuáles clientes compran cada vez menos?",
+        ]
+    },
+    {
+        "category": "Segmentación",
+        "icon": "🎯",
+        "questions": [
+            "Clasificación ABC de clientes (Pareto 80/20)",
+            "Segmentación RFM de clientes",
+            "Ranking de clientes por facturación",
+            "Concentración de clientes (riesgo)",
+        ]
+    },
+    {
+        "category": "Riesgo & Anomalías",
+        "icon": "⚠️",
+        "questions": [
+            "Detectar facturas anómalas (outliers)",
+            "¿Cuál es el riesgo de concentración de clientes?",
+            "¿Cuál es el DSO y tasa de cobro de los últimos 3 meses?",
+            "¿Cuántas facturas PPD siguen sin pago?",
+        ]
+    },
 ]
 
 
@@ -441,6 +471,16 @@ REGLAS ESTRICTAS:
 14. Cuando pidan "estadísticas", "resumen estadístico" o "análisis estadístico", genera una consulta que incluya COUNT, AVG, MIN, MAX, STDDEV y PERCENTILE_CONT(0.5) del campo numérico relevante.
 15. Para percentiles usa PERCENTILE_CONT(0.25/0.50/0.75) WITHIN GROUP (ORDER BY columna).
 16. Redondea resultados estadísticos con ROUND(valor, 2).
+
+REGLAS AVANZADAS DE ANALYTICS:
+17. TIME INTELLIGENCE: Para comparaciones periodo a periodo usa LAG() OVER (ORDER BY periodo). Para crecimiento: ROUND((actual - anterior) * 100.0 / NULLIF(anterior, 0), 2) AS crecimiento_pct. Para acumulados usa SUM() OVER (ORDER BY mes ROWS UNBOUNDED PRECEDING). Para promedios móviles usa AVG() OVER (ORDER BY mes ROWS BETWEEN 2 PRECEDING AND CURRENT ROW).
+18. WINDOW FUNCTIONS: Usa ROW_NUMBER(), RANK(), DENSE_RANK() para rankings. Usa LAG()/LEAD() para comparar con periodo anterior/siguiente. Usa NTILE(4) para cuartiles de clientes. Usa SUM() OVER (PARTITION BY ... ORDER BY ...) para running totals por grupo.
+19. ANÁLISIS ABC / PARETO: Para clasificar clientes A/B/C por facturación, calcula el % acumulado con SUM(total) OVER (ORDER BY total DESC) / SUM(total) OVER (). Clientes A = hasta 80% acumulado, B = 80-95%, C = resto. Usa CASE WHEN para asignar categoría.
+20. SEGMENTACIÓN RFM: Recency = dias desde última compra (CURRENT_DATE - MAX(fecha_emision)). Frequency = COUNT de facturas. Monetary = SUM(total). Usa NTILE(5) para puntuar cada dimensión 1-5. Score RFM = R*100 + F*10 + M.
+21. DETECCIÓN DE ANOMALÍAS: Para outliers usa Z-score: (valor - AVG(valor) OVER()) / NULLIF(STDDEV(valor) OVER(), 0). Valores con |z| > 2 son anomalías. También detecta facturas inusualmente altas/bajas respecto al promedio del cliente.
+22. CASH FLOW / COBRANZA: Para proyección usa cfdi_pagos. DSO (Days Sales Outstanding) = SUM(saldo_insoluto) / (SUM(total vendido) / dias_periodo). Tasa de cobro = SUM(monto_pagado) / SUM(total facturado). Antigüedad = CURRENT_DATE - fecha_emision para facturas PPD sin pago completo.
+23. CONCENTRACIÓN: Para riesgo de concentración calcula % que representa cada cliente del total. Índice Herfindahl = SUM(share^2). Si un cliente > 30% = alerta alta, > 15% = media.
+24. CRECIMIENTO: Para tasas de crecimiento MoM/YoY, compara periodos con LAG. CAGR = POWER(ultimo/primero, 1.0/n_periodos) - 1. Velocidad = pendiente de la regresión lineal.
 {empresa_filter}
 
 {SCHEMA_CONTEXT}
@@ -478,6 +518,36 @@ SQL: SELECT forma_pago, COUNT(*) AS frecuencia FROM cfdi_ventas GROUP BY forma_p
 
 Pregunta: Dame el resumen estadístico de precios unitarios de productos
 SQL: SELECT COUNT(*) AS total_conceptos, ROUND(AVG(valor_unitario), 2) AS precio_promedio, ROUND(STDDEV(valor_unitario), 2) AS desviacion_estandar, ROUND(MIN(valor_unitario), 2) AS precio_minimo, ROUND(MAX(valor_unitario), 2) AS precio_maximo, ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY valor_unitario)::numeric, 2) AS precio_mediana FROM cfdi_conceptos LIMIT {self.max_rows};
+
+Pregunta: Crecimiento de ventas mes a mes (MoM)
+SQL: WITH ventas_mes AS (SELECT DATE_TRUNC('month', fecha_emision) AS mes, SUM(total * tipo_cambio) AS total_mxn FROM cfdi_ventas GROUP BY mes ORDER BY mes) SELECT mes, ROUND(total_mxn, 2) AS ventas, ROUND(LAG(total_mxn) OVER (ORDER BY mes), 2) AS mes_anterior, ROUND((total_mxn - LAG(total_mxn) OVER (ORDER BY mes)) * 100.0 / NULLIF(LAG(total_mxn) OVER (ORDER BY mes), 0), 2) AS crecimiento_pct FROM ventas_mes LIMIT {self.max_rows};
+
+Pregunta: Ventas acumuladas por mes este año
+SQL: SELECT DATE_TRUNC('month', fecha_emision) AS mes, SUM(total * tipo_cambio) AS ventas_mes, SUM(SUM(total * tipo_cambio)) OVER (ORDER BY DATE_TRUNC('month', fecha_emision) ROWS UNBOUNDED PRECEDING) AS acumulado FROM cfdi_ventas WHERE EXTRACT(YEAR FROM fecha_emision) = EXTRACT(YEAR FROM CURRENT_DATE) GROUP BY mes ORDER BY mes LIMIT {self.max_rows};
+
+Pregunta: Promedio móvil de 3 meses de facturación
+SQL: WITH ventas_mes AS (SELECT DATE_TRUNC('month', fecha_emision) AS mes, SUM(total * tipo_cambio) AS total_mxn FROM cfdi_ventas GROUP BY mes ORDER BY mes) SELECT mes, ROUND(total_mxn, 2) AS ventas, ROUND(AVG(total_mxn) OVER (ORDER BY mes ROWS BETWEEN 2 PRECEDING AND CURRENT ROW), 2) AS promedio_movil_3m FROM ventas_mes LIMIT {self.max_rows};
+
+Pregunta: Ranking de clientes por facturación
+SQL: SELECT receptor_nombre AS cliente, SUM(total * tipo_cambio) AS total_mxn, RANK() OVER (ORDER BY SUM(total * tipo_cambio) DESC) AS ranking, COUNT(*) AS facturas FROM cfdi_ventas GROUP BY receptor_nombre ORDER BY ranking LIMIT {self.max_rows};
+
+Pregunta: Clasificación ABC de clientes (Pareto)
+SQL: WITH clientes AS (SELECT receptor_nombre AS cliente, SUM(total * tipo_cambio) AS total_mxn FROM cfdi_ventas GROUP BY receptor_nombre), acumulado AS (SELECT cliente, total_mxn, SUM(total_mxn) OVER (ORDER BY total_mxn DESC) AS acum, SUM(total_mxn) OVER () AS gran_total FROM clientes) SELECT cliente, ROUND(total_mxn, 2) AS total_mxn, ROUND(acum * 100.0 / gran_total, 2) AS pct_acumulado, CASE WHEN acum * 100.0 / gran_total <= 80 THEN 'A' WHEN acum * 100.0 / gran_total <= 95 THEN 'B' ELSE 'C' END AS clasificacion_abc FROM acumulado ORDER BY total_mxn DESC LIMIT {self.max_rows};
+
+Pregunta: Segmentación RFM de clientes
+SQL: WITH rfm AS (SELECT receptor_nombre AS cliente, (CURRENT_DATE - MAX(fecha_emision::date)) AS recencia_dias, COUNT(*) AS frecuencia, ROUND(SUM(total * tipo_cambio), 2) AS monetario FROM cfdi_ventas GROUP BY receptor_nombre), scored AS (SELECT cliente, recencia_dias, frecuencia, monetario, NTILE(5) OVER (ORDER BY recencia_dias DESC) AS r_score, NTILE(5) OVER (ORDER BY frecuencia ASC) AS f_score, NTILE(5) OVER (ORDER BY monetario ASC) AS m_score FROM rfm) SELECT cliente, recencia_dias, frecuencia, monetario, r_score, f_score, m_score, (r_score * 100 + f_score * 10 + m_score) AS rfm_score, CASE WHEN r_score >= 4 AND f_score >= 4 AND m_score >= 4 THEN 'Champions' WHEN r_score >= 3 AND f_score >= 3 THEN 'Leales' WHEN r_score >= 4 AND f_score <= 2 THEN 'Nuevos' WHEN r_score <= 2 AND f_score >= 3 THEN 'En Riesgo' WHEN r_score <= 2 AND f_score <= 2 THEN 'Hibernando' ELSE 'Potenciales' END AS segmento FROM scored ORDER BY rfm_score DESC LIMIT {self.max_rows};
+
+Pregunta: Detectar facturas anómalas (outliers)
+SQL: WITH stats AS (SELECT AVG(total) AS media, STDDEV(total) AS desv FROM cfdi_ventas) SELECT v.receptor_nombre AS cliente, v.folio, v.fecha_emision, ROUND(v.total, 2) AS monto, ROUND((v.total - s.media) / NULLIF(s.desv, 0), 2) AS z_score, CASE WHEN ABS((v.total - s.media) / NULLIF(s.desv, 0)) > 3 THEN 'Anomalia Alta' WHEN ABS((v.total - s.media) / NULLIF(s.desv, 0)) > 2 THEN 'Anomalia Media' ELSE 'Normal' END AS clasificacion FROM cfdi_ventas v, stats s WHERE ABS((v.total - s.media) / NULLIF(s.desv, 0)) > 2 ORDER BY z_score DESC LIMIT {self.max_rows};
+
+Pregunta: Concentración de clientes (riesgo)
+SQL: WITH totales AS (SELECT receptor_nombre AS cliente, SUM(total * tipo_cambio) AS total_mxn FROM cfdi_ventas GROUP BY receptor_nombre) SELECT cliente, ROUND(total_mxn, 2) AS total_mxn, ROUND(total_mxn * 100.0 / SUM(total_mxn) OVER (), 2) AS pct_del_total, CASE WHEN total_mxn * 100.0 / SUM(total_mxn) OVER () > 30 THEN 'CRITICO' WHEN total_mxn * 100.0 / SUM(total_mxn) OVER () > 15 THEN 'ALTO' WHEN total_mxn * 100.0 / SUM(total_mxn) OVER () > 5 THEN 'MEDIO' ELSE 'BAJO' END AS nivel_riesgo FROM totales ORDER BY total_mxn DESC LIMIT {self.max_rows};
+
+Pregunta: DSO y tasa de cobro
+SQL: WITH facturado AS (SELECT SUM(total * tipo_cambio) AS total_facturado, COUNT(*) AS n_facturas FROM cfdi_ventas WHERE fecha_emision >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '3 months'), cobrado AS (SELECT COALESCE(SUM(monto_pagado), 0) AS total_cobrado FROM cfdi_pagos WHERE fecha_pago >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '3 months'), pendiente AS (SELECT COALESCE(SUM(saldo_insoluto), 0) AS saldo_pendiente FROM cfdi_pagos WHERE saldo_insoluto > 0) SELECT ROUND(f.total_facturado, 2) AS facturado_3m, ROUND(c.total_cobrado, 2) AS cobrado_3m, ROUND(c.total_cobrado * 100.0 / NULLIF(f.total_facturado, 0), 2) AS tasa_cobro_pct, ROUND(p.saldo_pendiente, 2) AS saldo_pendiente, ROUND(p.saldo_pendiente / NULLIF(f.total_facturado / 90.0, 0), 1) AS dso_dias FROM facturado f, cobrado c, pendiente p LIMIT 1;
+
+Pregunta: ¿Cuáles clientes compran cada vez menos? (tendencia negativa)
+SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quarter', fecha_emision) AS trimestre, SUM(total * tipo_cambio) AS total_mxn FROM cfdi_ventas GROUP BY receptor_nombre, trimestre), con_tendencia AS (SELECT cliente, trimestre, total_mxn, LAG(total_mxn) OVER (PARTITION BY cliente ORDER BY trimestre) AS trimestre_anterior FROM por_trimestre) SELECT cliente, trimestre, ROUND(total_mxn, 2) AS ventas_actual, ROUND(trimestre_anterior, 2) AS ventas_anterior, ROUND((total_mxn - trimestre_anterior) * 100.0 / NULLIF(trimestre_anterior, 0), 2) AS cambio_pct FROM con_tendencia WHERE trimestre_anterior IS NOT NULL AND total_mxn < trimestre_anterior ORDER BY cambio_pct ASC LIMIT {self.max_rows};
 """
 
     def _clean_sql(self, raw: str) -> str:
