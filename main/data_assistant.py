@@ -96,8 +96,8 @@ ASSISTANT_CSS = """
     opacity: 0.85;
 }
 .example-btn {
-    background: #f8f9fa;
-    border: 1px solid #dee2e6;
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.15);
     border-radius: 8px;
     padding: 0.5rem 1rem;
     cursor: pointer;
@@ -105,26 +105,29 @@ ASSISTANT_CSS = """
     margin: 0.25rem 0;
     width: 100%;
     text-align: left;
+    color: #e0e0e0;
 }
 .example-btn:hover {
-    background: #e9ecef;
-    border-color: #adb5bd;
+    background: rgba(255,255,255,0.12);
+    border-color: rgba(255,255,255,0.25);
 }
 .schema-table {
-    background: #f8f9fa;
-    border: 1px solid #dee2e6;
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.15);
     border-radius: 8px;
     padding: 0.75rem 1rem;
     margin: 0.25rem 0;
     font-size: 0.85rem;
+    color: #e0e0e0;
 }
 .history-entry {
-    background: #fff;
-    border: 1px solid #e0e0e0;
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.15);
     border-radius: 8px;
     padding: 0.75rem 1rem;
     margin: 0.5rem 0;
     cursor: pointer;
+    color: #e0e0e0;
 }
 .status-badge {
     display: inline-block;
