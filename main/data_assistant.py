@@ -533,6 +533,18 @@ def _render_stats_chart(df: pd.DataFrame, num_cols: list, cat_cols: list,
     B) Múltiples filas con stats por grupo (ej. por cliente) → grouped bar + tabla
     C) Datos raw → box plot + histograma automático
     """
+    def _fmt_money(v):
+        """Formato consistente: siempre $ con 2 decimales para valores monetarios."""
+        if not isinstance(v, (int, float)):
+            return str(v)
+        return f"${v:,.2f}"
+
+    def _fmt_count(v):
+        """Formato para conteos: sin decimales, sin $."""
+        if not isinstance(v, (int, float)):
+            return str(v)
+        return f"{v:,.0f}"
+
     try:
         # --- ESCENARIO A: 1 fila con múltiples estadísticas ---
         if len(df) == 1:
@@ -553,7 +565,7 @@ def _render_stats_chart(df: pd.DataFrame, num_cols: list, cat_cols: list,
                 for i, col in enumerate(count_cols):
                     with cols_ui[i]:
                         v = df[col].iloc[0]
-                        st.metric(col.replace('_', ' ').title(), f"{v:,.0f}" if isinstance(v, (int, float)) else str(v))
+                        st.metric(col.replace('_', ' ').title(), _fmt_count(v))
 
             # Medidas de tendencia central
             if central_cols:
@@ -562,8 +574,7 @@ def _render_stats_chart(df: pd.DataFrame, num_cols: list, cat_cols: list,
                 for i, col in enumerate(central_cols[:4]):
                     with cols_ui[i]:
                         v = df[col].iloc[0]
-                        st.metric(col.replace('_', ' ').title(),
-                                  f"${v:,.2f}" if isinstance(v, (int, float)) and abs(v) > 1 else f"{v:,.4f}")
+                        st.metric(col.replace('_', ' ').title(), _fmt_money(v))
 
             # Dispersión
             if dispersion_cols:
@@ -572,8 +583,7 @@ def _render_stats_chart(df: pd.DataFrame, num_cols: list, cat_cols: list,
                 for i, col in enumerate(dispersion_cols[:4]):
                     with cols_ui[i]:
                         v = df[col].iloc[0]
-                        st.metric(col.replace('_', ' ').title(),
-                                  f"${v:,.2f}" if isinstance(v, (int, float)) and abs(v) > 1 else f"{v:,.4f}")
+                        st.metric(col.replace('_', ' ').title(), _fmt_money(v))
 
             # Rango
             if range_cols:
@@ -582,8 +592,7 @@ def _render_stats_chart(df: pd.DataFrame, num_cols: list, cat_cols: list,
                 for i, col in enumerate(range_cols[:4]):
                     with cols_ui[i]:
                         v = df[col].iloc[0]
-                        st.metric(col.replace('_', ' ').title(),
-                                  f"${v:,.2f}" if isinstance(v, (int, float)) and abs(v) > 1 else f"{v:,.4f}")
+                        st.metric(col.replace('_', ' ').title(), _fmt_money(v))
 
             # Percentiles
             if percentile_cols:
@@ -592,8 +601,7 @@ def _render_stats_chart(df: pd.DataFrame, num_cols: list, cat_cols: list,
                 for i, col in enumerate(percentile_cols[:4]):
                     with cols_ui[i]:
                         v = df[col].iloc[0]
-                        st.metric(col.replace('_', ' ').title(),
-                                  f"${v:,.2f}" if isinstance(v, (int, float)) and abs(v) > 1 else f"{v:,.4f}")
+                        st.metric(col.replace('_', ' ').title(), _fmt_money(v))
 
             # Otros
             if other_cols:
@@ -601,8 +609,7 @@ def _render_stats_chart(df: pd.DataFrame, num_cols: list, cat_cols: list,
                 for i, col in enumerate(other_cols[:4]):
                     with cols_ui[i]:
                         v = df[col].iloc[0]
-                        st.metric(col.replace('_', ' ').title(),
-                                  f"${v:,.2f}" if isinstance(v, (int, float)) and abs(v) > 1 else f"{v:,.4f}")
+                        st.metric(col.replace('_', ' ').title(), _fmt_money(v))
 
             # Gráfica de barras horizontal con todas las métricas
             stat_data = []
@@ -641,19 +648,77 @@ def _render_stats_chart(df: pd.DataFrame, num_cols: list, cat_cols: list,
                 mn = float(df[min_col].iloc[0]) if min_col else p25 - 1.5 * (p75 - p25)
                 mx = float(df[max_col].iloc[0]) if max_col else p75 + 1.5 * (p75 - p25)
                 avg_val = float(df[central_cols[0]].iloc[0]) if central_cols else p50
+                iqr = p75 - p25
+
+                # Calcular fences estadísticos (1.5 * IQR)
+                fence_lo = max(mn, p25 - 1.5 * iqr)
+                fence_hi = min(mx, p75 + 1.5 * iqr)
+                # Puntos outlier fuera de los fences
+                outliers_lo = [mn] if mn < fence_lo else []
+                outliers_hi = [mx] if mx > fence_hi else []
 
                 fig = go.Figure()
+                # Box plot horizontal para mejor legibilidad
                 fig.add_trace(go.Box(
                     q1=[p25], median=[p50], q3=[p75],
-                    lowerfence=[mn], upperfence=[mx], mean=[avg_val],
-                    name="Distribución",
+                    lowerfence=[fence_lo], upperfence=[fence_hi],
+                    mean=[avg_val],
+                    name="",
                     marker_color="#2196F3",
                     boxmean=True,
+                    orientation="h",
+                    hoverinfo="text",
+                    hovertext=(
+                        f"Mín: ${mn:,.2f}<br>"
+                        f"P25: ${p25:,.2f}<br>"
+                        f"Mediana: ${p50:,.2f}<br>"
+                        f"Media: ${avg_val:,.2f}<br>"
+                        f"P75: ${p75:,.2f}<br>"
+                        f"Máx: ${mx:,.2f}"
+                    ),
                 ))
+
+                # Marcar outliers como puntos separados
+                all_outliers = outliers_lo + outliers_hi
+                if all_outliers:
+                    fig.add_trace(go.Scatter(
+                        x=all_outliers,
+                        y=[0] * len(all_outliers),
+                        mode="markers+text",
+                        marker=dict(color="#FF5722", size=12, symbol="diamond"),
+                        text=[f"${v:,.2f}" for v in all_outliers],
+                        textposition="top center",
+                        name="Outliers",
+                        hoverinfo="text",
+                        hovertext=[f"Outlier: ${v:,.2f}" for v in all_outliers],
+                    ))
+
+                # Anotaciones de valores clave
+                for val, label, color in [
+                    (p25, "P25", "#64B5F6"),
+                    (p50, "Mediana", "#FFFFFF"),
+                    (p75, "P75", "#64B5F6"),
+                    (avg_val, "μ", "#FFC107"),
+                ]:
+                    fig.add_annotation(
+                        x=val, y=0,
+                        text=f"{label}: ${val:,.2f}",
+                        showarrow=True, arrowhead=2,
+                        font=dict(size=10, color=color),
+                        arrowcolor=color,
+                        ax=0, ay=-35 if label in ("P25", "P75") else 35,
+                    )
+
                 fig.update_layout(
                     title=f"📦 Distribución — {title}",
-                    showlegend=False,
-                    height=300,
+                    showlegend=bool(all_outliers),
+                    height=350,
+                    xaxis=dict(
+                        title="Valor ($)",
+                        tickformat="$,.0f",
+                    ),
+                    yaxis=dict(showticklabels=False),
+                    margin=dict(l=20, r=20, t=50, b=40),
                 )
                 st.plotly_chart(fig, use_container_width=True)
 
