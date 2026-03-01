@@ -302,6 +302,18 @@ EXAMPLE_QUESTIONS = [
             "¿Cuál es la tendencia de nuevos clientes por mes?",
         ]
     },
+    {
+        "category": "Estadísticas",
+        "icon": "📐",
+        "questions": [
+            "¿Cuál es la media y mediana de facturación?",
+            "Dame el resumen estadístico completo de ventas",
+            "¿Cuál es la desviación estándar del monto por cliente?",
+            "Estadísticas de precios unitarios de productos",
+            "¿Cuáles son los percentiles 25, 50 y 75 de facturación?",
+            "¿Cuál es la moda de forma de pago?",
+        ]
+    },
 ]
 
 
@@ -425,6 +437,10 @@ REGLAS ESTRICTAS:
 10. SIEMPRE intenta generar una consulta SQL válida. Solo como ÚLTIMO recurso si la pregunta es completamente irrelevante, genera: SELECT 'Pregunta no compatible con los datos disponibles' AS mensaje;
 11. Cuando pregunten por "empresas", "clientes" o "quién compró", busca en receptor_nombre de cfdi_ventas.
 12. Para meses por nombre (enero=1, febrero=2, ... diciembre=12), usa EXTRACT(MONTH FROM fecha_emision).
+13. Para estadísticas usa funciones de PostgreSQL: AVG() para promedio/media, PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY col) para mediana, STDDEV() o STDDEV_POP() para desviación estándar, VARIANCE() para varianza, MIN() y MAX() para rango, MODE() WITHIN GROUP (ORDER BY col) para moda.
+14. Cuando pidan "estadísticas", "resumen estadístico" o "análisis estadístico", genera una consulta que incluya COUNT, AVG, MIN, MAX, STDDEV y PERCENTILE_CONT(0.5) del campo numérico relevante.
+15. Para percentiles usa PERCENTILE_CONT(0.25/0.50/0.75) WITHIN GROUP (ORDER BY columna).
+16. Redondea resultados estadísticos con ROUND(valor, 2).
 {empresa_filter}
 
 {SCHEMA_CONTEXT}
@@ -447,6 +463,21 @@ SQL: SELECT receptor_nombre AS cliente, COUNT(*) AS facturas, SUM(total) AS tota
 
 Pregunta: ¿Cuántos clientes diferentes compraron este mes?
 SQL: SELECT COUNT(DISTINCT receptor_rfc) AS clientes_unicos FROM cfdi_ventas WHERE DATE_TRUNC('month', fecha_emision) = DATE_TRUNC('month', CURRENT_DATE) LIMIT {self.max_rows};
+
+Pregunta: ¿Cuál es la media y mediana de facturación?
+SQL: SELECT ROUND(AVG(total), 2) AS media, ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY total)::numeric, 2) AS mediana, COUNT(*) AS num_facturas FROM cfdi_ventas LIMIT {self.max_rows};
+
+Pregunta: Estadísticas de facturación (promedio, desviación estándar, mínimo, máximo)
+SQL: SELECT COUNT(*) AS total_facturas, ROUND(AVG(total), 2) AS promedio, ROUND(STDDEV(total), 2) AS desviacion_estandar, ROUND(MIN(total), 2) AS minimo, ROUND(MAX(total), 2) AS maximo, ROUND(PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY total)::numeric, 2) AS percentil_25, ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY total)::numeric, 2) AS mediana, ROUND(PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY total)::numeric, 2) AS percentil_75 FROM cfdi_ventas LIMIT {self.max_rows};
+
+Pregunta: ¿Cuál es la desviación estándar del monto por cliente?
+SQL: SELECT receptor_nombre AS cliente, COUNT(*) AS facturas, ROUND(AVG(total), 2) AS promedio, ROUND(STDDEV(total), 2) AS desviacion_estandar, ROUND(MIN(total), 2) AS minimo, ROUND(MAX(total), 2) AS maximo FROM cfdi_ventas GROUP BY receptor_nombre HAVING COUNT(*) > 1 ORDER BY desviacion_estandar DESC NULLS LAST LIMIT {self.max_rows};
+
+Pregunta: ¿Cuál es la moda de forma de pago?
+SQL: SELECT forma_pago, COUNT(*) AS frecuencia FROM cfdi_ventas GROUP BY forma_pago ORDER BY frecuencia DESC LIMIT 1;
+
+Pregunta: Dame el resumen estadístico de precios unitarios de productos
+SQL: SELECT COUNT(*) AS total_conceptos, ROUND(AVG(valor_unitario), 2) AS precio_promedio, ROUND(STDDEV(valor_unitario), 2) AS desviacion_estandar, ROUND(MIN(valor_unitario), 2) AS precio_minimo, ROUND(MAX(valor_unitario), 2) AS precio_maximo, ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY valor_unitario)::numeric, 2) AS precio_mediana FROM cfdi_conceptos LIMIT {self.max_rows};
 """
 
     def _clean_sql(self, raw: str) -> str:
