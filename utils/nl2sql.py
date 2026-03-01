@@ -81,45 +81,60 @@ ALLOWED_TABLES = [
 # Helpers de formato
 # =====================================================================
 def _normalize_highlights(text: str) -> str:
-    """Convierte backtick-highlights a negrita para un formato Markdown consistente.
+    """Convierte highlights de GPT a HTML <span> para renderizado consistente.
 
-    Reglas aplicadas:
-    1. `$1,234.56` → **$1,234.56**  (montos con backtick)
-    2. `1,234` o `1,234.56` → **1,234** / **1,234.56** (números con backtick)
-    3. `texto cualquiera` → _texto cualquiera_  (texto con backtick → cursiva)
-    4. Montos sueltos sin formato: $1,234.56 → **$1,234.56** (solo si no están ya en **bold**)
+    Estrategia: limpiar markdown → tokenizar spans existentes → aplicar
+    reglas de formato → restaurar tokens.
     """
-    # 1) Backtick con monto: `$1,234.56` → **$1,234.56**
+    # --- Paso 0: deshacer markdown bold/italic previo ---
+    text = re.sub(r'\*{1,3}(\$[\d,]+(?:\.\d{1,2})?)\*{1,3}', r'\1', text)
+    text = re.sub(r'\*{1,3}([\d,]+(?:\.\d{1,2})?(?:\s*%)?(?:\s+\w+)?)\*{1,3}', r'\1', text)
+    text = re.sub(r'(?<!\w)_([^_]+)_(?!\w)', r'\1', text)
+    # Limpiar asteriscos sueltos residuales
+    text = re.sub(r'\*{2,}', '', text)
+
+    # --- Paso 1: backticks → contenido limpio ---
+    text = re.sub(r'`([^`]+)`', r'\1', text)
+
+    # --- Paso 2: proteger spans HTML existentes con tokens ---
+    _tokens = []
+    def _protect(m):
+        _tokens.append(m.group(0))
+        return f'\x00TK{len(_tokens) - 1}\x00'
+    text = re.sub(r'<span[^>]*>.*?</span>', _protect, text)
+
+    # --- Paso 3: aplicar formato HTML ---
+    # 3a) Montos: $1,234.56
     text = re.sub(
-        r'`(\$[\d,]+(?:\.\d{1,2})?)`',
-        r'**\1**',
+        r'(\$[\d,]+(?:\.\d{1,2})?)',
+        r'<span class="nlh-money">\1</span>',
         text
     )
 
-    # 2) Backtick con número: `1,234.56` o `17` → **1,234.56** / **17**
+    # 3b) Porcentajes: 85.2%
     text = re.sub(
-        r'`([\d,]+(?:\.\d{1,2})?(?:\s*%)?)`',
-        r'**\1**',
+        r'(\b[\d,]+(?:\.\d{1,2})?\s*%)',
+        r'<span class="nlh-num">\1</span>',
         text
     )
 
-    # 3) Backtick con texto restante → cursiva
+    # 3c) Números + unidad: "17 facturas", "18 productos"
     text = re.sub(
-        r'`([^`]+)`',
-        r'_\1_',
+        r'(\b\d[\d,]*(?:\.\d{1,2})?\s+(?:facturas?|productos?|clientes?|días|meses|registros|conceptos|pagos|ventas|total))',
+        r'<span class="nlh-num">\1</span>',
         text
     )
 
-    # 4) Monto suelto no formateado: $1,234.56 que NO esté dentro de ** → **$1,234.56**
-    #    Negative lookbehind para ** y lookforward para **
+    # 3d) Números grandes sueltos (1,234+) que no están junto a $ ni dentro de span
     text = re.sub(
-        r'(?<!\*\*)(\$[\d,]+(?:\.\d{1,2})?)(?!\*\*)',
-        r'**\1**',
+        r'(?<!\$)(\b\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?)\b',
+        r'<span class="nlh-num">\1</span>',
         text
     )
 
-    # 5) Limpiar dobles negritas accidentales: ****$x**** → **$x**
-    text = re.sub(r'\*{4,}', '**', text)
+    # --- Paso 4: restaurar tokens protegidos ---
+    for i, token in enumerate(_tokens):
+        text = text.replace(f'\x00TK{i}\x00', token)
 
     return text
 

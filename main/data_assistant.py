@@ -135,6 +135,21 @@ ASSISTANT_CSS = """
 }
 .status-ok { background: #d4edda; color: #155724; }
 .status-err { background: #f8d7da; color: #721c24; }
+/* Highlights de interpretación NL2SQL */
+.nlh-money {
+    color: #4ade80;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+.nlh-num {
+    color: #60a5fa;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+.nlh-em {
+    color: #fbbf24;
+    font-style: italic;
+}
 </style>
 """
 
@@ -1153,8 +1168,8 @@ def _render_result_message(msg: dict, msg_idx: int = 0):
                 st.code(msg["sql"], language="sql")
         return
 
-    # Interpretación
-    st.markdown(msg["content"])
+    # Interpretación (HTML con highlights)
+    st.markdown(msg["content"], unsafe_allow_html=True)
 
     # DataFrame
     df = None
@@ -1232,7 +1247,7 @@ def _render_history():
             expanded=False,
         ):
             if result.success:
-                st.markdown(f"**Interpretación:** {result.interpretation}")
+                st.markdown(f"**Interpretación:** {result.interpretation}", unsafe_allow_html=True)
                 st.code(result.sql, language="sql")
                 st.caption(
                     f"⏱️ {result.execution_time:.2f}s · "
