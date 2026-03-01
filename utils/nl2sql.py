@@ -78,6 +78,53 @@ ALLOWED_TABLES = [
 
 
 # =====================================================================
+# Helpers de formato
+# =====================================================================
+def _normalize_highlights(text: str) -> str:
+    """Convierte backtick-highlights a negrita para un formato Markdown consistente.
+
+    Reglas aplicadas:
+    1. `$1,234.56` → **$1,234.56**  (montos con backtick)
+    2. `1,234` o `1,234.56` → **1,234** / **1,234.56** (números con backtick)
+    3. `texto cualquiera` → _texto cualquiera_  (texto con backtick → cursiva)
+    4. Montos sueltos sin formato: $1,234.56 → **$1,234.56** (solo si no están ya en **bold**)
+    """
+    # 1) Backtick con monto: `$1,234.56` → **$1,234.56**
+    text = re.sub(
+        r'`(\$[\d,]+(?:\.\d{1,2})?)`',
+        r'**\1**',
+        text
+    )
+
+    # 2) Backtick con número: `1,234.56` o `17` → **1,234.56** / **17**
+    text = re.sub(
+        r'`([\d,]+(?:\.\d{1,2})?(?:\s*%)?)`',
+        r'**\1**',
+        text
+    )
+
+    # 3) Backtick con texto restante → cursiva
+    text = re.sub(
+        r'`([^`]+)`',
+        r'_\1_',
+        text
+    )
+
+    # 4) Monto suelto no formateado: $1,234.56 que NO esté dentro de ** → **$1,234.56**
+    #    Negative lookbehind para ** y lookforward para **
+    text = re.sub(
+        r'(?<!\*\*)(\$[\d,]+(?:\.\d{1,2})?)(?!\*\*)',
+        r'**\1**',
+        text
+    )
+
+    # 5) Limpiar dobles negritas accidentales: ****$x**** → **$x**
+    text = re.sub(r'\*{4,}', '**', text)
+
+    return text
+
+
+# =====================================================================
 # Dataclasses
 # =====================================================================
 @dataclass
@@ -712,10 +759,18 @@ DATOS (primeras filas):
 INSTRUCCIONES:
 1. Responde la pregunta del usuario de forma directa y clara.
 2. Destaca los hallazgos más importantes.
-3. Si hay montos, formatéalos con $ y separadores de miles.
-4. Si hay tendencias, menciónalas.
-5. Máximo 3-4 oraciones concisas.
-6. NO repitas la pregunta ni el SQL.
+3. Máximo 3-4 oraciones concisas.
+4. NO repitas la pregunta ni el SQL.
+
+REGLAS DE FORMATO (cumplir TODAS de forma estricta):
+- TODOS los valores monetarios SIEMPRE con signo **$** y separadores de miles: **$41,991.30**
+- TODOS los valores numéricos no monetarios en negrita: **17 facturas**, **3.5%**
+- Porcentajes SIEMPRE con negrita: **85.2%**
+- NUNCA uses backticks (`) para resaltar valores ni texto. Solo usa **negrita** con doble asterisco.
+- NUNCA mezcles formatos: NO hagas `$41,991.30` ni `17 facturas`. Siempre **$41,991.30** y **17 facturas**.
+- Para enfatizar frases importantes, usa _cursiva_ con guiones bajos simples, NUNCA backticks.
+- Si hay tendencias, menciónalas.
+- Sé consistente: si el primer monto lleva $, TODOS deben llevar $.
 
 AL FINAL, genera una especificación de gráfica en formato JSON en una sola línea.
 La línea DEBE comenzar exactamente con CHART_SPEC: seguido del JSON.
@@ -765,7 +820,11 @@ Si el usuario pidió explícitamente un tipo de gráfica (ej: "muéstrame un pie
                     {
                         "role": "system",
                         "content": "Eres un analista de datos experto en facturación "
-                                   "y cuentas por cobrar B2B en México. Responde en español."
+                                   "y cuentas por cobrar B2B en México. Responde en español. "
+                                   "FORMATO OBLIGATORIO: usa **negrita** (doble asterisco) para "
+                                   "cifras y montos (ej: **$41,991.30**, **17 facturas**). "
+                                   "NUNCA uses backticks (`) para resaltar texto o valores. "
+                                   "Usa _cursiva_ para énfasis en frases."
                     },
                     {"role": "user", "content": prompt},
                 ],
@@ -792,6 +851,9 @@ Si el usuario pidió explícitamente un tipo de gráfica (ej: "muéstrame un pie
                 if chart_match:
                     chart_type = chart_match.group(1).lower()
                     text = re.sub(r'\n?CHART_TYPE:\s*\w+', '', text).strip()
+
+            # --- Post-proceso: normalizar highlights inconsistentes ---
+            text = _normalize_highlights(text)
 
             return text, chart_type, chart_spec
 
