@@ -81,10 +81,11 @@ ALLOWED_TABLES = [
 # Helpers de formato
 # =====================================================================
 def _normalize_highlights(text: str) -> str:
-    """Convierte highlights de GPT a HTML <span> para renderizado consistente.
+    """Convierte highlights de GPT a formato nativo Streamlit :color[**texto**].
 
-    Estrategia: limpiar markdown → tokenizar spans existentes → aplicar
-    reglas de formato → restaurar tokens.
+    Usa la sintaxis :green[**$monto**] y :blue[**número**] que Streamlit
+    renderiza correctamente dentro de st.chat_message (a diferencia de HTML
+    <span> que se escapa en el contexto de chat).
     """
     # --- Paso 0: deshacer markdown bold/italic previo ---
     text = re.sub(r'\*{1,3}(\$[\d,]+(?:\.\d{1,2})?)\*{1,3}', r'\1', text)
@@ -96,39 +97,39 @@ def _normalize_highlights(text: str) -> str:
     # --- Paso 1: backticks → contenido limpio ---
     text = re.sub(r'`([^`]+)`', r'\1', text)
 
-    # --- Paso 2: proteger spans HTML existentes con tokens ---
-    _tokens = []
+    # --- Paso 2: proteger :color[] existentes con tokens ---
+    _tokens: list = []
     def _protect(m):
         _tokens.append(m.group(0))
         return f'\x00TK{len(_tokens) - 1}\x00'
-    text = re.sub(r'<span[^>]*>.*?</span>', _protect, text)
+    text = re.sub(r':\w+\[.*?\]', _protect, text)
 
-    # --- Paso 3: aplicar formato HTML ---
-    # 3a) Montos: $1,234.56
+    # --- Paso 3: aplicar formato :color[**texto**] de Streamlit ---
+    # 3a) Montos: $1,234.56 → :green[**$1,234.56**]
     text = re.sub(
         r'(\$[\d,]+(?:\.\d{1,2})?)',
-        r'<span class="nlh-money">\1</span>',
+        r':green[**\1**]',
         text
     )
 
-    # 3b) Porcentajes: 85.2%
+    # 3b) Porcentajes: 85.2% → :blue[**85.2%**]
     text = re.sub(
         r'(\b[\d,]+(?:\.\d{1,2})?\s*%)',
-        r'<span class="nlh-num">\1</span>',
+        r':blue[**\1**]',
         text
     )
 
-    # 3c) Números + unidad: "17 facturas", "18 productos"
+    # 3c) Números + unidad: "17 facturas" → :blue[**17 facturas**]
     text = re.sub(
         r'(\b\d[\d,]*(?:\.\d{1,2})?\s+(?:facturas?|productos?|clientes?|días|meses|registros|conceptos|pagos|ventas|total))',
-        r'<span class="nlh-num">\1</span>',
+        r':blue[**\1**]',
         text
     )
 
-    # 3d) Números grandes sueltos (1,234+) que no están junto a $ ni dentro de span
+    # 3d) Números grandes sueltos (1,234+) → :blue[**1,234**]
     text = re.sub(
         r'(?<!\$)(\b\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?)\b',
-        r'<span class="nlh-num">\1</span>',
+        r':blue[**\1**]',
         text
     )
 
