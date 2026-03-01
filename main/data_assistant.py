@@ -249,6 +249,25 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
     elif sort_order == "asc" and y_col in plot_df.columns:
         plot_df = plot_df.sort_values(y_col, ascending=True)
 
+    # --- Helper: truncar etiquetas largas y auto-switch a horizontal ---
+    def _smart_label_prep(df_in, label_col, max_chars=45):
+        """Trunca etiquetas largas y decide si conviene horizontal."""
+        df_out = df_in.copy()
+        if label_col in df_out.columns and df_out[label_col].dtype == "object":
+            max_len = df_out[label_col].astype(str).str.len().max()
+            avg_len = df_out[label_col].astype(str).str.len().mean()
+            n_rows = len(df_out)
+            # Truncar etiquetas largas
+            df_out[label_col] = df_out[label_col].astype(str).apply(
+                lambda s: s[:max_chars] + "…" if len(s) > max_chars else s
+            )
+            # Auto-switch a horizontal si muchas filas o labels largos
+            use_hbar = (max_len > 25 and n_rows > 3) or (avg_len > 18 and n_rows > 5) or n_rows > 12
+            # Altura dinámica
+            height = max(400, min(n_rows * 38, 900)) if use_hbar else None
+            return df_out, use_hbar, height
+        return df_out, False, None
+
     try:
         # --- METRIC CARDS ---
         if chart_type == "metric" and num_cols:
@@ -347,61 +366,116 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
             st.plotly_chart(fig, use_container_width=True)
             return
 
-        # --- BAR (vertical) ---
+        # --- BAR (vertical) — auto-switch a horizontal si labels largos ---
         if chart_type == "bar" and num_cols:
-            fig = px.bar(
-                plot_df, x=x_col, y=y_col,
-                title=title,
-                color=color_col or y_col,
-                color_continuous_scale="Viridis" if not color_col else None,
-                color_discrete_sequence=CHART_COLORS if color_col else None,
-                text_auto=True,
-            )
-            fig.update_layout(xaxis_tickangle=-45, showlegend=bool(color_col))
-            fig.update_traces(textposition="outside", texttemplate="%{y:,.0f}")
+            bar_df, use_hbar, dyn_height = _smart_label_prep(plot_df, x_col)
+            if use_hbar:
+                # Cambiar a horizontal para legibilidad
+                bar_df = bar_df.sort_values(y_col, ascending=True)
+                fig = px.bar(
+                    bar_df, x=y_col, y=x_col,
+                    title=title,
+                    orientation="h",
+                    color=color_col or y_col,
+                    color_continuous_scale="Viridis" if not color_col else None,
+                    color_discrete_sequence=CHART_COLORS if color_col else None,
+                    text_auto=True,
+                )
+                fig.update_layout(
+                    height=dyn_height,
+                    yaxis=dict(autorange="reversed", tickfont=dict(size=11)),
+                    showlegend=bool(color_col),
+                    margin=dict(l=10, r=40, t=50, b=20),
+                )
+                fig.update_traces(textposition="outside", texttemplate="%{x:,.0f}")
+            else:
+                fig = px.bar(
+                    bar_df, x=x_col, y=y_col,
+                    title=title,
+                    color=color_col or y_col,
+                    color_continuous_scale="Viridis" if not color_col else None,
+                    color_discrete_sequence=CHART_COLORS if color_col else None,
+                    text_auto=True,
+                )
+                fig.update_layout(xaxis_tickangle=-45, showlegend=bool(color_col))
+                fig.update_traces(textposition="outside", texttemplate="%{y:,.0f}")
             st.plotly_chart(fig, use_container_width=True)
             return
 
         # --- HBAR (horizontal) ---
         if chart_type == "hbar" and num_cols:
+            hbar_df, _, dyn_height = _smart_label_prep(plot_df, x_col)
+            if not dyn_height:
+                dyn_height = max(400, min(len(hbar_df) * 38, 900))
             fig = px.bar(
-                plot_df, x=y_col, y=x_col,
+                hbar_df, x=y_col, y=x_col,
                 title=title,
                 orientation="h",
                 color=color_col or y_col,
                 color_continuous_scale="Viridis" if not color_col else None,
                 text_auto=True,
             )
-            fig.update_layout(yaxis=dict(autorange="reversed"), showlegend=bool(color_col))
+            fig.update_layout(
+                height=dyn_height,
+                yaxis=dict(autorange="reversed", tickfont=dict(size=11)),
+                showlegend=bool(color_col),
+                margin=dict(l=10, r=40, t=50, b=20),
+            )
             fig.update_traces(textposition="outside", texttemplate="%{x:,.0f}")
             st.plotly_chart(fig, use_container_width=True)
             return
 
         # --- STACKED BAR ---
         if chart_type == "stacked_bar" and color_col and num_cols:
-            fig = px.bar(
-                plot_df, x=x_col, y=y_col,
-                color=color_col,
-                title=title,
-                color_discrete_sequence=CHART_COLORS,
-                barmode="stack",
-                text_auto=True,
-            )
-            fig.update_layout(xaxis_tickangle=-45)
+            sb_df, use_hbar, dyn_height = _smart_label_prep(plot_df, x_col)
+            if use_hbar:
+                fig = px.bar(
+                    sb_df, x=y_col, y=x_col,
+                    color=color_col,
+                    title=title,
+                    orientation="h",
+                    color_discrete_sequence=CHART_COLORS,
+                    barmode="stack",
+                    text_auto=True,
+                )
+                fig.update_layout(height=dyn_height, yaxis=dict(autorange="reversed", tickfont=dict(size=11)))
+            else:
+                fig = px.bar(
+                    sb_df, x=x_col, y=y_col,
+                    color=color_col,
+                    title=title,
+                    color_discrete_sequence=CHART_COLORS,
+                    barmode="stack",
+                    text_auto=True,
+                )
+                fig.update_layout(xaxis_tickangle=-45)
             st.plotly_chart(fig, use_container_width=True)
             return
 
         # --- GROUPED BAR ---
         if chart_type == "grouped_bar" and color_col and num_cols:
-            fig = px.bar(
-                plot_df, x=x_col, y=y_col,
-                color=color_col,
-                title=title,
-                color_discrete_sequence=CHART_COLORS,
-                barmode="group",
-                text_auto=True,
-            )
-            fig.update_layout(xaxis_tickangle=-45)
+            gb_df, use_hbar, dyn_height = _smart_label_prep(plot_df, x_col)
+            if use_hbar:
+                fig = px.bar(
+                    gb_df, x=y_col, y=x_col,
+                    color=color_col,
+                    title=title,
+                    orientation="h",
+                    color_discrete_sequence=CHART_COLORS,
+                    barmode="group",
+                    text_auto=True,
+                )
+                fig.update_layout(height=dyn_height, yaxis=dict(autorange="reversed", tickfont=dict(size=11)))
+            else:
+                fig = px.bar(
+                    gb_df, x=x_col, y=y_col,
+                    color=color_col,
+                    title=title,
+                    color_discrete_sequence=CHART_COLORS,
+                    barmode="group",
+                    text_auto=True,
+                )
+                fig.update_layout(xaxis_tickangle=-45)
             st.plotly_chart(fig, use_container_width=True)
             return
 
