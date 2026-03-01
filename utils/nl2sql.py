@@ -464,7 +464,7 @@ REGLAS ESTRICTAS:
 7. Usa DATE_TRUNC para agrupaciones por periodo.
 8. Para porcentajes, calcula con ROUND(x * 100.0 / total, 2).
 9. Responde SOLO con la consulta SQL, sin explicación ni markdown. NO uses emojis ni caracteres especiales.
-10. SIEMPRE intenta generar una consulta SQL válida. Solo como ÚLTIMO recurso si la pregunta es completamente irrelevante, genera: SELECT 'Pregunta no compatible con los datos disponibles' AS mensaje;
+10. SIEMPRE intenta generar una consulta SQL válida. NUNCA generes el fallback de "Pregunta no compatible". Si la pregunta es genérica (ej: "qué gráficas me ofreces", "qué estadísticas tienes", "qué puedes hacer", "muéstrame análisis"), genera un resumen estadístico completo de cfdi_ventas con COUNT, AVG, MIN, MAX, STDDEV, PERCENTILE_CONT(0.25), PERCENTILE_CONT(0.5), PERCENTILE_CONT(0.75) sobre el campo total. Si la pregunta es sobre capacidades o ayuda, genera igualmente ese resumen estadístico como demostración.
 11. Cuando pregunten por "empresas", "clientes" o "quién compró", busca en receptor_nombre de cfdi_ventas.
 12. Para meses por nombre (enero=1, febrero=2, ... diciembre=12), usa EXTRACT(MONTH FROM fecha_emision).
 13. Para estadísticas usa funciones de PostgreSQL: AVG() para promedio/media, PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY col) para mediana, STDDEV() o STDDEV_POP() para desviación estándar, VARIANCE() para varianza, MIN() y MAX() para rango, MODE() WITHIN GROUP (ORDER BY col) para moda.
