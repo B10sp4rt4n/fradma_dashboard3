@@ -823,6 +823,22 @@ Si el usuario pidió explícitamente un tipo de gráfica (ej: "muéstrame un pie
         try:
             # Paso 1: Generar SQL
             sql = self.generate_sql(question, empresa_id)
+
+            # Interceptar fallback inútil: si GPT generó el mensaje de "no compatible",
+            # reemplazar con un resumen estadístico real
+            if "no compatible" in sql.lower() or "no disponible" in sql.lower() or ("mensaje" in sql.lower() and "select" in sql.lower() and "from" not in sql.lower().replace("from cfdi", "")):
+                sql = (
+                    f"SELECT COUNT(*) AS total_facturas, "
+                    f"ROUND(AVG(total), 2) AS promedio, "
+                    f"ROUND(STDDEV(total), 2) AS desviacion_estandar, "
+                    f"ROUND(MIN(total), 2) AS minimo, "
+                    f"ROUND(MAX(total), 2) AS maximo, "
+                    f"ROUND(PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY total)::numeric, 2) AS percentil_25, "
+                    f"ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY total)::numeric, 2) AS mediana, "
+                    f"ROUND(PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY total)::numeric, 2) AS percentil_75 "
+                    f"FROM cfdi_ventas LIMIT {self.max_rows};"
+                )
+
             result.sql = sql
 
             # Paso 2: Validar seguridad
