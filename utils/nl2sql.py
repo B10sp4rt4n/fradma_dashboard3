@@ -534,6 +534,7 @@ REGLAS ESTRICTAS:
 14. Cuando pidan "estadísticas", "resumen estadístico" o "análisis estadístico", genera una consulta que incluya COUNT, AVG, MIN, MAX, STDDEV y PERCENTILE_CONT(0.5) del campo numérico relevante.
 15. Para percentiles usa PERCENTILE_CONT(0.25/0.50/0.75) WITHIN GROUP (ORDER BY columna).
 16. Redondea resultados estadísticos con ROUND(valor, 2).
+**CRÍTICO PERCENTILE_CONT**: NUNCA uses PERCENTILE_CONT() o MODE() con OVER(). Son "ordered-set aggregates" y PostgreSQL NO soporta OVER() con ellos. Si necesitas percentiles junto con window functions, usa una CTE: primero calcula el percentil global con GROUP BY, luego haz JOIN o usa la CTE en el SELECT principal. Ejemplo correcto: WITH stats AS (SELECT ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY total)::numeric, 2) AS mediana FROM cfdi_ventas) SELECT v.*, s.mediana FROM cfdi_ventas v CROSS JOIN stats s;
 
 REGLAS AVANZADAS DE ANALYTICS:
 17. TIME INTELLIGENCE: Para comparaciones periodo a periodo usa LAG() OVER (ORDER BY periodo). Para crecimiento: ROUND((actual - anterior) * 100.0 / NULLIF(anterior, 0), 2) AS crecimiento_pct. Para acumulados usa SUM() OVER (ORDER BY mes ROWS UNBOUNDED PRECEDING). Para promedios móviles usa AVG() OVER (ORDER BY mes ROWS BETWEEN 2 PRECEDING AND CURRENT ROW).
@@ -629,11 +630,39 @@ SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quart
 """
 
     def _clean_sql(self, raw: str) -> str:
-        """Limpia el SQL de markdown code blocks y whitespace."""
+        """Limpia el SQL de markdown code blocks, whitespace y patrones inválidos."""
         # Remover ```sql ... ```
         sql = re.sub(r'```(?:sql)?\s*', '', raw)
         sql = re.sub(r'```\s*$', '', sql)
         sql = sql.strip()
+
+        # --- FIX: PERCENTILE_CONT/MODE con OVER() no es válido en PostgreSQL ---
+        # Detectar: PERCENTILE_CONT(...) WITHIN GROUP (...) OVER (...)
+        # Esto es un "ordered-set aggregate" y no soporta window functions
+        pattern_invalid_percentile = re.compile(
+            r'ROUND\s*\(\s*'
+            r'(PERCENTILE_CONT\s*\([^)]+\)\s*WITHIN\s+GROUP\s*\([^)]+\))'
+            r'(\s*::numeric)?'
+            r'\s*,\s*\d+\s*\)'
+            r'\s*OVER\s*\([^)]*\)',
+            re.IGNORECASE
+        )
+        if pattern_invalid_percentile.search(sql):
+            logger.warning("⚠️ Detectado PERCENTILE_CONT con OVER() — removiendo OVER clause")
+            sql = pattern_invalid_percentile.sub(
+                lambda m: f"ROUND({m.group(1)}::numeric, 2)",
+                sql
+            )
+        
+        # Caso sin ROUND wrapper
+        pattern_invalid_percentile2 = re.compile(
+            r'(PERCENTILE_CONT\s*\([^)]+\)\s*WITHIN\s+GROUP\s*\([^)]+\))'
+            r'\s*OVER\s*\([^)]*\)',
+            re.IGNORECASE
+        )
+        if pattern_invalid_percentile2.search(sql):
+            logger.warning("⚠️ Detectado PERCENTILE_CONT con OVER() (sin ROUND) — removiendo OVER clause")
+            sql = pattern_invalid_percentile2.sub(r'\1', sql)
 
         # Remover punto y coma extra al final
         sql = sql.rstrip(';') + ';'

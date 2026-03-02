@@ -1169,20 +1169,13 @@ def crear_reporte_pdf_ejecutivo(
                              'Logo de CIMA Analytics y SynAppsSys.png')
     if os.path.exists(logo_path):
         try:
-            # Leer dimensiones originales y escalar al 70% manteniendo proporción
+            # Logo a tamaño fijo: 2 pulgadas de ancho, proporción original
             from PIL import Image as PILImage
             pil_img = PILImage.open(logo_path)
             orig_w, orig_h = pil_img.size
-            # Convertir px a puntos (72 dpi) y escalar al 70%
-            scale = 0.70
-            logo_w = (orig_w / 72.0) * inch * scale
-            logo_h = (orig_h / 72.0) * inch * scale
-            # Limitar tamaño máximo para que quepa en la página
-            max_w = 5.0 * inch
-            if logo_w > max_w:
-                ratio = max_w / logo_w
-                logo_w = max_w
-                logo_h = logo_h * ratio
+            aspect = orig_h / orig_w
+            logo_w = 2.0 * inch
+            logo_h = logo_w * aspect
             logo = Image(logo_path, width=logo_w, height=logo_h)
             logo.hAlign = 'CENTER'
             story.append(logo)

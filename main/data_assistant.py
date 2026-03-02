@@ -189,6 +189,82 @@ CHART_COLORS = [
     "#3F51B5", "#FFEB3B", "#009688", "#F44336", "#673AB7",
 ]
 
+
+def _render_smart_table(df: pd.DataFrame):
+    """
+    Renderiza tabla inteligente: detecta columnas con valor constante
+    (estadísticos globales repetidos en cada fila) y las muestra como
+    resumen separado, dejando la tabla limpia solo con el detalle.
+    """
+    if df.empty:
+        st.dataframe(df, use_container_width=True, hide_index=True)
+        return
+
+    num_cols = df.select_dtypes(include=['int64', 'float64', 'int32', 'float32']).columns.tolist()
+
+    # Solo separar si hay más de 3 filas (con 1-2 filas no tiene sentido)
+    if len(df) > 3:
+        # Detectar columnas numéricas con valor constante (mismo valor en todas las filas)
+        stat_keywords = ['promedio', 'media', 'avg', 'desviacion', 'stddev', 'varianza',
+                         'minimo', 'maximo', 'moda', 'percentil', 'total_clientes',
+                         'total_facturas', 'conteo', 'count']
+        const_cols = []
+        for col in num_cols:
+            if df[col].nunique() == 1 and any(kw in col.lower() for kw in stat_keywords):
+                const_cols.append(col)
+
+        if const_cols:
+            # Mostrar resumen de estadísticos globales como métricas
+            st.markdown("**📊 Resumen estadístico global**")
+            cols_ui = st.columns(min(len(const_cols), 4))
+            for i, col in enumerate(const_cols):
+                with cols_ui[i % min(len(const_cols), 4)]:
+                    v = df[col].iloc[0]
+                    label = col.replace('_', ' ').title()
+                    if isinstance(v, (int, float)):
+                        if any(kw in col.lower() for kw in ['total_clientes', 'conteo', 'count', 'total_facturas']):
+                            st.metric(label, f"{v:,.0f}")
+                        elif abs(v) >= 100:
+                            st.metric(label, f"${v:,.2f}")
+                        else:
+                            st.metric(label, f"{v:,.2f}")
+                    else:
+                        st.metric(label, str(v))
+
+            # Si hay más de 4, mostrar siguiente fila
+            if len(const_cols) > 4:
+                cols_ui2 = st.columns(min(len(const_cols) - 4, 4))
+                for i, col in enumerate(const_cols[4:8]):
+                    with cols_ui2[i]:
+                        v = df[col].iloc[0]
+                        label = col.replace('_', ' ').title()
+                        if isinstance(v, (int, float)) and abs(v) >= 100:
+                            st.metric(label, f"${v:,.2f}")
+                        else:
+                            st.metric(label, f"{v:,.2f}" if isinstance(v, (int, float)) else str(v))
+
+            st.markdown("---")
+            st.markdown("**📋 Detalle por registro**")
+            # Tabla solo con columnas variables
+            detail_cols = [c for c in df.columns if c not in const_cols]
+            display_df = df[detail_cols] if detail_cols else df
+        else:
+            display_df = df
+    else:
+        display_df = df
+
+    # Aplicar formato de moneda/porcentaje
+    display_num_cols = display_df.select_dtypes(include=['int64', 'float64', 'int32', 'float32']).columns
+    col_config = {}
+    for col in display_num_cols:
+        if any(kw in col.lower() for kw in ['total', 'monto', 'factur', 'venta', 'importe', 'saldo', 'mxn', 'compra', 'promedio', 'media', 'desviacion', 'minimo', 'maximo']):
+            col_config[col] = st.column_config.NumberColumn(format="$%.2f")
+        elif 'pct' in col.lower() or 'porcentaje' in col.lower() or '%' in col:
+            col_config[col] = st.column_config.NumberColumn(format="%.1f%%")
+
+    st.dataframe(display_df, use_container_width=True, hide_index=True, column_config=col_config)
+
+
 def _render_plotly_chart_and_save(fig, use_container_width=True):
     """Renderiza figura de Plotly y la guarda en session_state para exportación."""
     # Guardar en session_state para uso posterior (ej. PDF)
@@ -1642,7 +1718,8 @@ def _render_result_message(msg: dict, msg_idx: int = 0):
             _auto_chart(df, chart_type, question, chart_spec=chart_spec)
 
         with tab_table:
-            st.dataframe(df, use_container_width=True, hide_index=True)
+            # Separar columnas con valores constantes (estadísticos globales) del detalle
+            _render_smart_table(df)
 
         with tab_sql:
             st.code(msg.get("sql", ""), language="sql")
