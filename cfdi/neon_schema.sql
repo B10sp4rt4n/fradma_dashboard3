@@ -143,8 +143,29 @@ CREATE INDEX idx_conceptos_categoria ON cfdi_conceptos(categoria);
 
 
 -- =====================================================================
+-- =====================================================================
 -- TABLA: cfdi_pagos
 -- Complementos de pago (tracking de cobranza)
+-- 
+-- IMPORTANTE - CONCILIACIÓN DE DATOS:
+-- Esta tabla registra los PAGOS recibidos que se relacionan con facturas.
+-- Escenarios posibles durante la carga de datos:
+-- 
+-- 1. COMPLEMENTO HUÉRFANO (hay pago pero NO factura en BD):
+--    - cfdi_venta_uuid apunta a un UUID que no existe en cfdi_ventas
+--    - Causa: La factura aún no se ha cargado en la BD
+--    - Acción: NO incluir en análisis de cobranza (usar INNER JOIN)
+--    - Detectar con: LEFT JOIN cfdi_ventas WHERE cfdi_ventas.uuid_sat IS NULL
+--
+-- 2. FACTURA SIN COMPLEMENTO (hay factura pero NO pago registrado):
+--    - Factura existe pero no tiene cfdi_pagos relacionado
+--    - Causa A: Realmente está pendiente de cobro
+--    - Causa B: Ya se pagó pero el complemento no está cargado aún
+--    - Acción: Marcar como "Pendiente de conciliar" (no asumir impago)
+--    - Flag: estado_conciliacion en v_cartera_clientes
+--
+-- REGLA CRÍTICA: NUNCA sumar cfdi_ventas.total + cfdi_pagos.monto_pagado
+-- Son eventos distintos: factura = origen de venta, pago = cobranza recibida
 -- =====================================================================
 CREATE TABLE cfdi_pagos (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -297,17 +318,32 @@ CREATE TRIGGER update_clientes_master_updated_at BEFORE UPDATE ON clientes_maste
 -- VISTAS ÚTILES
 -- =====================================================================
 
--- Vista: Resumen de cartera por cliente (CxC)
+-- Vista: Resumen de cartera por cliente (CxC) con flags de conciliación
+-- IMPORTANTE: Esta vista maneja el caso donde la BD tiene datos incompletos:
+-- - Facturas sin complemento pueden estar realmente pendientes O ya pagadas sin complemento registrado
+-- - Complementos huérfanos (sin factura) se excluyen automáticamente con LEFT JOIN
 CREATE OR REPLACE VIEW v_cartera_clientes AS
 SELECT 
     v.empresa_id,
     v.receptor_rfc,
     v.receptor_nombre,
-    COUNT(*) as num_facturas,
-    SUM(v.total) as total_adeudado,
-    SUM(CASE WHEN p.monto_pagado IS NULL THEN v.total ELSE 0 END) as saldo_pendiente,
-    AVG(COALESCE(p.dias_credito, EXTRACT(DAY FROM NOW() - v.fecha_emision))) as dias_credito_promedio,
-    MAX(v.fecha_emision) as fecha_ultima_factura
+    COUNT(DISTINCT v.uuid_sat) AS num_facturas,
+    SUM(v.total * v.tipo_cambio) AS total_facturado,
+    COALESCE(SUM(p.monto_pagado), 0) AS total_cobrado,
+    SUM(v.total * v.tipo_cambio) - COALESCE(SUM(p.monto_pagado), 0) AS saldo_pendiente,
+    
+    -- Flags de conciliación
+    COUNT(p.uuid_complemento) AS facturas_con_complemento,
+    COUNT(DISTINCT v.uuid_sat) - COUNT(p.uuid_complemento) AS facturas_sin_conciliar,
+    CASE 
+        WHEN COUNT(p.uuid_complemento) = 0 THEN 'sin_complementos'
+        WHEN COUNT(p.uuid_complemento) < COUNT(DISTINCT v.uuid_sat) THEN 'conciliacion_parcial'
+        ELSE 'conciliado'
+    END AS estado_conciliacion,
+    
+    -- Métricas de tiempo
+    AVG(COALESCE(p.dias_credito, EXTRACT(DAY FROM NOW() - v.fecha_emision))) AS dias_credito_promedio,
+    MAX(v.fecha_emision) AS fecha_ultima_factura
 FROM cfdi_ventas v
 LEFT JOIN cfdi_pagos p ON v.uuid_sat = p.cfdi_venta_uuid
 WHERE v.metodo_pago = 'PPD' -- Pago en parcialidades o diferido

@@ -275,7 +275,170 @@ LIMIT 50;
 
 ---
 
-## 📊 Schema de Base de Datos
+## � Conciliación Factura-Complemento
+
+### ⚠️ Concepto Crítico: NO sumar Facturas + Complementos
+
+En el sistema CFDI mexicano:
+- **Factura (cfdi_ventas)** = Documento que registra la VENTA (monto a cobrar)
+- **Complemento de Pago (cfdi_pagos)** = Documento que registra el PAGO recibido
+
+**❌ ERROR COMÚN**: Sumar `cfdi_ventas.total + cfdi_pagos.monto_pagado` → duplica los montos  
+**✅ CORRECTO**: Son eventos distintos que se relacionan vía `cfdi_pagos.cfdi_venta_uuid → cfdi_ventas.uuid_sat`
+
+### Escenarios con Datos Incompletos
+
+Durante la carga inicial o cuando la BD está en construcción, pueden ocurrir:
+
+#### 1. **COMPLEMENTOS HUÉRFANOS** (hay pago pero NO factura)
+**Causa**: El complemento de pago llegó primero, pero su factura relacionada aún no se cargó en la BD.
+
+**Detección**:
+```sql
+-- Complementos que apuntan a facturas inexistentes
+SELECT 
+    p.uuid_complemento,
+    p.cfdi_venta_uuid AS uuid_factura_faltante,
+    p.fecha_pago,
+    p.monto_pagado
+FROM cfdi_pagos p
+LEFT JOIN cfdi_ventas v ON p.cfdi_venta_uuid = v.uuid_sat
+WHERE v.uuid_sat IS NULL;
+```
+
+**Acción**: 
+- ❌ **NO incluir estos complementos en análisis de cobranza** (datos no confiables)
+- ✅ Usar `INNER JOIN` en consultas de cobranza para excluirlos automáticamente
+- 🔧 Cargar las facturas faltantes en la BD
+
+#### 2. **FACTURAS SIN COMPLEMENTO** (hay factura pero NO pago)
+**Causa**: 
+- **Opción A**: Realmente está pendiente de cobro (legítimo)
+- **Opción B**: Ya se pagó pero el complemento no está generado/cargado aún
+
+**Detección**:
+```sql
+-- Facturas a crédito sin complemento registrado
+SELECT 
+    v.receptor_nombre AS cliente,
+    v.folio,
+    v.fecha_emision,
+    v.total AS monto_original,
+    CURRENT_DATE - v.fecha_emision::date AS dias_transcurridos,
+    CASE 
+        WHEN p.uuid_complemento IS NULL 
+        THEN 'PENDIENTE DE CONCILIAR - Puede estar pagado sin complemento cargado'
+        ELSE 'OK'
+    END AS estado
+FROM cfdi_ventas v
+LEFT JOIN cfdi_pagos p ON v.uuid_sat = p.cfdi_venta_uuid
+WHERE v.metodo_pago = 'PPD'  -- Pago en parcialidades/diferido
+  AND p.uuid_complemento IS NULL
+ORDER BY dias_transcurridos DESC;
+```
+
+**Acción**:
+- ⚠️ **NO asumir automáticamente que está impago**
+- ✅ Marcar como "Pendiente de conciliar" con flag de estado
+- 🔍 Revisar manualmente o cargar complementos faltantes
+
+### Reglas de Consultas Seguras
+
+Para evitar errores con datos incompletos:
+
+#### ✅ Para VENTAS TOTALES (solo facturas):
+```sql
+-- Correcto: Solo cfdi_ventas (fuente de verdad de facturación)
+SELECT SUM(total * tipo_cambio) AS total_facturado
+FROM cfdi_ventas
+WHERE fecha_emision >= '2025-01-01';
+```
+
+#### ✅ Para COBRANZA REAL (solo pagos válidos):
+```sql
+-- Correcto: INNER JOIN para excluir complementos huérfanos
+SELECT SUM(p.monto_pagado) AS total_cobrado
+FROM cfdi_pagos p
+INNER JOIN cfdi_ventas v ON p.cfdi_venta_uuid = v.uuid_sat
+WHERE p.fecha_pago >= '2025-01-01';
+```
+
+#### ✅ Para CARTERA (facturas con estado de conciliación):
+```sql
+-- Correcto: LEFT JOIN con flags de conciliación
+SELECT 
+    v.receptor_nombre AS cliente,
+    COUNT(DISTINCT v.uuid_sat) AS num_facturas,
+    SUM(v.total * v.tipo_cambio) AS total_facturado,
+    COALESCE(SUM(p.monto_pagado), 0) AS total_cobrado,
+    SUM(v.total * v.tipo_cambio) - COALESCE(SUM(p.monto_pagado), 0) AS saldo_pendiente,
+    
+    -- Flags de conciliación
+    COUNT(p.uuid_complemento) AS facturas_con_complemento,
+    COUNT(DISTINCT v.uuid_sat) - COUNT(p.uuid_complemento) AS facturas_sin_conciliar,
+    CASE 
+        WHEN COUNT(p.uuid_complemento) = 0 THEN 'Sin complementos'
+        WHEN COUNT(p.uuid_complemento) < COUNT(DISTINCT v.uuid_sat) THEN 'Conciliación parcial'
+        ELSE 'Conciliado'
+    END AS estado_conciliacion
+    
+FROM cfdi_ventas v
+LEFT JOIN cfdi_pagos p ON v.uuid_sat = p.cfdi_venta_uuid
+WHERE v.metodo_pago = 'PPD' 
+GROUP BY v.receptor_nombre
+HAVING SUM(v.total * v.tipo_cambio) - COALESCE(SUM(p.monto_pagado), 0) > 0
+ORDER BY saldo_pendiente DESC;
+```
+
+### Vista v_cartera_clientes (ya incluye conciliación)
+
+La vista `v_cartera_clientes` ya está preparada para manejar datos incompletos:
+
+```sql
+SELECT * FROM v_cartera_clientes
+WHERE empresa_id = 1
+ORDER BY saldo_pendiente DESC;
+
+-- Columnas incluidas:
+-- - facturas_con_complemento: Número de facturas que tienen pago registrado
+-- - facturas_sin_conciliar: Número de facturas sin complemento
+-- - estado_conciliacion: 'sin_complementos' | 'conciliacion_parcial' | 'conciliado'
+```
+
+### Auditoría de Integridad
+
+Para validar la calidad de los datos cargados:
+
+```sql
+-- Resumen de registros sin conciliar
+WITH huerfanos_pago AS (
+    SELECT 
+        COUNT(*) AS complementos_sin_factura,
+        COALESCE(SUM(monto_pagado), 0) AS monto_sin_factura
+    FROM cfdi_pagos p
+    LEFT JOIN cfdi_ventas v ON p.cfdi_venta_uuid = v.uuid_sat
+    WHERE v.uuid_sat IS NULL
+),
+facturas_sin_pago AS (
+    SELECT 
+        COUNT(*) AS facturas_sin_complemento,
+        COALESCE(SUM(total), 0) AS monto_sin_complemento
+    FROM cfdi_ventas v
+    LEFT JOIN cfdi_pagos p ON v.uuid_sat = p.cfdi_venta_uuid
+    WHERE v.metodo_pago = 'PPD' 
+      AND p.uuid_complemento IS NULL
+)
+SELECT 
+    hp.complementos_sin_factura,
+    ROUND(hp.monto_sin_factura, 2) AS monto_complementos_huerfanos,
+    fs.facturas_sin_complemento,
+    ROUND(fs.monto_sin_complemento, 2) AS monto_facturas_sin_conciliar
+FROM huerfanos_pago hp, facturas_sin_pago fs;
+```
+
+---
+
+## �📊 Schema de Base de Datos
 
 ### Tablas principales:
 

@@ -551,6 +551,40 @@ REGLAS AVANZADAS DE ANALYTICS:
   - "reporte CFO con graficos" → top clientes con su facturación (múltiples filas) 
   - "dame un reporte de ventas" → desglose diario o por cliente
   Usa GROUP BY con la dimensión más relevante (fecha/día, cliente, producto, concepto) para generar MÚLTIPLES filas graficables. Si no es claro, desglosar por receptor_nombre (cliente) con COUNT y SUM ordenado DESC.
+
+26. FACTURA vs COMPLEMENTO DE PAGO — **CRÍTICO ANTI-DUPLICACIÓN**: 
+  - cfdi_ventas = FACTURAS (tipo_comprobante='I') = monto a COBRAR (origen de la venta)
+  - cfdi_pagos = COMPLEMENTOS DE PAGO = pagos RECIBIDOS que se relacionan con facturas vía cfdi_pagos.cfdi_venta_uuid → cfdi_ventas.uuid_sat
+  - **NUNCA sumes facturas + complementos** → esto duplica los montos. Son EVENTOS DISTINTOS: uno registra la venta, el otro el pago.
+  - Para CARTERA (cuentas por cobrar): usa cfdi_ventas LEFT JOIN cfdi_pagos y calcula saldo_insoluto de cfdi_pagos o (total - COALESCE(monto_pagado, 0)).
+  - Para FACTURACIÓN total: suma SOLO cfdi_ventas.total (NO incluyas cfdi_pagos).
+  - Para COBRANZA total: suma SOLO cfdi_pagos.monto_pagado (NO incluyas cfdi_ventas).
+  - Para ANÁLISIS de flujo: separa en CTEs: WITH facturado AS (...cfdi_ventas...), cobrado AS (...cfdi_pagos...) SELECT ...
+  - El campo cfdi_pagos.saldo_insoluto indica lo que FALTA POR COBRAR de la factura relacionada.
+  - Facturas con metodo_pago='PPD' (pago diferido) requieren matching con cfdi_pagos para saber qué está pagado.
+
+27. CONCILIACIÓN DE DATOS INCOMPLETOS — **CRÍTICO PARA BASES DE DATOS PARCIALES**:
+  La base de datos puede estar en proceso de carga y NO tener todos los registros. Esto genera dos escenarios:
+  
+  **A) COMPLEMENTOS HUÉRFANOS** (hay pago pero NO factura):
+  - Si existe cfdi_pagos.cfdi_venta_uuid pero NO existe en cfdi_ventas.uuid_sat → complemento huérfano
+  - **NEVER incluir estos complementos en análisis de cobranza/ventas** → datos no confiables
+  - Query pattern: INNER JOIN en lugar de LEFT JOIN para excluirlos automáticamente
+  - Para detectarlos: SELECT p.* FROM cfdi_pagos p LEFT JOIN cfdi_ventas v ON p.cfdi_venta_uuid = v.uuid_sat WHERE v.uuid_sat IS NULL
+  
+  **B) FACTURAS SIN COMPLEMENTO** (hay factura pero NO pago):
+  - Si existe cfdi_ventas pero NO tiene cfdi_pagos relacionado → puede significar DOS cosas:
+    1. **Realmente está pendiente de cobro** (no se ha pagado)
+    2. **Ya se pagó pero el complemento no está cargado aún** en la BD
+  - **NO asumir que está 100% pendiente** → marcar como "Pendiente de conciliar"
+  - En reportes de cartera, agregar columna: tiene_complemento (BOOLEAN) para distinguir
+  - Query pattern: LEFT JOIN y validar si p.uuid_complemento IS NULL para marcar como no_conciliado
+  
+  **REGLAS APLICADAS**:
+  - Para VENTAS TOTALES: usa SOLO cfdi_ventas (la factura es la fuente de verdad)
+  - Para COBRANZA REAL: usa cfdi_pagos INNER JOIN cfdi_ventas (solo pagos con factura válida)
+  - Para CARTERA: usa cfdi_ventas LEFT JOIN cfdi_pagos con flag de conciliación
+  - Para AUDITORÍA: identifica huérfanos con LEFT JOIN ... WHERE IS NULL en ambas direcciones
 {empresa_filter}
 
 {SCHEMA_CONTEXT}
@@ -624,6 +658,21 @@ SQL: WITH totales AS (SELECT receptor_nombre AS cliente, SUM(total * tipo_cambio
 
 Pregunta: DSO y tasa de cobro
 SQL: WITH facturado AS (SELECT SUM(total * tipo_cambio) AS total_facturado, COUNT(*) AS n_facturas FROM cfdi_ventas WHERE fecha_emision >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '3 months'), cobrado AS (SELECT COALESCE(SUM(monto_pagado), 0) AS total_cobrado FROM cfdi_pagos WHERE fecha_pago >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '3 months'), pendiente AS (SELECT COALESCE(SUM(saldo_insoluto), 0) AS saldo_pendiente FROM cfdi_pagos WHERE saldo_insoluto > 0) SELECT ROUND(f.total_facturado, 2) AS facturado_3m, ROUND(c.total_cobrado, 2) AS cobrado_3m, ROUND(c.total_cobrado * 100.0 / NULLIF(f.total_facturado, 0), 2) AS tasa_cobro_pct, ROUND(p.saldo_pendiente, 2) AS saldo_pendiente, ROUND(p.saldo_pendiente / NULLIF(f.total_facturado / 90.0, 0), 1) AS dso_dias FROM facturado f, cobrado c, pendiente p LIMIT 1;
+
+Pregunta: Cartera de clientes con estado de conciliación
+SQL: SELECT v.receptor_nombre AS cliente, COUNT(DISTINCT v.uuid_sat) AS num_facturas, ROUND(SUM(v.total * v.tipo_cambio), 2) AS total_facturado, ROUND(COALESCE(SUM(p.monto_pagado), 0), 2) AS total_cobrado, ROUND(SUM(v.total * v.tipo_cambio) - COALESCE(SUM(p.monto_pagado), 0), 2) AS saldo_pendiente, COUNT(p.uuid_complemento) AS facturas_con_complemento, COUNT(DISTINCT v.uuid_sat) - COUNT(p.uuid_complemento) AS facturas_sin_conciliar, CASE WHEN COUNT(p.uuid_complemento) = 0 THEN 'Sin complementos' WHEN COUNT(p.uuid_complemento) < COUNT(DISTINCT v.uuid_sat) THEN 'Conciliación parcial' ELSE 'Conciliado' END AS estado_conciliacion FROM cfdi_ventas v LEFT JOIN cfdi_pagos p ON v.uuid_sat = p.cfdi_venta_uuid WHERE v.metodo_pago = 'PPD' GROUP BY v.receptor_nombre HAVING SUM(v.total * v.tipo_cambio) - COALESCE(SUM(p.monto_pagado), 0) > 0 ORDER BY saldo_pendiente DESC LIMIT {self.max_rows};
+
+Pregunta: Detectar complementos huérfanos (sin factura relacionada)
+SQL: SELECT p.uuid_complemento, p.fecha_pago, p.cfdi_venta_uuid AS uuid_factura_referida, ROUND(p.monto_pagado, 2) AS monto, 'COMPLEMENTO HUERFANO - Factura no encontrada en BD' AS alerta FROM cfdi_pagos p LEFT JOIN cfdi_ventas v ON p.cfdi_venta_uuid = v.uuid_sat WHERE v.uuid_sat IS NULL ORDER BY p.fecha_pago DESC LIMIT {self.max_rows};
+
+Pregunta: Facturas pendientes de conciliar (sin complemento)
+SQL: SELECT v.receptor_nombre AS cliente, v.folio, v.fecha_emision, ROUND(v.total, 2) AS monto_original, CURRENT_DATE - v.fecha_emision::date AS dias_transcurridos, CASE WHEN p.uuid_complemento IS NULL AND v.metodo_pago = 'PPD' THEN 'PENDIENTE DE CONCILIAR - Puede estar pagado sin complemento registrado' WHEN p.saldo_insoluto > 0 THEN 'PARCIALMENTE PAGADO' ELSE 'OK' END AS estado FROM cfdi_ventas v LEFT JOIN cfdi_pagos p ON v.uuid_sat = p.cfdi_venta_uuid WHERE v.metodo_pago = 'PPD' AND p.uuid_complemento IS NULL ORDER BY dias_transcurridos DESC LIMIT {self.max_rows};
+
+Pregunta: Cobranza real (solo pagos con factura válida)
+SQL: SELECT DATE_TRUNC('month', p.fecha_pago) AS mes, COUNT(DISTINCT p.uuid_complemento) AS num_complementos, COUNT(DISTINCT p.cfdi_venta_uuid) AS facturas_cobradas, ROUND(SUM(p.monto_pagado), 2) AS total_cobrado FROM cfdi_pagos p INNER JOIN cfdi_ventas v ON p.cfdi_venta_uuid = v.uuid_sat GROUP BY mes ORDER BY mes DESC LIMIT {self.max_rows};
+
+Pregunta: Auditoría de integridad factura-complemento
+SQL: WITH huerfanos_pago AS (SELECT COUNT(*) AS complementos_sin_factura, COALESCE(SUM(monto_pagado), 0) AS monto_sin_factura FROM cfdi_pagos p LEFT JOIN cfdi_ventas v ON p.cfdi_venta_uuid = v.uuid_sat WHERE v.uuid_sat IS NULL), facturas_sin_pago AS (SELECT COUNT(*) AS facturas_sin_complemento, COALESCE(SUM(total), 0) AS monto_sin_complemento FROM cfdi_ventas v LEFT JOIN cfdi_pagos p ON v.uuid_sat = p.cfdi_venta_uuid WHERE v.metodo_pago = 'PPD' AND p.uuid_complemento IS NULL), totales AS (SELECT COUNT(*) AS total_facturas FROM cfdi_ventas UNION ALL SELECT COUNT(*) FROM cfdi_pagos) SELECT ROUND(hp.monto_sin_factura, 2) AS monto_complementos_huerfanos, hp.complementos_sin_factura, ROUND(fs.monto_sin_complemento, 2) AS monto_facturas_sin_conciliar, fs.facturas_sin_complemento, ROUND((hp.complementos_sin_factura + fs.facturas_sin_complemento) * 100.0 / NULLIF((SELECT SUM(total_facturas) FROM totales), 0), 2) AS pct_registros_sin_conciliar FROM huerfanos_pago hp, facturas_sin_pago fs LIMIT {self.max_rows};
 
 Pregunta: ¿Cuáles clientes compran cada vez menos? (tendencia negativa)
 SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quarter', fecha_emision) AS trimestre, SUM(total * tipo_cambio) AS total_mxn FROM cfdi_ventas GROUP BY receptor_nombre, trimestre), con_tendencia AS (SELECT cliente, trimestre, total_mxn, LAG(total_mxn) OVER (PARTITION BY cliente ORDER BY trimestre) AS trimestre_anterior FROM por_trimestre) SELECT cliente, trimestre, ROUND(total_mxn, 2) AS ventas_actual, ROUND(trimestre_anterior, 2) AS ventas_anterior, ROUND((total_mxn - trimestre_anterior) * 100.0 / NULLIF(trimestre_anterior, 0), 2) AS cambio_pct FROM con_tendencia WHERE trimestre_anterior IS NOT NULL AND total_mxn < trimestre_anterior ORDER BY cambio_pct ASC LIMIT {self.max_rows};
