@@ -538,12 +538,18 @@ REGLAS ESTRICTAS:
 REGLAS AVANZADAS DE ANALYTICS:
 17. TIME INTELLIGENCE: Para comparaciones periodo a periodo usa LAG() OVER (ORDER BY periodo). Para crecimiento: ROUND((actual - anterior) * 100.0 / NULLIF(anterior, 0), 2) AS crecimiento_pct. Para acumulados usa SUM() OVER (ORDER BY mes ROWS UNBOUNDED PRECEDING). Para promedios móviles usa AVG() OVER (ORDER BY mes ROWS BETWEEN 2 PRECEDING AND CURRENT ROW).
 18. WINDOW FUNCTIONS: Usa ROW_NUMBER(), RANK(), DENSE_RANK() para rankings. Usa LAG()/LEAD() para comparar con periodo anterior/siguiente. Usa NTILE(4) para cuartiles de clientes. Usa SUM() OVER (PARTITION BY ... ORDER BY ...) para running totals por grupo.
+**CRÍTICO**: NUNCA combines GROUP BY con window functions en el mismo SELECT. Cuando necesites ambos, usa una CTE (WITH clause): primero agrupa los datos en el WITH, luego aplica window functions en el SELECT principal. Ejemplo: WITH datos_agregados AS (SELECT mes, SUM(total) AS total FROM tabla GROUP BY mes) SELECT mes, total, LAG(total) OVER (ORDER BY mes) FROM datos_agregados;
 19. ANÁLISIS ABC / PARETO: Para clasificar clientes A/B/C por facturación, calcula el % acumulado con SUM(total) OVER (ORDER BY total DESC) / SUM(total) OVER (). Clientes A = hasta 80% acumulado, B = 80-95%, C = resto. Usa CASE WHEN para asignar categoría.
 20. SEGMENTACIÓN RFM: Recency = dias desde última compra (CURRENT_DATE - MAX(fecha_emision)). Frequency = COUNT de facturas. Monetary = SUM(total). Usa NTILE(5) para puntuar cada dimensión 1-5. Score RFM = R*100 + F*10 + M.
 21. DETECCIÓN DE ANOMALÍAS: Para outliers usa Z-score: (valor - AVG(valor) OVER()) / NULLIF(STDDEV(valor) OVER(), 0). Valores con |z| > 2 son anomalías. También detecta facturas inusualmente altas/bajas respecto al promedio del cliente.
 22. CASH FLOW / COBRANZA: Para proyección usa cfdi_pagos. DSO (Days Sales Outstanding) = SUM(saldo_insoluto) / (SUM(total vendido) / dias_periodo). Tasa de cobro = SUM(monto_pagado) / SUM(total facturado). Antigüedad = CURRENT_DATE - fecha_emision para facturas PPD sin pago completo.
 23. CONCENTRACIÓN: Para riesgo de concentración calcula % que representa cada cliente del total. Índice Herfindahl = SUM(share^2). Si un cliente > 30% = alerta alta, > 15% = media.
 24. CRECIMIENTO: Para tasas de crecimiento MoM/YoY, compara periodos con LAG. CAGR = POWER(ultimo/primero, 1.0/n_periodos) - 1. Velocidad = pendiente de la regresión lineal.
+25. REPORTES CON GRÁFICAS: CRÍTICO — Cuando el usuario pide "reporte con graficos", "reporte ejecutivo", "reporte CFO", "dame un reporte", "informe ejecutivo" o cualquier variante de reporte/informe, NUNCA generes una sola fila agregada. SIEMPRE genera desglose con múltiples filas para que se puedan visualizar en gráficas. Por ejemplo:
+  - "reporte ejecutivo enero 2026" → desglose por DÍA o por CLIENTE (múltiples filas)
+  - "reporte CFO con graficos" → top clientes con su facturación (múltiples filas) 
+  - "dame un reporte de ventas" → desglose diario o por cliente
+  Usa GROUP BY con la dimensión más relevante (fecha/día, cliente, producto, concepto) para generar MÚLTIPLES filas graficables. Si no es claro, desglosar por receptor_nombre (cliente) con COUNT y SUM ordenado DESC.
 {empresa_filter}
 
 {SCHEMA_CONTEXT}
@@ -557,6 +563,12 @@ SQL: SELECT receptor_nombre AS cliente, COUNT(*) AS num_facturas, SUM(total * ti
 
 Pregunta: Ventas mensuales de este año
 SQL: SELECT DATE_TRUNC('month', fecha_emision) AS mes, COUNT(*) AS facturas, SUM(total * tipo_cambio) AS total_mxn FROM cfdi_ventas WHERE EXTRACT(YEAR FROM fecha_emision) = EXTRACT(YEAR FROM CURRENT_DATE) GROUP BY mes ORDER BY mes LIMIT {self.max_rows};
+
+Pregunta: Facturación en el tiempo / por mes / mensual / histórica
+SQL: SELECT DATE_TRUNC('month', fecha_emision) AS mes, COUNT(*) AS num_facturas, ROUND(SUM(total * tipo_cambio), 2) AS facturacion_total FROM cfdi_ventas GROUP BY mes ORDER BY mes LIMIT {self.max_rows};
+
+Pregunta: Muestra facturación en el tiempo a manera de gráfico de barras
+SQL: SELECT DATE_TRUNC('month', fecha_emision) AS mes, COUNT(*) AS num_facturas, ROUND(SUM(total * tipo_cambio), 2) AS facturacion_total FROM cfdi_ventas GROUP BY mes ORDER BY mes LIMIT {self.max_rows};
 
 Pregunta: ¿Cuál empresa compró menos en enero?
 SQL: SELECT receptor_nombre AS cliente, COUNT(*) AS num_facturas, SUM(total) AS total_comprado FROM cfdi_ventas WHERE EXTRACT(MONTH FROM fecha_emision) = 1 AND EXTRACT(YEAR FROM fecha_emision) = EXTRACT(YEAR FROM CURRENT_DATE) GROUP BY receptor_nombre ORDER BY total_comprado ASC LIMIT 1;
@@ -584,6 +596,9 @@ SQL: SELECT COUNT(*) AS total_conceptos, ROUND(AVG(valor_unitario), 2) AS precio
 
 Pregunta: Crecimiento de ventas mes a mes (MoM)
 SQL: WITH ventas_mes AS (SELECT DATE_TRUNC('month', fecha_emision) AS mes, SUM(total * tipo_cambio) AS total_mxn FROM cfdi_ventas GROUP BY mes ORDER BY mes) SELECT mes, ROUND(total_mxn, 2) AS ventas, ROUND(LAG(total_mxn) OVER (ORDER BY mes), 2) AS mes_anterior, ROUND((total_mxn - LAG(total_mxn) OVER (ORDER BY mes)) * 100.0 / NULLIF(LAG(total_mxn) OVER (ORDER BY mes), 0), 2) AS crecimiento_pct FROM ventas_mes LIMIT {self.max_rows};
+
+Pregunta: Reporte ejecutivo mensual con todas las estadísticas y crecimiento
+SQL: WITH ventas_mes AS (SELECT DATE_TRUNC('month', fecha_emision) AS mes, COUNT(*) AS num_facturas, ROUND(SUM(total * tipo_cambio), 2) AS facturacion_total, ROUND(AVG(total * tipo_cambio), 2) AS promedio_factura, ROUND(STDDEV(total * tipo_cambio), 2) AS desviacion_estandar, ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY total * tipo_cambio)::numeric, 2) AS mediana_factura FROM cfdi_ventas GROUP BY mes ORDER BY mes) SELECT mes, num_facturas, facturacion_total, promedio_factura, desviacion_estandar, mediana_factura, ROUND(SUM(facturacion_total) OVER (ORDER BY mes ROWS UNBOUNDED PRECEDING), 2) AS acumulado_ventas, ROUND((facturacion_total - LAG(facturacion_total) OVER (ORDER BY mes)) * 100.0 / NULLIF(LAG(facturacion_total) OVER (ORDER BY mes), 0), 2) AS crecimiento_mensual_pct FROM ventas_mes LIMIT {self.max_rows};
 
 Pregunta: Ventas acumuladas por mes este año
 SQL: SELECT DATE_TRUNC('month', fecha_emision) AS mes, SUM(total * tipo_cambio) AS ventas_mes, SUM(SUM(total * tipo_cambio)) OVER (ORDER BY DATE_TRUNC('month', fecha_emision) ROWS UNBOUNDED PRECEDING) AS acumulado FROM cfdi_ventas WHERE EXTRACT(YEAR FROM fecha_emision) = EXTRACT(YEAR FROM CURRENT_DATE) GROUP BY mes ORDER BY mes LIMIT {self.max_rows};
@@ -642,9 +657,14 @@ SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quart
         if len(sql) > MAX_SQL_LENGTH:
             return False, f"Query excede el límite de {MAX_SQL_LENGTH} caracteres"
 
-        # Debe empezar con SELECT (case-insensitive)
-        if not re.match(r'^\s*SELECT\b', sql, re.IGNORECASE):
+        # Debe empezar con SELECT o WITH (CTEs) (case-insensitive)
+        if not re.match(r'^\s*(SELECT|WITH)\b', sql, re.IGNORECASE):
             return False, "Solo se permiten consultas SELECT"
+        
+        # Si empieza con WITH, verificar que contenga SELECT y no sea un CTE malicioso
+        if re.match(r'^\s*WITH\b', sql, re.IGNORECASE):
+            if not re.search(r'\bSELECT\b', sql, re.IGNORECASE):
+                return False, "Las consultas WITH deben contener SELECT"
 
         # Check patrones prohibidos
         for pattern in FORBIDDEN_PATTERNS:
@@ -661,14 +681,21 @@ SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quart
         # Excluir FROM dentro de EXTRACT(...FROM...) y DATE_TRUNC
         # Primero, remover contenido de funciones EXTRACT para evitar falsos positivos
         sql_cleaned = re.sub(r'EXTRACT\s*\([^)]+\)', '', sql, flags=re.IGNORECASE)
+        
+        # Extraer nombres de CTEs para no rechazarlos como tablas no permitidas
+        cte_names = set(
+            name.lower() for name in re.findall(r'\b(\w+)\s+AS\s*\(', sql_cleaned, re.IGNORECASE)
+        )
+        
         tables_in_query = re.findall(
             r'\bFROM\s+(\w+)|\bJOIN\s+(\w+)',
             sql_cleaned,
             re.IGNORECASE
         )
+        allowed = set(ALLOWED_TABLES) | cte_names
         for match_groups in tables_in_query:
             for table in match_groups:
-                if table and table.lower() not in ALLOWED_TABLES:
+                if table and table.lower() not in allowed:
                     return False, f"Tabla no permitida: {table}"
 
         return True, "OK"
@@ -791,15 +818,43 @@ REGLAS DE FORMATO (cumplir TODAS de forma estricta):
 AL FINAL, genera una especificación de gráfica en formato JSON en una sola línea.
 La línea DEBE comenzar exactamente con CHART_SPEC: seguido del JSON.
 
+**OBLIGATORIO**: SIEMPRE genera un CHART_SPEC. NUNCA omitas esta línea. Si no estás seguro del tipo, usa "bar" o "table", pero SIEMPRE incluye CHART_SPEC.
+
+**REGLA ABSOLUTA PARA GRÁFICOS CIRCULARES:**
+- Usuario menciona "pay", "pastel", "pie" → **type="pie"** (100% de las veces)
+- Usuario menciona "dona", "donut" → **type="donut"** (100% de las veces)
+- NO uses "table" ni "bar" cuando el usuario pide explícitamente un gráfico circular
+
+**EJEMPLOS OBLIGATORIOS DE DETECCIÓN (COPIAR EXACTAMENTE):**
+
+Pregunta: "dame un grafico de pay"
+→ CHART_SPEC: {{"type": "pie", "x": "[columna_categoria]", "y": "[columna_valor]", "title": "Distribución"}}
+
+Pregunta: "dame un grafico de dona"
+→ CHART_SPEC: {{"type": "donut", "x": "[columna_categoria]", "y": "[columna_valor]", "title": "Distribución"}}
+
+Pregunta: "muestra las ventas por cliente en dona"
+→ CHART_SPEC: {{"type": "donut", "x": "cliente", "y": "ventas", "title": "Ventas por cliente"}}
+
+Pregunta: "grafico de pastel de formas de pago"
+→ CHART_SPEC: {{"type": "pie", "x": "forma_pago", "y": "total", "title": "Formas de pago"}}
+
+Pregunta: "distribución de facturación por producto"
+→ CHART_SPEC: {{"type": "donut", "x": "producto", "y": "facturacion", "title": "Distribución de facturación por producto"}}
+
+Pregunta: "ventas por mes" (CON tiempo)
+→ CHART_SPEC: {{"type": "bar", "x": "mes", "y": "ventas", "title": "Ventas por mes"}}
+
 Tipos de gráfica disponibles:
-- bar: barras verticales (ranking, comparaciones)
+- bar: barras verticales (IDEAL para series temporales: mes a mes, año a año, evolución, tendencias)
 - hbar: barras horizontales (ranking con nombres largos)
+- pareto: gráfico de Pareto (barras descendentes + línea de % acumulado superpuesta, IDEAL para análisis 80/20, ABC, clasificación de clientes)
+- line: línea temporal (alternativa para tendencias suaves)
+- area: área rellena (tendencias acumulativas)
 - stacked_bar: barras apiladas (composición por categoría)
 - grouped_bar: barras agrupadas (comparar grupos lado a lado)
-- line: línea temporal (tendencias, evolución)
-- area: área rellena (tendencias acumulativas)
-- pie: pastel (distribución porcentual, max 8 categorías)
-- donut: dona (como pie pero más moderno)
+- **donut: dona/donut (PRIORITARIO para distribuciones, proporciones, composiciones, % por categoría - MÁS MODERNO que pie)**
+- pie: pastel (distribución porcentual, max 8 categorías - usar solo si usuario especifica "pie" o "pastel")
 - scatter: dispersión (correlación entre 2 valores)
 - treemap: mapa de árbol (jerarquías, proporciones)
 - funnel: embudo (procesos secuenciales)
@@ -812,7 +867,81 @@ Tipos de gráfica disponibles:
 - heatmap: mapa de calor (2 dimensiones categóricas + valor)
 - table: tabla con formato (cuando no aplica gráfica)
 
+REGLAS PARA SELECCIONAR TIPO DE GRÁFICA (ORDEN DE PRIORIDAD):
+
+**PRIORIDAD 1 - DETECCIÓN EXPLÍCITA DEL USUARIO:**
+- Si el usuario dice "dona", "donut", "gráfico de dona", "en dona", "tipo dona", "como dona", "hazlo dona" → **SIEMPRE type="donut"** (NO uses "bar" ni "pie")
+- Si el usuario dice "pay", "pastel", "pie chart", "gráfico de pastel" → **type="pie"**
+- Si el usuario dice "pareto", "80/20", "ABC", "análisis ABC" → **type="pareto"**
+- Si el usuario dice "barras", "bar chart", "gráfico de barras" → **type="bar"** o **type="hbar"**
+
+**PRIORIDAD 2 - TIPO DE DATOS:**
+- Si es distribución/proporción/composición SIN temporalidad (ej: "ventas por cliente", "distribución por producto", "proporción de conceptos") → **type="donut"**
+- Si la consulta tiene fechas/periodos (mes, trimestre, año) en el eje X → usa "bar" o "line" (preferir bar para datos mensuales/trimestrales)
+- Para "facturación en el tiempo", "ventas por mes", "evolución", "histórico" → usa "bar" con x=periodo, y=monto
+- Si hay columna DATE, TIMESTAMP o con nombre mes/periodo/fecha → es temporal, usa "bar" o "line"
+- Para rankings de nombres largos (clientes, productos) → usa "hbar" (PERO si el usuario pidió vertical, usa "bar" con orientation: "v")
+
+**IMPORTANTE**: 
+- Distribuciones categóricas (clientes, productos, conceptos) sin tiempo → **donut**
+- Evoluciones temporales (meses, años) → **bar** o **line**
+- Rankings con nombres largos → **hbar**
+
+REGLAS PARA ORIENTACIÓN (CUANDO EL USUARIO LA ESPECIFICA):
+- **CRÍTICO**: Si el usuario dice "vertical", "verticales", "verticalmente", "barras verticales", "de forma vertical", "en vertical", "hacia arriba" → usa type="bar" (NO "hbar") y **OBLIGATORIAMENTE** incluye "orientation": "v" en el CHART_SPEC
+- Si el usuario dice "horizontal", "horizontales", "horizontalmente", "barras horizontales", "de izquierda a derecha" → puedes usar type="hbar" O type="bar" con "orientation": "h" en el CHART_SPEC
+- Si el usuario NO especifica orientación → NO incluyas el campo "orientation" (se decidirá automáticamente)
+- **IMPORTANTE**: Si el usuario especifica "vertical" o "verticales", NUNCA uses type="hbar", usa type="bar" con orientation="v"
+- Series temporales SIEMPRE se quedan verticales por defecto (no agregues orientation a menos que el usuario lo pida explícitamente)
+
 PARA ESTADÍSTICAS: Cuando la consulta devuelve media, mediana, desviación estándar, percentiles, usa stats_summary. Cuando devuelve datos por grupo con estadísticas (ej. promedio por cliente), también usa stats_summary.
+
+**REPORTES DE AUDITORÍA Y ANÁLISIS TEMPORAL:**
+- Si el usuario pide "reporte", "auditoría", "análisis por día/periodo", "resumen diario/mensual"
+- Y la consulta devuelve datos por fecha/día/periodo con métricas (totales, promedios, counts)
+- → Usa **type="line"** para series temporales o **type="bar"** para comparaciones periódicas
+- El eje X debe ser la columna temporal (dia, fecha, periodo, mes)
+- El eje Y debe ser la métrica principal (total_mxn, num_facturas, promedio)
+- **IMPORTANTE**: Para reportes de auditoría con múltiples métricas estadísticas (promedio, desviación, percentiles), genera DOS gráficas:
+  1. CHART_SPEC principal con type="line" para la serie temporal del total o métrica principal
+  2. Menciona en interpretación que hay estadísticas detalladas disponibles en la tabla
+
+DETECCIÓN DE CONSULTAS TEMPORALES:
+- Si hay columna "mes", "periodo", "fecha", "dia", "trimestre", "año" o tipo DATE/TIMESTAMP → es serie temporal
+- Para series temporales SIEMPRE usa type="bar" o type="line" (preferir line para auditorías y análisis de tendencias)
+- El eje X debe ser la columna temporal, el eje Y el valor numérico (facturación, ventas, count, etc.)
+
+PALABRAS CLAVE QUE INDICAN GRÁFICO DE BARRAS:
+- Usuario dice: "gráfico de barras", "bar chart", "a manera de barras", "en barras", "muestra en barras"
+- Usuario dice: "facturación en el tiempo", "ventas por mes", "histórico", "evolución"
+- → En todos estos casos usa type="bar"
+
+PALABRAS CLAVE QUE INDICAN GRÁFICO PARETO:
+- Usuario dice: "pareto", "80/20", "ABC", "clasificación ABC", "análisis ABC", "curva de pareto"
+- → En todos estos casos usa type="pareto"
+- El eje X debe ser la columna categórica (ej: cliente, producto)
+- El eje Y debe ser el valor numérico (ej: total_mxn, facturación)
+- Si hay columna de % acumulado (pct_acumulado), se usará automáticamente
+- Si hay columna de clasificación ABC (clasificacion_abc), se coloreará por categoría
+
+PALABRAS CLAVE QUE INDICAN GRÁFICO DE DONA (DONUT) - MÁXIMA PRIORIDAD:
+- Usuario dice: "dona", "donut", "gráfico de dona", "gráfica de dona", "en dona", "tipo dona", "como dona", "hazlo dona", "hazlo en dona"
+- Usuario dice: "gráfico circular con agujero", "gráfico anular", "ring chart"
+- Usuario pregunta por distribución/proporción categórica SIN tiempo: "distribución por cliente", "proporción por producto", "ventas por concepto"
+- → En TODOS estos casos usa **type="donut"** (NUNCA uses "bar" ni "pie")
+- El campo x (names) debe ser la columna categórica (ej: cliente, producto, concepto)
+- El campo y (values) debe ser el valor numérico (ej: total_mxn, cantidad, porcentaje)
+- Máximo 15 categorías (se limita automáticamente en el código)
+- **CRÍTICO**: SIEMPRE que el usuario mencione "dona" o "donut" en CUALQUIER parte de su pregunta, usa type="donut" (NO "pie", NO "bar", NO "hbar")
+
+PALABRAS CLAVE QUE INDICAN GRÁFICO DE PAY/PASTEL (PIE) - ALTA PRIORIDAD:
+- Usuario dice: "pay", "pastel", "gráfico de pay", "gráfica de pastel", "pie chart", "en pastel", "tipo pastel", "grafico pay", "de pay"
+- Usuario dice: "gráfico circular", "gráfico de torta", "torta"
+- → En TODOS estos casos usa **type="pie"** (NO "table", NO "bar")
+- El campo x (names) debe ser la columna categórica
+- El campo y (values) debe ser el valor numérico
+- Máximo 15 categorías
+- **CRÍTICO**: Si el usuario menciona "pay", "pastel" o "pie" en su pregunta, SIEMPRE genera CHART_SPEC con type="pie"
 
 Campos del JSON:
 - type: tipo de gráfica (obligatorio)
@@ -822,11 +951,57 @@ Campos del JSON:
 - title: título descriptivo corto en español (obligatorio)
 - sort: "asc" o "desc" para ordenar datos (opcional)
 - top_n: número máximo de elementos a mostrar (opcional, default 30)
+- orientation: "h" o "horizontal" para barras horizontales, "v" o "vertical" para barras verticales (opcional, solo para bar/stacked_bar/grouped_bar; si no se especifica, se decide automáticamente)
 
 EJEMPLO de línea final:
 CHART_SPEC: {{"type": "hbar", "x": "cliente", "y": "total_mxn", "title": "Top clientes por facturación", "sort": "desc", "top_n": 10}}
 
-Si el usuario pidió explícitamente un tipo de gráfica (ej: "muéstrame un pie chart", "hazme una gráfica de barras"), USA ESE TIPO.
+EJEMPLO con orientación vertical especificada:
+CHART_SPEC: {{"type": "bar", "x": "producto", "y": "ventas", "title": "Ventas por producto", "orientation": "v", "sort": "desc", "top_n": 15}}
+
+EJEMPLO con gráfico de dona (distribución):
+CHART_SPEC: {{"type": "donut", "x": "concepto", "y": "total_mxn", "title": "Distribución de ventas por concepto", "sort": "desc", "top_n": 10}}
+
+EJEMPLO con gráfico de pastel:
+CHART_SPEC: {{"type": "pie", "x": "categoria", "y": "cantidad", "title": "Composición de productos", "top_n": 8}}
+
+EJEMPLOS DE CÓMO DETECTAR ORIENTACIÓN EN LA PREGUNTA DEL USUARIO:
+- "muestra esto vertical" → type="bar", **incluye "orientation": "v"**
+- "hazlo vertical" → type="bar", **incluye "orientation": "v"**
+- "en vertical" → type="bar", **incluye "orientation": "v"**
+- "barras verticales" → type="bar", **incluye "orientation": "v"**
+- "de forma vertical" → type="bar", **incluye "orientation": "v"**
+- "verticales" (cualquier mención) → type="bar", **incluye "orientation": "v"**
+- "hacia arriba" → type="bar", **incluye "orientation": "v"**
+- "horizontal" → type puede ser "bar" u "hbar", orientation="h"
+- "barras horizontales" → type="hbar" o type="bar" con orientation="h"
+
+**IMPORTANTE**: Busca activamente las palabras "vertical", "verticales", "verticalmente" en la pregunta del usuario. Si las encuentras, ES OBLIGATORIO incluir "orientation": "v" en el CHART_SPEC.
+
+EJEMPLOS DE CÓMO DETECTAR TIPO DE GRÁFICO EN LA PREGUNTA DEL USUARIO:
+
+**GRÁFICOS CIRCULARES (PRIORIDAD MÁXIMA):**
+- "pay", "de pay", "grafico pay", "gráfico de pay", "dame un pay", "hazme un pay" → **type="pie"** (SIEMPRE)
+- "pastel", "pie chart", "gráfico de pastel", "en pastel", "tipo pastel" → **type="pie"** (SIEMPRE)
+- "dona", "donut", "gráfico de dona", "en dona", "hazlo en dona", "tipo dona" → **type="donut"** (SIEMPRE)
+- **NUNCA uses "table" ni "bar" cuando el usuario pide explícitamente pay/pastel/pie/dona/donut**
+
+**OTROS GRÁFICOS:**
+- "distribución de ventas por cliente", "proporción por producto" (sin tiempo ni mención de tipo) → **type="donut"**
+- "ventas por mes", "facturación en el tiempo", "evolución mensual" (CON tiempo) → **type="bar"** (NO donut)
+- "barras", "bar chart", "gráfico de barras" → **type="bar"** o **type="hbar"**
+- "pareto", "80/20", "análisis ABC" → **type="pareto"**
+- "línea", "line chart", "evolución temporal" → **type="line"**
+
+**REGLA DE ORO**: 
+- Usuario menciona "dona"/"donut" → **type="donut"** SIEMPRE
+- Distribución categórica sin tiempo → **type="donut"**
+- Evolución temporal (meses/años) → **type="bar"** o **type="line"**
+
+**CRÍTICO**: Si el usuario menciona "dona" o "donut" en cualquier parte de su pregunta, SIEMPRE usa type="donut". No uses "pie", "bar" ni "hbar" en estos casos.
+
+Si el usuario pidió explícitamente un tipo de gráfica (ej: "muéstrame un pie chart", "hazme una gráfica de barras", "hazlo en dona"), USA ESE TIPO.
+Si el usuario pidió explícitamente una orientación (ej: "vertical", "horizontal", "hazlo vertical", "en vertical"), incluye el campo "orientation" y ajusta el "type" según las reglas.
 """
 
         try:
@@ -840,12 +1015,17 @@ Si el usuario pidió explícitamente un tipo de gráfica (ej: "muéstrame un pie
                                    "FORMATO OBLIGATORIO: usa **negrita** (doble asterisco) para "
                                    "cifras y montos (ej: **$41,991.30**, **17 facturas**). "
                                    "NUNCA uses backticks (`) para resaltar texto o valores. "
-                                   "Usa _cursiva_ para énfasis en frases."
+                                   "Usa _cursiva_ para énfasis en frases. "
+                                   "CRÍTICO PARA CHART_SPEC: "
+                                   "- Si usuario dice 'pay', 'pastel', 'pie', 'gráfico de pay' → type='pie' "
+                                   "- Si usuario dice 'dona', 'donut', 'gráfico de dona' → type='donut' "
+                                   "- SIEMPRE genera CHART_SPEC (nunca lo omitas) "
+                                   "- Formato: CHART_SPEC: {{\"type\": \"pie\", \"x\": \"columna\", \"y\": \"valor\", \"title\": \"Título\"}}"
                     },
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.3,
-                max_tokens=500,
+                max_tokens=700,
             )
 
             text = response.choices[0].message.content.strip()
@@ -858,15 +1038,236 @@ Si el usuario pidió explícitamente un tipo de gráfica (ej: "muéstrame un pie
                 try:
                     chart_spec = json.loads(spec_match.group(1))
                     chart_type = chart_spec.get("type", "table")
+                    logger.info(f"📋 CHART_SPEC generado por IA: {chart_spec}")
                 except (json.JSONDecodeError, ValueError):
                     chart_type = "table"
                 text = re.sub(r'\n?CHART_SPEC:\s*\{.*\}', '', text).strip()
             else:
-                # Fallback: buscar CHART_TYPE legacy
-                chart_match = re.search(r'CHART_TYPE:\s*(\w+)', text)
-                if chart_match:
-                    chart_type = chart_match.group(1).lower()
+                # Log cuando no se encuentra CHART_SPEC
+                logger.warning(f"⚠️ No se encontró CHART_SPEC en la respuesta de la IA. Pregunta: {question}")
+                
+                # Fallback inteligente: detectar tipo de gráfico por palabras clave en la pregunta
+                q_lower = question.lower()
+                if any(word in q_lower for word in ['pay', 'pastel', 'pie chart', 'gráfico de pay', 'grafico pay']):
+                    chart_type = "pie"
+                    logger.info(f"🔄 Fallback: Detectado 'pie' por palabras clave en pregunta")
+                elif any(word in q_lower for word in ['dona', 'donut', 'gráfico de dona', 'grafico dona']):
+                    chart_type = "donut"
+                    logger.info(f"🔄 Fallback: Detectado 'donut' por palabras clave en pregunta")
+                else:
+                    # Fallback: buscar CHART_TYPE legacy
+                    chart_match = re.search(r'CHART_TYPE:\s*(\w+)', text)
+                    if chart_match:
+                        chart_type = chart_match.group(1).lower()
                     text = re.sub(r'\n?CHART_TYPE:\s*\w+', '', text).strip()
+
+            # --- POST-VALIDACIÓN: Detectar intención explícita del usuario ---
+            question_lower = question.lower()
+            
+            # 0. Detectar orientación explícita del usuario
+            vertical_keywords = ['vertical', 'verticales', 'verticalmente', 'barras verticales', 
+                               'de forma vertical', 'en vertical', 'hacia arriba']
+            horizontal_keywords = ['horizontal', 'horizontales', 'horizontalmente', 'barras horizontales',
+                                  'de forma horizontal', 'en horizontal']
+            
+            user_wants_vertical = any(kw in question_lower for kw in vertical_keywords)
+            user_wants_horizontal = any(kw in question_lower for kw in horizontal_keywords)
+            
+            if user_wants_vertical:
+                logger.info(f"🔍 Detectado pedido de orientación VERTICAL en pregunta: {question}")
+                # Forzar type="bar" y orientation="v"
+                chart_type = "bar"
+                if chart_spec and "type" in chart_spec:
+                    chart_spec["type"] = "bar"
+                if chart_spec:
+                    chart_spec["orientation"] = "v"
+                else:
+                    chart_spec = {"type": "bar", "orientation": "v"}
+                logger.info(f"✅ Forzando orientation='v' en chart_spec: {chart_spec}")
+            elif user_wants_horizontal:
+                logger.info(f"🔍 Detectado pedido de orientación HORIZONTAL en pregunta: {question}")
+                if chart_spec:
+                    chart_spec["orientation"] = "h"
+            
+            # 1. Usuario pidió explícitamente gráfico de barras
+            bar_keywords = ['gráfico de barras', 'grafico de barras', 'bar chart', 
+                           'a manera de barras', 'en barras', 'muestra en barras',
+                           'hazme un gráfico de barras', 'mostrar en barras']
+            
+            # 1a. Detectar intención explícita de PIE/DONUT (MÁXIMA PRIORIDAD)
+            pie_keywords = ['pay', 'pastel', 'pie chart', 'gráfico de pay', 'grafico de pay',
+                           'gráfica de pay', 'de pay', 'tipo pay', 'en pastel', 
+                           'gráfico de pastel', 'grafico de pastel']
+            donut_keywords = ['dona', 'donut', 'gráfico de dona', 'grafico de dona',
+                             'gráfica de dona', 'tipo dona', 'en dona', 'hazlo dona',
+                             'como dona']
+            
+            user_wants_pie = any(kw in question_lower for kw in pie_keywords)
+            user_wants_donut = any(kw in question_lower for kw in donut_keywords)
+            
+            if user_wants_pie:
+                logger.info(f"🔍 Detectado pedido de PIE explícito en pregunta: {question}")
+                chart_type = "pie"
+                # Auto-detectar columnas si no están especificadas
+                if not chart_spec or "x" not in chart_spec:
+                    cat_cols = df.select_dtypes(include=['object']).columns.tolist()
+                    num_cols = df.select_dtypes(include=['int64', 'float64', 'int32', 'float32']).columns.tolist()
+                    chart_spec = {
+                        "type": "pie",
+                        "x": cat_cols[0] if cat_cols else df.columns[0],
+                        "y": num_cols[0] if num_cols else df.columns[-1],
+                        "title": "Distribución"
+                    }
+                else:
+                    chart_spec["type"] = "pie"
+                logger.info(f"✅ Forzando type='pie' en chart_spec: {chart_spec}")
+                    
+            elif user_wants_donut:
+                logger.info(f"🔍 Detectado pedido de DONUT explícito en pregunta: {question}")
+                chart_type = "donut"
+                # Auto-detectar columnas si no están especificadas
+                if not chart_spec or "x" not in chart_spec:
+                    cat_cols = df.select_dtypes(include=['object']).columns.tolist()
+                    num_cols = df.select_dtypes(include=['int64', 'float64', 'int32', 'float32']).columns.tolist()
+                    chart_spec = {
+                        "type": "donut",
+                        "x": cat_cols[0] if cat_cols else df.columns[0],
+                        "y": num_cols[0] if num_cols else df.columns[-1],
+                        "title": "Distribución"
+                    }
+                else:
+                    chart_spec["type"] = "donut"
+                logger.info(f"✅ Forzando type='donut' en chart_spec: {chart_spec}")
+            
+            # 1b. Detectar intención de Pareto/ABC
+            pareto_keywords = ['pareto', '80/20', 'clasificación abc', 'clasificacion abc',
+                              'análisis abc', 'analisis abc', 'curva de pareto',
+                              'abc de clientes', 'abc de productos', 'regla 80']
+            user_wants_pareto = any(kw in question_lower for kw in pareto_keywords)
+            
+            if user_wants_pareto:
+                logger.info(f"🔍 Detectado pedido de PARETO en pregunta: {question}")
+                chart_type = "pareto"
+                if chart_spec:
+                    chart_spec["type"] = "pareto"
+                else:
+                    chart_spec = {"type": "pareto"}
+            
+            # 1c. Detectar reportes de auditoría/análisis temporal y reportes ejecutivos
+            report_keywords = ['reporte', 'report', 'auditoría', 'auditoria', 'análisis por día', 
+                              'analisis por dia', 'resumen diario', 'resumen mensual',
+                              'análisis temporal', 'evolución', 'tendencia',
+                              'reporte ejecutivo', 'report ejecutivo', 'executive report',
+                              'dame un reporte', 'genera un reporte', 'muestra un reporte',
+                              'reporte de', 'informe de', 'informe ejecutivo']
+            temporal_cols = [col for col in df.columns if any(
+                time_word in str(col).lower() 
+                for time_word in ['dia', 'fecha', 'date', 'mes', 'periodo', 'trimestre', 'año', 'year']
+            )]
+            cat_cols = df.select_dtypes(include=['object']).columns.tolist()
+            num_cols = df.select_dtypes(include=['int64', 'float64', 'int32', 'float32']).columns.tolist()
+            
+            user_wants_report = any(kw in question_lower for kw in report_keywords)
+            has_temporal_data = len(temporal_cols) > 0 and len(num_cols) > 0
+            has_categorical_data = len(cat_cols) > 0 and len(num_cols) > 0
+            
+            # Si pide reporte y NO se generó gráfica automáticamente
+            if user_wants_report and chart_type in ("table", "stats_summary"):
+                if has_temporal_data:
+                    # Reporte temporal → gráfica de línea/barras
+                    logger.info(f"🔍 Detectado REPORTE temporal en pregunta: {question}")
+                    
+                    # Encontrar columna de valor principal
+                    value_col = None
+                    for col in num_cols:
+                        if any(kw in col.lower() for kw in ['total', 'monto', 'facturacion', 'importe', 'suma', 'ventas']):
+                            value_col = col
+                            break
+                    if not value_col:
+                        value_col = num_cols[0]
+                    
+                    chart_type = "line"
+                    chart_spec = {
+                        "type": "line",
+                        "x": temporal_cols[0],
+                        "y": value_col,
+                        "title": f"Evolución de {value_col.replace('_', ' ').title()}",
+                    }
+                    logger.info(f"✅ Generando gráfica temporal para reporte: {chart_spec}")
+                    
+                elif has_categorical_data and len(df) > 1:
+                    # Reporte categórico → gráfica de barras/donut
+                    logger.info(f"🔍 Detectado REPORTE categórico en pregunta: {question}")
+                    
+                    # Decidir entre bar/hbar/donut según cantidad de filas
+                    n_rows = len(df)
+                    x_col = cat_cols[0]
+                    
+                    # Encontrar columna de valor
+                    value_col = None
+                    for col in num_cols:
+                        if any(kw in col.lower() for kw in ['total', 'monto', 'facturacion', 'importe', 'suma', 'ventas']):
+                            value_col = col
+                            break
+                    if not value_col:
+                        value_col = num_cols[0]
+                    
+                    # Si son pocos elementos (≤8), usar donut; si son más, usar hbar
+                    if n_rows <= 8:
+                        chart_type = "donut"
+                        chart_spec = {
+                            "type": "donut",
+                            "x": x_col,
+                            "y": value_col,
+                            "title": f"Distribución por {x_col.replace('_', ' ').title()}",
+                            "sort": "desc"
+                        }
+                    else:
+                        chart_type = "hbar"
+                        chart_spec = {
+                            "type": "hbar",
+                            "x": x_col,
+                            "y": value_col,
+                            "title": f"Ranking por {x_col.replace('_', ' ').title()}",
+                            "sort": "desc",
+                            "top_n": 15
+                        }
+                    logger.info(f"✅ Generando gráfica categórica para reporte: {chart_spec}")
+            
+            elif any(kw in question_lower for kw in bar_keywords):
+                chart_type = "bar"
+                if "type" in chart_spec:
+                    chart_spec["type"] = "bar"
+            
+            # 2. Detectar consultas temporales (facturación en el tiempo, por mes, etc.)
+            temporal_keywords = ['en el tiempo', 'por mes', 'mensual', 'mensualmente',
+                                'históric', 'evolución', 'tendencia', 'a lo largo',
+                                'por periodo', 'por trimestre', 'por año', 'temporal']
+            has_temporal_intent = any(kw in question_lower for kw in temporal_keywords)
+            
+            # Detectar si el dataframe tiene columnas temporales
+            temporal_cols = [col for col in df.columns if any(
+                time_word in str(col).lower() 
+                for time_word in ['mes', 'fecha', 'periodo', 'trimestre', 'año', 'year', 'month', 'date', 'time']
+            )]
+            has_temporal_cols = len(temporal_cols) > 0
+            
+            # Si es temporal y no se especificó tipo, usar bar
+            if (has_temporal_intent or has_temporal_cols) and chart_type in ("table", "metric"):
+                chart_type = "bar"
+                if not chart_spec or "type" not in chart_spec:
+                    # Auto-detectar columnas para el gráfico temporal
+                    num_cols = df.select_dtypes(include=['int64', 'float64', 'int32', 'float32']).columns.tolist()
+                    time_col = temporal_cols[0] if temporal_cols else df.columns[0]
+                    value_col = num_cols[-1] if num_cols else df.columns[-1]
+                    
+                    chart_spec = {
+                        "type": "bar",
+                        "x": time_col,
+                        "y": value_col,
+                        "title": f"Evolución de {value_col.replace('_', ' ').title()}",
+                        "sort": None  # Mantener orden cronológico
+                    }
 
             # --- Post-proceso: normalizar highlights inconsistentes ---
             text = _normalize_highlights(text)
@@ -1059,8 +1460,13 @@ def validate_sql_static(sql: str) -> Tuple[bool, str]:
     if len(sql) > MAX_SQL_LENGTH:
         return False, f"Query excede el límite de {MAX_SQL_LENGTH} caracteres"
 
-    if not re.match(r'^\s*SELECT\b', sql, re.IGNORECASE):
+    if not re.match(r'^\s*(SELECT|WITH)\b', sql, re.IGNORECASE):
         return False, "Solo se permiten consultas SELECT"
+
+    # Si empieza con WITH, verificar que contenga SELECT
+    if re.match(r'^\s*WITH\b', sql, re.IGNORECASE):
+        if not re.search(r'\bSELECT\b', sql, re.IGNORECASE):
+            return False, "Las consultas WITH deben contener SELECT"
 
     for pattern in FORBIDDEN_PATTERNS:
         if re.search(pattern, sql, re.IGNORECASE):
@@ -1072,14 +1478,21 @@ def validate_sql_static(sql: str) -> Tuple[bool, str]:
 
     # Remover EXTRACT(...) para evitar falsos positivos con FROM dentro de funciones
     sql_cleaned = re.sub(r'EXTRACT\s*\([^)]+\)', '', sql, flags=re.IGNORECASE)
+    
+    # Extraer nombres de CTEs para no rechazarlos como tablas no permitidas
+    cte_names = set(
+        name.lower() for name in re.findall(r'\b(\w+)\s+AS\s*\(', sql_cleaned, re.IGNORECASE)
+    )
+    
     tables_in_query = re.findall(
         r'\bFROM\s+(\w+)|\bJOIN\s+(\w+)',
         sql_cleaned,
         re.IGNORECASE
     )
+    allowed = set(ALLOWED_TABLES) | cte_names
     for match_groups in tables_in_query:
         for table in match_groups:
-            if table and table.lower() not in ALLOWED_TABLES:
+            if table and table.lower() not in allowed:
                 return False, f"Tabla no permitida: {table}"
 
     return True, "OK"

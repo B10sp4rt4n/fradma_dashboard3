@@ -38,6 +38,8 @@ class ROITracker:
         "nl2sql_interpretation": 0.3,   # Interpretación de resultados por IA
         "nl2sql_chart": 0.25,           # Generación automática de gráfica
         "nl2sql_export": 0.15,          # Exportar datos a CSV
+        "nl2sql_pdf_report": 0.4,       # Generar reporte ejecutivo en PDF
+        "nl2sql_pdf_with_chart": 0.25,  # Valor adicional: PDF con gráfica embebida (vs manual screenshot)
         "nl2sql_schema_explore": 0.2,   # Explorar esquema manualmente
         "nl2sql_complex_query": 1.0,    # Consulta compleja (joins, aggregates)
         

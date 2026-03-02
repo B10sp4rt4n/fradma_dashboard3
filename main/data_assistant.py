@@ -33,6 +33,10 @@ from utils.nl2sql import (
 )
 
 from utils.roi_tracker import init_roi_tracker
+from utils.logger import configurar_logger
+
+# Configurar logger para data_assistant
+logger = configurar_logger("data_assistant", nivel="INFO")
 
 
 # =====================================================================
@@ -185,6 +189,13 @@ CHART_COLORS = [
     "#3F51B5", "#FFEB3B", "#009688", "#F44336", "#673AB7",
 ]
 
+def _render_plotly_chart_and_save(fig, use_container_width=True):
+    """Renderiza figura de Plotly y la guarda en session_state para exportación."""
+    # Guardar en session_state para uso posterior (ej. PDF)
+    st.session_state['last_plotly_fig'] = fig
+    # Renderizar normalmente con Streamlit
+    st.plotly_chart(fig, use_container_width=use_container_width)
+
 def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: dict = None):
     """
     Genera gráficas inteligentes basadas en especificaciones de la IA.
@@ -204,8 +215,22 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
         return
 
     spec = chart_spec or {}
+    
+    # DEBUG: Log de chart_spec recibido
+    logger.info(f"📊 Renderizando gráfico tipo '{chart_type}' con spec: {spec}")
+    
     num_cols = df.select_dtypes(include=['int64', 'float64', 'int32', 'float32']).columns.tolist()
     cat_cols = df.select_dtypes(include=['object', 'datetime64']).columns.tolist()
+
+    # Detectar columnas temporales
+    temporal_cols = [col for col in df.columns if any(
+        time_word in str(col).lower() 
+        for time_word in ['mes', 'fecha', 'date', 'time', 'periodo', 'trimestre', 'año', 'year', 'month']
+    )]
+    # También incluir columnas con dtype datetime
+    for col in df.columns:
+        if df[col].dtype in ['datetime64[ns]', 'datetime64'] and col not in temporal_cols:
+            temporal_cols.append(col)
 
     # Auto-detect mejores columnas si spec no las indica
     x_col = spec.get("x") or (cat_cols[0] if cat_cols else df.columns[0])
@@ -214,6 +239,11 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
     title = spec.get("title") or question[:100]
     top_n = spec.get("top_n", 30)
     sort_order = spec.get("sort")  # "asc" | "desc" | None
+    user_orientation = spec.get("orientation", "").lower()  # "h"/"horizontal" o "v"/"vertical"
+    
+    # DEBUG: Log de orientación detectada
+    if user_orientation:
+        logger.info(f"🔄 Orientación especificada por usuario: '{user_orientation}'")
 
     # Validar que columnas existen
     if x_col not in df.columns:
@@ -229,25 +259,75 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
     is_stats_query = any(kw in question.lower() for kw in ['estadistic', 'media', 'mediana',
                                                             'desviacion', 'promedio', 'percentil'])
     has_stat_cols = any(any(kw in col.lower() for kw in stat_keywords) for col in df.columns)
+    
+    # Detectar si el usuario pidió gráficas explícitamente
+    user_wants_chart = any(kw in question.lower() for kw in [
+        'grafico', 'gráfico', 'graficos', 'gráficos', 'grafica', 'gráfica',
+        'graficas', 'gráficas', 'con grafic', 'con gráfic', 'chart', 
+        'visualiz', 'dibuja', 'muestra en',
+        'barras', 'barra', 'vertical', 'horizontal', 'dona', 'donut',
+        'pay', 'pastel', 'pie', 'linea', 'línea', 'area', 'área',
+        'scatter', 'pareto', 'treemap', 'heatmap', 'funnel',
+        'reporte', 'report', 'ceo', 'cfo', 'ejecutivo', 'auditoria', 'auditoría'
+    ])
+    
+    # También considerar que la IA ya asignó un tipo visual (no table/metric/stats)
+    ai_assigned_visual = chart_type not in ("table", "stats_summary", "metric", "")
 
+    logger.info(f"📊 _auto_chart: chart_type_in={chart_type}, rows={len(df)}, num_cols={len(num_cols)}, user_wants_chart={user_wants_chart}, ai_visual={ai_assigned_visual}")
+    
     # Si es consulta estadística con 1 fila → stats_summary
+    # PERO NO si la IA ya asignó tipo visual o el usuario pidió gráficas
     if len(df) == 1 and len(num_cols) >= 3 and (is_stats_query or has_stat_cols):
-        chart_type = "stats_summary"
+        if not user_wants_chart and not ai_assigned_visual:
+            chart_type = "stats_summary"
+        elif (user_wants_chart or ai_assigned_visual) and chart_type in ("table", "stats_summary", "metric"):
+            # Usuario pidió gráficas con 1 fila → bar chart de las columnas numéricas
+            chart_type = "bar"
+            logger.info(f"📊 Forzando bar chart para 1 fila con {len(num_cols)} columnas numéricas")
     # Si tiene varias filas con columnas estadísticas → aún puede ser stats o box
     elif len(df) > 1 and has_stat_cols and chart_type in ("table", "metric"):
-        chart_type = "stats_summary"
-    # Si 1 fila y numéricos pero NO stats → metric cards
+        if not user_wants_chart and not ai_assigned_visual:
+            chart_type = "stats_summary"
+    # Si 1 fila y numéricos pero NO stats → metric cards o bar
     elif len(df) == 1 and len(num_cols) >= 1 and chart_type not in ("stats_summary", "gauge"):
-        chart_type = "metric"
+        if not user_wants_chart and not ai_assigned_visual:
+            chart_type = "metric"
+        elif (user_wants_chart or ai_assigned_visual) and chart_type in ("table", "metric"):
+            chart_type = "bar"
+            logger.info(f"📊 Forzando bar chart para 1 fila (user/ai quiere chart)")
     if len(df) <= 2 and not num_cols:
         chart_type = "table"
+    
+    logger.info(f"📊 _auto_chart: chart_type_final={chart_type}")
+    logger.info(f"📊 _auto_chart: cat_cols={cat_cols}, num_cols={num_cols}, x_col={x_col}, y_col={y_col}")
+
+    # --- FIX CRÍTICO: Para pie/donut/treemap/funnel, x_col debe ser categórica ---
+    # Si x_col es numérica (ej: forma_pago=3,99) pero se usa como nombres/categorías,
+    # convertirla a string para que Plotly la trate como categórica
+    if chart_type in ("pie", "donut", "treemap", "funnel") and x_col in num_cols:
+        logger.info(f"📊 FIX: Convirtiendo x_col '{x_col}' de numérica a categórica para {chart_type}")
+        df[x_col] = df[x_col].astype(str)
+        # Actualizar listas de columnas
+        num_cols = [c for c in num_cols if c != x_col]
+        cat_cols = [x_col] + [c for c in cat_cols if c != x_col]
+        logger.info(f"📊 FIX resultado: cat_cols={cat_cols}, num_cols={num_cols}")
 
     # Preparar subset
     plot_df = df.head(top_n).copy()
-    if sort_order == "desc" and y_col in plot_df.columns:
-        plot_df = plot_df.sort_values(y_col, ascending=False)
-    elif sort_order == "asc" and y_col in plot_df.columns:
-        plot_df = plot_df.sort_values(y_col, ascending=True)
+    
+    # Para series temporales, NO ordenar por valor (mantener orden cronológico)
+    is_x_temporal = x_col in temporal_cols or df[x_col].dtype in ['datetime64[ns]', 'datetime64']
+    
+    if not is_x_temporal:
+        # Solo ordenar si NO es temporal
+        if sort_order == "desc" and y_col in plot_df.columns:
+            plot_df = plot_df.sort_values(y_col, ascending=False)
+        elif sort_order == "asc" and y_col in plot_df.columns:
+            plot_df = plot_df.sort_values(y_col, ascending=True)
+    else:
+        # Si es temporal, ordenar por la columna temporal
+        plot_df = plot_df.sort_values(x_col, ascending=True)
 
     # --- Helper: truncar etiquetas largas y auto-switch a horizontal ---
     def _smart_label_prep(df_in, label_col, max_chars=45):
@@ -307,7 +387,7 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                     points="outliers",
                 )
             fig.update_layout(showlegend=False)
-            st.plotly_chart(fig, use_container_width=True)
+            _render_plotly_chart_and_save(fig, use_container_width=True)
             return
 
         # --- HISTOGRAM ---
@@ -320,7 +400,7 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                 marginal="box",
             )
             fig.update_layout(bargap=0.05)
-            st.plotly_chart(fig, use_container_width=True)
+            _render_plotly_chart_and_save(fig, use_container_width=True)
             return
 
         # --- GAUGE (indicador tipo velocímetro) ---
@@ -347,7 +427,7 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                 },
             ))
             fig.update_layout(height=300)
-            st.plotly_chart(fig, use_container_width=True)
+            _render_plotly_chart_and_save(fig, use_container_width=True)
             return
 
         # --- HEATMAP ---
@@ -363,12 +443,59 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                 text_auto=".0f",
                 aspect="auto",
             )
-            st.plotly_chart(fig, use_container_width=True)
+            _render_plotly_chart_and_save(fig, use_container_width=True)
             return
+
+        # --- BAR CHART ESPECIAL: 1 fila con múltiples métricas (reporte ejecutivo) ---
+        if chart_type == "bar" and len(df) == 1 and len(num_cols) >= 2:
+            logger.info(f"📊 Generando bar chart transpuesto para 1 fila con {len(num_cols)} métricas")
+            # Transponer: cada columna numérica se convierte en una barra
+            metrics_data = []
+            for col in num_cols:
+                val = df[col].iloc[0]
+                if isinstance(val, (int, float)):
+                    label = col.replace('_', ' ').title()
+                    metrics_data.append({"Métrica": label, "Valor": val})
+            
+            if metrics_data:
+                import pandas as pd
+                metrics_df = pd.DataFrame(metrics_data)
+                fig = px.bar(
+                    metrics_df, x="Métrica", y="Valor",
+                    title=title,
+                    color="Métrica",
+                    color_discrete_sequence=CHART_COLORS,
+                    text_auto=True,
+                )
+                fig.update_layout(
+                    showlegend=False,
+                    xaxis_tickangle=-25,
+                    margin=dict(l=10, r=40, t=50, b=20),
+                )
+                fig.update_traces(textposition="outside", texttemplate="%{y:,.0f}")
+                _render_plotly_chart_and_save(fig, use_container_width=True)
+                return
 
         # --- BAR (vertical) — auto-switch a horizontal si labels largos ---
         if chart_type == "bar" and num_cols:
+            # Detectar si X es temporal (evitar horizontal para series temporales)
+            is_temporal = (
+                x_col in temporal_cols or 
+                df[x_col].dtype in ['datetime64[ns]', 'datetime64'] or
+                any(kw in str(x_col).lower() for kw in ['mes', 'fecha', 'date', 'time', 'periodo', 'trimestre'])
+            )
+            
             bar_df, use_hbar, dyn_height = _smart_label_prep(plot_df, x_col)
+            
+            # Respetar orientación del usuario si la especifica
+            if user_orientation in ['h', 'horizontal']:
+                use_hbar = True
+            elif user_orientation in ['v', 'vertical']:
+                use_hbar = False
+            # No usar horizontal para series temporales (solo si usuario no especificó)
+            elif is_temporal:
+                use_hbar = False
+            
             if use_hbar:
                 # Cambiar a horizontal para legibilidad
                 bar_df = bar_df.sort_values(y_col, ascending=True)
@@ -397,9 +524,14 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                     color_discrete_sequence=CHART_COLORS if color_col else None,
                     text_auto=True,
                 )
-                fig.update_layout(xaxis_tickangle=-45, showlegend=bool(color_col))
+                # Formatear eje X para fechas
+                if is_temporal:
+                    fig.update_xaxes(tickformat="%b %Y", tickangle=-45)
+                else:
+                    fig.update_layout(xaxis_tickangle=-45)
+                fig.update_layout(showlegend=bool(color_col))
                 fig.update_traces(textposition="outside", texttemplate="%{y:,.0f}")
-            st.plotly_chart(fig, use_container_width=True)
+            _render_plotly_chart_and_save(fig, use_container_width=True)
             return
 
         # --- HBAR (horizontal) ---
@@ -407,27 +539,50 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
             hbar_df, _, dyn_height = _smart_label_prep(plot_df, x_col)
             if not dyn_height:
                 dyn_height = max(400, min(len(hbar_df) * 38, 900))
-            fig = px.bar(
-                hbar_df, x=y_col, y=x_col,
-                title=title,
-                orientation="h",
-                color=color_col or y_col,
-                color_continuous_scale="Viridis" if not color_col else None,
-                text_auto=True,
-            )
-            fig.update_layout(
-                height=dyn_height,
-                yaxis=dict(autorange="reversed", tickfont=dict(size=11)),
-                showlegend=bool(color_col),
-                margin=dict(l=10, r=40, t=50, b=20),
-            )
-            fig.update_traces(textposition="outside", texttemplate="%{x:,.0f}")
-            st.plotly_chart(fig, use_container_width=True)
+            
+            # Respetar orientación del usuario si la especifica
+            force_vertical = user_orientation in ['v', 'vertical']
+            
+            if force_vertical:
+                # Usuario pidió vertical, renderizar como bar vertical
+                fig = px.bar(
+                    hbar_df, x=x_col, y=y_col,
+                    title=title,
+                    color=color_col or y_col,
+                    color_continuous_scale="Viridis" if not color_col else None,
+                    color_discrete_sequence=CHART_COLORS if color_col else None,
+                    text_auto=True,
+                )
+                fig.update_layout(xaxis_tickangle=-45, showlegend=bool(color_col))
+                fig.update_traces(textposition="outside", texttemplate="%{y:,.0f}")
+            else:
+                # Horizontal por defecto
+                fig = px.bar(
+                    hbar_df, x=y_col, y=x_col,
+                    title=title,
+                    orientation="h",
+                    color=color_col or y_col,
+                    color_continuous_scale="Viridis" if not color_col else None,
+                    text_auto=True,
+                )
+                fig.update_layout(
+                    height=dyn_height,
+                    yaxis=dict(autorange="reversed", tickfont=dict(size=11)),
+                    showlegend=bool(color_col),
+                    margin=dict(l=10, r=40, t=50, b=20),
+                )
+                fig.update_traces(textposition="outside", texttemplate="%{x:,.0f}")
+            _render_plotly_chart_and_save(fig, use_container_width=True)
             return
 
         # --- STACKED BAR ---
         if chart_type == "stacked_bar" and color_col and num_cols:
             sb_df, use_hbar, dyn_height = _smart_label_prep(plot_df, x_col)
+            # Respetar orientación del usuario si la especifica
+            if user_orientation in ['h', 'horizontal']:
+                use_hbar = True
+            elif user_orientation in ['v', 'vertical']:
+                use_hbar = False
             if use_hbar:
                 fig = px.bar(
                     sb_df, x=y_col, y=x_col,
@@ -449,12 +604,17 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                     text_auto=True,
                 )
                 fig.update_layout(xaxis_tickangle=-45)
-            st.plotly_chart(fig, use_container_width=True)
+            _render_plotly_chart_and_save(fig, use_container_width=True)
             return
 
         # --- GROUPED BAR ---
         if chart_type == "grouped_bar" and color_col and num_cols:
             gb_df, use_hbar, dyn_height = _smart_label_prep(plot_df, x_col)
+            # Respetar orientación del usuario si la especifica
+            if user_orientation in ['h', 'horizontal']:
+                use_hbar = True
+            elif user_orientation in ['v', 'vertical']:
+                use_hbar = False
             if use_hbar:
                 fig = px.bar(
                     gb_df, x=y_col, y=x_col,
@@ -476,7 +636,114 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                     text_auto=True,
                 )
                 fig.update_layout(xaxis_tickangle=-45)
-            st.plotly_chart(fig, use_container_width=True)
+            _render_plotly_chart_and_save(fig, use_container_width=True)
+            return
+
+        # --- PARETO (barras descendentes + línea % acumulado) ---
+        if chart_type == "pareto" and num_cols:
+            pareto_df = plot_df.copy()
+            
+            # Detectar columna de % acumulado si existe
+            pct_col = None
+            for c in pareto_df.columns:
+                if any(kw in c.lower() for kw in ['pct_acum', 'acumulado', 'cumul', 'pct_total']):
+                    pct_col = c
+                    break
+            
+            # Si no hay columna de % acumulado, calcularla
+            if pct_col is None:
+                pareto_df = pareto_df.sort_values(y_col, ascending=False)
+                total = pareto_df[y_col].sum()
+                if total > 0:
+                    pareto_df['_pct_acumulado'] = (pareto_df[y_col].cumsum() / total * 100).round(2)
+                else:
+                    pareto_df['_pct_acumulado'] = 0
+                pct_col = '_pct_acumulado'
+            else:
+                pareto_df = pareto_df.sort_values(y_col, ascending=False)
+            
+            # Detectar columna de clasificación ABC si existe
+            abc_col = None
+            for c in pareto_df.columns:
+                if any(kw in c.lower() for kw in ['clasificacion', 'abc', 'categoria', 'segmento']):
+                    abc_col = c
+                    break
+            
+            # Crear figura con eje Y secundario
+            from plotly.subplots import make_subplots
+            fig = make_subplots(specs=[[{"secondary_y": True}]])
+            
+            # Colores por clasificación ABC si existe
+            if abc_col and abc_col in pareto_df.columns:
+                color_map = {'A': '#2ecc71', 'B': '#f39c12', 'C': '#e74c3c'}
+                bar_colors = [color_map.get(str(v).upper(), '#3498db') for v in pareto_df[abc_col]]
+            else:
+                bar_colors = '#3498db'
+            
+            # Barras de valores
+            fig.add_trace(
+                go.Bar(
+                    x=pareto_df[x_col],
+                    y=pareto_df[y_col],
+                    name=y_col.replace('_', ' ').title(),
+                    marker_color=bar_colors,
+                    text=[f"${v:,.0f}" if v >= 1000 else f"{v:,.2f}" for v in pareto_df[y_col]],
+                    textposition="outside",
+                ),
+                secondary_y=False,
+            )
+            
+            # Línea de % acumulado
+            fig.add_trace(
+                go.Scatter(
+                    x=pareto_df[x_col],
+                    y=pareto_df[pct_col],
+                    name="% Acumulado",
+                    mode="lines+markers+text",
+                    line=dict(color="#e74c3c", width=3),
+                    marker=dict(size=8, color="#e74c3c"),
+                    text=[f"{v:.1f}%" for v in pareto_df[pct_col]],
+                    textposition="top center",
+                    textfont=dict(size=10, color="#e74c3c"),
+                ),
+                secondary_y=True,
+            )
+            
+            # Línea horizontal al 80%
+            fig.add_hline(
+                y=80, line_dash="dash", line_color="green",
+                annotation_text="80%", annotation_position="right",
+                secondary_y=True,
+            )
+            
+            n_items = len(pareto_df)
+            fig.update_layout(
+                title=title or "Análisis de Pareto (80/20)",
+                height=max(450, min(n_items * 40, 700)),
+                xaxis_tickangle=-45,
+                xaxis_title=x_col.replace('_', ' ').title(),
+                showlegend=True,
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                margin=dict(l=10, r=40, t=80, b=100),
+            )
+            fig.update_yaxes(title_text=y_col.replace('_', ' ').title(), secondary_y=False)
+            fig.update_yaxes(title_text="% Acumulado", range=[0, 105], secondary_y=True)
+            
+            _render_plotly_chart_and_save(fig, use_container_width=True)
+            
+            # Mostrar resumen ABC si hay clasificación
+            if abc_col and abc_col in pareto_df.columns:
+                counts = pareto_df[abc_col].value_counts()
+                cols_abc = st.columns(3)
+                for i, (cat, emoji) in enumerate([('A', '🟢'), ('B', '🟡'), ('C', '🔴')]):
+                    with cols_abc[i]:
+                        n = counts.get(cat, 0)
+                        total_cat = pareto_df[pareto_df[abc_col] == cat][y_col].sum()
+                        st.metric(
+                            f"{emoji} Categoría {cat}",
+                            f"{n} clientes",
+                            f"${total_cat:,.0f}" if total_cat >= 1000 else f"${total_cat:,.2f}",
+                        )
             return
 
         # --- LINE ---
@@ -489,7 +756,7 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                 markers=True,
             )
             fig.update_traces(line_width=3, marker_size=8)
-            st.plotly_chart(fig, use_container_width=True)
+            _render_plotly_chart_and_save(fig, use_container_width=True)
             return
 
         # --- AREA ---
@@ -500,26 +767,35 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                 color=color_col,
                 color_discrete_sequence=CHART_COLORS,
             )
-            st.plotly_chart(fig, use_container_width=True)
+            _render_plotly_chart_and_save(fig, use_container_width=True)
             return
 
         # --- PIE ---
-        if chart_type == "pie" and cat_cols and num_cols:
+        if chart_type == "pie" and num_cols and (cat_cols or x_col in plot_df.columns):
+            logger.info(f"📊 Renderizando PIE: names={x_col}, values={y_col}, rows={len(plot_df)}")
+            # Asegurar que x_col sea string para names
+            pie_df = plot_df.head(15).copy()
+            if pie_df[x_col].dtype != 'object':
+                pie_df[x_col] = pie_df[x_col].astype(str)
             fig = px.pie(
-                plot_df.head(15),
+                pie_df,
                 names=x_col,
                 values=y_col,
                 title=title,
                 color_discrete_sequence=CHART_COLORS,
             )
             fig.update_traces(textposition="inside", textinfo="percent+label")
-            st.plotly_chart(fig, use_container_width=True)
+            _render_plotly_chart_and_save(fig, use_container_width=True)
             return
 
         # --- DONUT ---
-        if chart_type == "donut" and cat_cols and num_cols:
+        if chart_type == "donut" and num_cols and (cat_cols or x_col in plot_df.columns):
+            logger.info(f"📊 Renderizando DONUT: names={x_col}, values={y_col}, rows={len(plot_df)}")
+            donut_df = plot_df.head(15).copy()
+            if donut_df[x_col].dtype != 'object':
+                donut_df[x_col] = donut_df[x_col].astype(str)
             fig = px.pie(
-                plot_df.head(15),
+                donut_df,
                 names=x_col,
                 values=y_col,
                 title=title,
@@ -527,7 +803,7 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                 color_discrete_sequence=CHART_COLORS,
             )
             fig.update_traces(textposition="inside", textinfo="percent+label")
-            st.plotly_chart(fig, use_container_width=True)
+            _render_plotly_chart_and_save(fig, use_container_width=True)
             return
 
         # --- SCATTER ---
@@ -543,11 +819,11 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                 hover_data=cat_cols[:2] if cat_cols else None,
             )
             fig.update_traces(marker_size=10)
-            st.plotly_chart(fig, use_container_width=True)
+            _render_plotly_chart_and_save(fig, use_container_width=True)
             return
 
         # --- TREEMAP ---
-        if chart_type == "treemap" and cat_cols and num_cols:
+        if chart_type == "treemap" and num_cols and (cat_cols or x_col in plot_df.columns):
             path_cols = [x_col]
             if color_col and color_col in cat_cols and color_col != x_col:
                 path_cols = [color_col, x_col]
@@ -558,17 +834,17 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                 color=y_col,
                 color_continuous_scale="RdYlGn",
             )
-            st.plotly_chart(fig, use_container_width=True)
+            _render_plotly_chart_and_save(fig, use_container_width=True)
             return
 
         # --- FUNNEL ---
-        if chart_type == "funnel" and cat_cols and num_cols:
+        if chart_type == "funnel" and num_cols and (cat_cols or x_col in plot_df.columns):
             fig = px.funnel(
                 plot_df, x=y_col, y=x_col,
                 title=title,
                 color_discrete_sequence=CHART_COLORS,
             )
-            st.plotly_chart(fig, use_container_width=True)
+            _render_plotly_chart_and_save(fig, use_container_width=True)
             return
 
         # --- WATERFALL ---
@@ -583,11 +859,13 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                 totals={"marker": {"color": "#2196F3"}},
             ))
             fig.update_layout(title=title, showlegend=False)
-            st.plotly_chart(fig, use_container_width=True)
+            _render_plotly_chart_and_save(fig, use_container_width=True)
             return
 
-    except Exception:
-        pass  # Fallback a tabla
+    except Exception as chart_err:
+        logger.error(f"❌ Error renderizando gráfico tipo '{chart_type}': {chart_err}")
+        import traceback
+        logger.error(traceback.format_exc())
 
     # Default: tabla con formato
     col_config = {}
@@ -709,7 +987,7 @@ def _render_stats_chart(df: pd.DataFrame, num_cols: list, cat_cols: list,
                     height=max(300, len(stat_data) * 50),
                 )
                 fig.update_traces(textposition="outside")
-                st.plotly_chart(fig, use_container_width=True)
+                _render_plotly_chart_and_save(fig, use_container_width=True)
 
             # Si hay percentiles → box plot simulado
             p25_col = next((c for c in percentile_cols if '25' in c), None)
@@ -797,7 +1075,7 @@ def _render_stats_chart(df: pd.DataFrame, num_cols: list, cat_cols: list,
                     yaxis=dict(showticklabels=False),
                     margin=dict(l=20, r=20, t=50, b=40),
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                _render_plotly_chart_and_save(fig, use_container_width=True)
 
             return
 
@@ -839,7 +1117,7 @@ def _render_stats_chart(df: pd.DataFrame, num_cols: list, cat_cols: list,
                     )
                 )
 
-            st.plotly_chart(fig, use_container_width=True)
+            _render_plotly_chart_and_save(fig, use_container_width=True)
 
             # Si hay desviación, mostrar gráfica adicional
             dev_col = next((c for c in num_cols if any(k in c.lower() for k in ['desviacion', 'stddev'])), None)
@@ -852,7 +1130,7 @@ def _render_stats_chart(df: pd.DataFrame, num_cols: list, cat_cols: list,
                     text_auto="$,.2f",
                 )
                 fig2.update_layout(xaxis_tickangle=-45, showlegend=False)
-                st.plotly_chart(fig2, use_container_width=True)
+                _render_plotly_chart_and_save(fig2, use_container_width=True)
 
             return
 
@@ -868,7 +1146,7 @@ def _render_stats_chart(df: pd.DataFrame, num_cols: list, cat_cols: list,
                     marginal="box",
                 )
                 fig.update_layout(bargap=0.05)
-                st.plotly_chart(fig, use_container_width=True)
+                _render_plotly_chart_and_save(fig, use_container_width=True)
                 return
 
     except Exception:
@@ -1115,6 +1393,46 @@ def _track_export_roi():
         pass
 
 
+def _track_pdf_roi(has_chart: bool = False):
+    """Rastrea el ROI de una exportación a PDF.
+    
+    Args:
+        has_chart: Si el PDF incluye gráfica embebida
+    """
+    try:
+        tracker = init_roi_tracker(st.session_state)
+        
+        # Trackear generación base del PDF
+        pdf_roi = tracker.track_action(
+            module="data_assistant",
+            action="nl2sql_pdf_report",
+            quantity=1.0,
+        )
+        
+        # Valor adicional si incluye gráfica (ahorra screenshot manual)
+        if has_chart:
+            chart_roi = tracker.track_action(
+                module="data_assistant",
+                action="nl2sql_pdf_with_chart",
+                quantity=1.0,
+            )
+            
+            # Mostrar feedback combinado
+            total_hrs = pdf_roi.get("hrs_saved", 0) + chart_roi.get("hrs_saved", 0)
+            total_val = pdf_roi.get("value", 0) + chart_roi.get("value", 0)
+            st.toast(
+                f"📊 PDF con gráfica generado: {total_hrs:.2f} hrs ≈ ${total_val:,.0f} MXN ahorrados",
+                icon="✅",
+            )
+        else:
+            st.toast(
+                f"📄 PDF generado: {pdf_roi.get('hrs_saved', 0):.2f} hrs ≈ ${pdf_roi.get('value', 0):,.0f} MXN ahorrados",
+                icon="✅",
+            )
+    except Exception:
+        pass
+
+
 def _render_roi_panel():
     """Renderiza el panel de ROI en tiempo real para el Data Assistant."""
     try:
@@ -1258,17 +1576,18 @@ def _render_chat_interface():
             _track_query_roi(result)
 
             # Renderizar resultado
-            msg_data = _build_result_message(result)
+            msg_data = _build_result_message(result, question)
             new_idx = len(st.session_state["nl2sql_messages"])
             _render_result_message(msg_data, new_idx)
 
             st.session_state["nl2sql_messages"].append(msg_data)
 
 
-def _build_result_message(result: NL2SQLResult) -> dict:
+def _build_result_message(result: NL2SQLResult, question: str = "") -> dict:
     """Construye un mensaje de resultado para almacenar en session_state."""
     msg = {
         "role": "assistant",
+        "question": question,  # Guardar la pregunta original
         "content": result.interpretation or result.error or "Sin resultado",
         "sql": result.sql,
         "success": result.success,
@@ -1310,9 +1629,13 @@ def _render_result_message(msg: dict, msg_idx: int = 0):
         # Gráfica automática con spec de IA
         chart_type = msg.get("chart_suggestion", "table")
         chart_spec = msg.get("chart_spec", {})
-        question = msg.get("content", "")
+        # IMPORTANTE: usar la pregunta ORIGINAL del usuario, no la interpretación de la IA
+        question = msg.get("question", "") or msg.get("content", "")
+        logger.info(f"📊 Render msg: chart_type={chart_type}, question='{question[:80]}', spec={chart_spec}")
 
-        # Pestañas: Gráfica | Tabla | SQL
+        # ============================================================
+        # Pestañas: Gráfica | Tabla | SQL  (PRIMERO para que _auto_chart guarde la fig)
+        # ============================================================
         tab_chart, tab_table, tab_sql = st.tabs(["📊 Gráfica", "📋 Tabla", "🔍 SQL"])
 
         with tab_chart:
@@ -1321,21 +1644,82 @@ def _render_result_message(msg: dict, msg_idx: int = 0):
         with tab_table:
             st.dataframe(df, use_container_width=True, hide_index=True)
 
-            # Exportar
-            csv = df.to_csv(index=False)
-            st.download_button(
-                "📥 Descargar CSV",
-                csv,
-                "resultado_consulta.csv",
-                "text/csv",
-                key=f"dl_{msg_idx}_{hash(msg.get('sql', ''))}",
-            )
-
         with tab_sql:
             st.code(msg.get("sql", ""), language="sql")
             exec_time = msg.get("execution_time", 0)
             row_count = msg.get("row_count", 0)
             st.caption(f"⏱️ {exec_time:.2f}s · {row_count} filas")
+
+        # ============================================================
+        # Generar PDF y CSV DESPUÉS de _auto_chart (para tener la fig)
+        # ============================================================
+        pdf_bytes = None
+        pdf_error = None
+        try:
+            from utils.export_helper import crear_reporte_pdf_ejecutivo
+            
+            # Recuperar figura guardada por _auto_chart
+            fig_for_pdf = st.session_state.get('last_plotly_fig', None)
+            
+            # Generar PDF
+            pdf_bytes = crear_reporte_pdf_ejecutivo(
+                pregunta=msg.get("question", question),
+                interpretacion=msg.get("content", ""),
+                df=df,
+                sql=msg.get("sql", ""),
+                chart_type=chart_type,
+                empresa=st.session_state.get("empresa_actual", {}).get("nombre", "CIMA"),
+                fig=fig_for_pdf
+            )
+        except Exception as e:
+            logger.error(f"Error generando PDF: {e}")
+            pdf_error = str(e)
+        
+        # Generar CSV
+        csv = df.to_csv(index=False)
+
+        # Botones destacados para exportar
+        st.markdown("---")
+        col_export_pdf, col_export_csv, col_spacer = st.columns([2, 2, 6])
+        
+        with col_export_pdf:
+            if pdf_bytes:
+                # Detectar si se incluyó gráfica
+                has_chart = fig_for_pdf is not None
+                
+                # Mostrar botón de descarga
+                if st.download_button(
+                    "📄 Generar Reporte PDF",
+                    pdf_bytes,
+                    "reporte_ejecutivo.pdf",
+                    "application/pdf",
+                    key=f"btn_pdf_{msg_idx}_{hash(msg.get('sql', ''))}",
+                    use_container_width=True
+                ):
+                    # Track ROI cuando se hace clic
+                    _track_pdf_roi(has_chart=has_chart)
+            else:
+                st.button(
+                    "📄 PDF no disponible", 
+                    disabled=True, 
+                    use_container_width=True,
+                    key=f"btn_pdf_disabled_{msg_idx}_{hash(msg.get('sql', ''))}"
+                )
+                if pdf_error:
+                    st.caption(f"⚠️ Error: {pdf_error[:50]}...")
+        
+        with col_export_csv:
+            st.download_button(
+                "📥 Descargar CSV",
+                csv,
+                "resultado_consulta.csv",
+                "text/csv",
+                key=f"btn_csv_{msg_idx}_{hash(msg.get('sql', ''))}",
+                use_container_width=True
+            )
+        
+        st.markdown("---")
+
     else:
         # Solo SQL si no hay datos
         if msg.get("sql"):

@@ -7,6 +7,7 @@ que pueden compartirse con stakeholders.
 
 import pandas as pd
 import io
+import re
 from typing import Dict, Optional, List
 from datetime import datetime
 from utils.formatos import formato_moneda, formato_porcentaje
@@ -16,7 +17,7 @@ def crear_excel_metricas_cxc(
     metricas: Dict,
     df_detalle: pd.DataFrame,
     df_antiguedad: Optional[pd.DataFrame] = None,
-    nombre_empresa: str = "FRADMA"
+    nombre_empresa: str = "CIMA"
 ) -> bytes:
     """
     Crea un archivo Excel con múltiples hojas de métricas CxC.
@@ -161,7 +162,7 @@ def crear_excel_metricas_cxc(
 def crear_reporte_html(
     metricas: Dict,
     df_detalle: pd.DataFrame,
-    nombre_empresa: str = "FRADMA",
+    nombre_empresa: str = "CIMA",
     incluir_graficos: bool = False,
     df_ventas: Optional[pd.DataFrame] = None,
     secciones: Optional[List[str]] = None
@@ -767,7 +768,7 @@ def crear_reporte_html(
             </div>
             
             <footer>
-                <p>Reporte generado automáticamente por FRADMA Dashboard</p>
+                <p>Reporte generado automáticamente por CIMA Analytics Dashboard</p>
                 <p>© {datetime.now().year} - Todos los derechos reservados</p>
             </footer>
         </div>
@@ -821,7 +822,7 @@ def preparar_datos_para_export(df: pd.DataFrame) -> pd.DataFrame:
 
 def crear_excel_cobranza_semanal(
     df_prioridades: pd.DataFrame,
-    nombre_empresa: str = "FRADMA"
+    nombre_empresa: str = "CIMA"
 ) -> bytes:
     """
     Crea un Excel de lista semanal de cobranza listo para compartir con el equipo.
@@ -1047,3 +1048,375 @@ if __name__ == "__main__":
     print(f"✅ HTML creado: {len(html)} caracteres\n")
     
     print("✅ Demo completado!")
+
+def crear_reporte_pdf_ejecutivo(
+    pregunta: str,
+    interpretacion: str,
+    df: pd.DataFrame,
+    sql: str = "",
+    chart_type: str = "table",
+    empresa: str = "CIMA",
+    roi_info: Optional[Dict] = None,
+    fig: Optional[object] = None
+) -> bytes:
+    """
+    Crea un reporte ejecutivo en PDF a partir de una consulta del Data Assistant.
+    
+    Args:
+        pregunta: Pregunta original del usuario
+        interpretacion: Interpretación generada por IA
+        df: DataFrame con los resultados
+        sql: SQL ejecutado (opcional)
+        chart_type: Tipo de gráfica sugerida
+        empresa: Nombre de la empresa
+        roi_info: Información del ROI Tracker (opcional)
+        fig: Figura de Plotly para incluir en el PDF (opcional)
+        
+    Returns:
+        bytes: Contenido del archivo PDF
+        
+    Examples:
+        >>> pdf_bytes = crear_reporte_pdf_ejecutivo(
+        ...     "¿Cuánto facturé este mes?",
+        ...     "Facturación de $150,000 MXN",
+        ...     df_resultados
+        ... )
+        >>> with open('reporte.pdf', 'wb') as f:
+        ...     f.write(pdf_bytes)
+    """
+    try:
+        from reportlab.lib.pagesizes import letter, A4
+        from reportlab.lib import colors
+        from reportlab.lib.units import inch
+        from reportlab.platypus import (
+            SimpleDocTemplate, Table, TableStyle, Paragraph, 
+            Spacer, PageBreak, Image
+        )
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+        from reportlab.pdfgen import canvas
+    except ImportError:
+        raise ImportError(
+            "reportlab no está instalado. "
+            "Ejecuta: pip install reportlab==4.2.5"
+        )
+    
+    output = io.BytesIO()
+    
+    # Crear documento
+    doc = SimpleDocTemplate(
+        output,
+        pagesize=letter,
+        rightMargin=0.75*inch,
+        leftMargin=0.75*inch,
+        topMargin=1*inch,
+        bottomMargin=0.75*inch
+    )
+    
+    # Estilos
+    styles = getSampleStyleSheet()
+    
+    # Estilo personalizado para título
+    titulo_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        textColor=colors.HexColor('#1f77b4'),
+        spaceAfter=30,
+        alignment=TA_CENTER,
+        fontName='Helvetica-Bold'
+    )
+    
+    # Estilo para subtítulos
+    subtitulo_style = ParagraphStyle(
+        'CustomHeading',
+        parent=styles['Heading2'],
+        fontSize=16,
+        textColor=colors.HexColor('#2c3e50'),
+        spaceAfter=12,
+        spaceBefore=12,
+        fontName='Helvetica-Bold'
+    )
+    
+    # Estilo para pregunta
+    pregunta_style = ParagraphStyle(
+        'Question',
+        parent=styles['Normal'],
+        fontSize=12,
+        textColor=colors.HexColor('#34495e'),
+        spaceAfter=10,
+        leftIndent=20,
+        fontName='Helvetica-Oblique'
+    )
+    
+    # Estilo para interpretación
+    interpretacion_style = ParagraphStyle(
+        'Interpretation',
+        parent=styles['Normal'],
+        fontSize=11,
+        textColor=colors.HexColor('#2c3e50'),
+        spaceAfter=15,
+        alignment=TA_LEFT
+    )
+    
+    # Contenido del documento
+    story = []
+    _temp_chart_path = None  # Para limpieza de archivo temporal de gráfica
+    
+    # Logo CIMA
+    import os
+    logo_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
+                             'Logo de CIMA Analytics y SynAppsSys.png')
+    if os.path.exists(logo_path):
+        try:
+            # Leer dimensiones originales y escalar al 70% manteniendo proporción
+            from PIL import Image as PILImage
+            pil_img = PILImage.open(logo_path)
+            orig_w, orig_h = pil_img.size
+            # Convertir px a puntos (72 dpi) y escalar al 70%
+            scale = 0.70
+            logo_w = (orig_w / 72.0) * inch * scale
+            logo_h = (orig_h / 72.0) * inch * scale
+            # Limitar tamaño máximo para que quepa en la página
+            max_w = 5.0 * inch
+            if logo_w > max_w:
+                ratio = max_w / logo_w
+                logo_w = max_w
+                logo_h = logo_h * ratio
+            logo = Image(logo_path, width=logo_w, height=logo_h)
+            logo.hAlign = 'CENTER'
+            story.append(logo)
+            story.append(Spacer(1, 0.2*inch))
+        except Exception as e:
+            logger.warning(f"No se pudo cargar logo CIMA: {e}")
+    
+    # Encabezado
+    fecha_actual = datetime.now().strftime("%d de %B de %Y, %H:%M")
+    
+    story.append(Paragraph(f"Reporte Ejecutivo - {empresa}", titulo_style))
+    story.append(Paragraph(f"<i>{fecha_actual}</i>", styles['Normal']))
+    story.append(Spacer(1, 0.3*inch))
+    
+    # Pregunta
+    story.append(Paragraph("Consulta", subtitulo_style))
+    pregunta_limpia = pregunta.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    story.append(Paragraph(f"<i>\"{pregunta_limpia}\"</i>", pregunta_style))
+    story.append(Spacer(1, 0.2*inch))
+    
+    # Interpretación
+    story.append(Paragraph("Análisis", subtitulo_style))
+    
+    # Limpiar texto de forma segura para ReportLab
+    def limpiar_texto_para_pdf(texto):
+        """Limpia texto removiendo markdown y escapando caracteres para ReportLab."""
+        # Remover marcadores de color de Streamlit (:green[...], :blue[...], etc.)
+        # Procesar múltiples veces para manejar anidamiento
+        max_iterations = 10
+        for _ in range(max_iterations):
+            texto_anterior = texto
+            texto = re.sub(r':\w+\[([^\]]+)\]', r'\1', texto)
+            if texto == texto_anterior:  # No más cambios
+                break
+        
+        # Remover markdown en lugar de convertirlo
+        texto = re.sub(r'\*\*(.+?)\*\*', r'\1', texto)  # Remover negritas
+        texto = re.sub(r'__(.+?)__', r'\1', texto)  # Remover negritas alternativas
+        texto = re.sub(r'\*(.+?)\*', r'\1', texto)  # Remover cursivas
+        texto = re.sub(r'_(.+?)_', r'\1', texto)  # Remover cursivas alternativas
+        
+        # Escapar caracteres XML especiales DESPUÉS de procesar markdown
+        texto = texto.replace('&', '&amp;')
+        texto = texto.replace('<', '&lt;')
+        texto = texto.replace('>', '&gt;')
+        
+        # Saltos de línea dobles para párrafos
+        texto = texto.replace('\n\n', '<br/><br/>')
+        texto = texto.replace('\n', ' ')
+        
+        return texto
+    
+    interpretacion_limpia = limpiar_texto_para_pdf(interpretacion)
+    
+    try:
+        story.append(Paragraph(interpretacion_limpia, interpretacion_style))
+    except Exception as e:
+        # Si falla, usar texto plano sin formato
+        logger.error(f"Error al crear párrafo de interpretación: {e}")
+        texto_plano = interpretacion.replace('**', '').replace('_', '').replace('\n', ' ')
+        texto_plano = texto_plano.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        story.append(Paragraph(texto_plano, interpretacion_style))
+    
+    story.append(Spacer(1, 0.3*inch))
+    
+    # Gráfica (si está disponible)
+    if fig is not None:
+        story.append(Paragraph("Visualización", subtitulo_style))
+        try:
+            import tempfile
+            import os
+            
+            # Exportar figura a imagen temporal usando kaleido
+            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_file:
+                tmp_path = tmp_file.name
+            
+            # Convertir figura a PNG
+            fig.write_image(tmp_path, width=800, height=500, scale=2)
+            
+            # Agregar imagen al PDF (NO borrar aún - ReportLab la lee en doc.build())
+            img = Image(tmp_path, width=6.5*inch, height=4*inch)
+            story.append(img)
+            story.append(Spacer(1, 0.2*inch))
+            
+            # NOTA: tmp_path se borra después de doc.build() - guardarlo para limpieza
+            _temp_chart_path = tmp_path
+                
+        except Exception as e:
+            logger.warning(f"No se pudo incluir gráfica en PDF: {e}")
+            story.append(Paragraph(
+                "<i>Gráfica no disponible en PDF (visualízala en la app)</i>",
+                interpretacion_style
+            ))
+            story.append(Spacer(1, 0.2*inch))
+    
+    # Tabla de datos
+    story.append(Paragraph("Datos", subtitulo_style))
+    
+    if not df.empty:
+        # Limitar a 20 filas para el PDF
+        df_display = df.head(20).copy()
+        
+        # Preparar datos para la tabla
+        data = [df_display.columns.tolist()]  # Encabezados
+        
+        for _, row in df_display.iterrows():
+            fila = []
+            for val in row:
+                # Formatear valores
+                if pd.isna(val):
+                    fila.append("")
+                elif isinstance(val, (int, float)):
+                    if abs(val) >= 1000:
+                        fila.append(f"${val:,.2f}" if 'total' in str(row.name).lower() or 'mxn' in str(row.name).lower() else f"{val:,.0f}")
+                    else:
+                        fila.append(f"{val:.2f}")
+                else:
+                    fila.append(str(val)[:30])  # Limitar longitud
+            data.append(fila)
+        
+        # Crear tabla
+        table = Table(data)
+        
+        # Estilo de tabla
+        table.setStyle(TableStyle([
+            # Encabezado
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f77b4')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            
+            # Cuerpo
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 9),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            
+            # Bordes
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            
+            # Alternar colores de filas
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')])
+        ]))
+        
+        story.append(table)
+        
+        # Nota si hay más datos
+        if len(df) > 20:
+            story.append(Spacer(1, 0.1*inch))
+            story.append(Paragraph(
+                f"<i>Mostrando 20 de {len(df)} filas totales</i>",
+                styles['Normal']
+            ))
+    else:
+        story.append(Paragraph("<i>No se encontraron datos</i>", styles['Normal']))
+    
+    story.append(Spacer(1, 0.3*inch))
+    
+    # Información del ROI (si está disponible)
+    if roi_info:
+        story.append(Paragraph("ROI de esta Consulta", subtitulo_style))
+        
+        roi_data = [
+            ['Métrica', 'Valor'],
+            ['Tiempo ahorrado', f"{roi_info.get('tiempo_ahorrado_hrs', 0):.2f} hrs"],
+            ['Valor generado', f"${roi_info.get('valor_generado', 0):,.2f} MXN"],
+            ['Costo consultor', f"${roi_info.get('costo_consultor', 0):,.2f} MXN"]
+        ]
+        
+        roi_table = Table(roi_data, colWidths=[3*inch, 2*inch])
+        roi_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#27ae60')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 11),
+            ('FONTSIZE', (0, 1), (-1, -1), 10),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#d4edda'))
+        ]))
+        
+        story.append(roi_table)
+        story.append(Spacer(1, 0.2*inch))
+    
+    # SQL Query (opcional, solo si hay espacio)
+    if sql:
+        story.append(PageBreak())
+        story.append(Paragraph("SQL Ejecutado", subtitulo_style))
+        sql_style = ParagraphStyle(
+            'Code',
+            parent=styles['Code'],
+            fontSize=8,
+            leftIndent=20,
+            textColor=colors.HexColor('#2c3e50'),
+            fontName='Courier'
+        )
+        story.append(Paragraph(f"<pre>{sql}</pre>", sql_style))
+    
+    # Pie de página
+    story.append(Spacer(1, 0.5*inch))
+    footer_style = ParagraphStyle(
+        'Footer',
+        parent=styles['Normal'],
+        fontSize=9,
+        textColor=colors.grey,
+        alignment=TA_CENTER
+    )
+    story.append(Paragraph(
+        f"<i>Generado por CIMA Analytics — Fiscal Intelligence Platform</i>",
+        footer_style
+    ))
+    story.append(Paragraph(
+        f"<i>Tipo de visualización sugerida: {chart_type}</i>",
+        footer_style
+    ))
+    
+    # Construir PDF
+    doc.build(story)
+    
+    # Limpiar archivo temporal de gráfica (si existe)
+    try:
+        if _temp_chart_path:
+            import os
+            os.unlink(_temp_chart_path)
+    except Exception:
+        pass
+    
+    # Obtener bytes
+    pdf_bytes = output.getvalue()
+    output.close()
+    
+    return pdf_bytes
