@@ -343,6 +343,9 @@ EXAMPLE_QUESTIONS = [
             "¿Cuáles son los clientes con mayor antigüedad de deuda?",
             "¿Cuál es el promedio de días de crédito?",
             "Muéstrame los pagos recibidos este mes",
+            "¿Cuáles facturas están totalmente pagadas?",
+            "Facturas parcialmente pagadas con saldo pendiente",
+            "¿Qué facturas no tienen complemento de pago?",
         ]
     },
     {
@@ -585,6 +588,9 @@ REGLAS AVANZADAS DE ANALYTICS:
   - Para COBRANZA REAL: usa cfdi_pagos INNER JOIN cfdi_ventas (solo pagos con factura válida)
   - Para CARTERA: usa cfdi_ventas LEFT JOIN cfdi_pagos con flag de conciliación
   - Para AUDITORÍA: identifica huérfanos con LEFT JOIN ... WHERE IS NULL en ambas direcciones
+  - Para FACTURAS PAGADAS: usa INNER JOIN y filtra con HAVING total - SUM(monto_pagado) <= 0.01
+  - Para FACTURAS SIN PAGAR: usa LEFT JOIN y filtra WHERE p.uuid_complemento IS NULL
+  - Para FACTURAS PARCIALMENTE PAGADAS: usa LEFT JOIN con HAVING SUM(monto_pagado) > 0 AND total - SUM(monto_pagado) > 0.01
 {empresa_filter}
 
 {SCHEMA_CONTEXT}
@@ -673,6 +679,21 @@ SQL: SELECT DATE_TRUNC('month', p.fecha_pago) AS mes, COUNT(DISTINCT p.uuid_comp
 
 Pregunta: Auditoría de integridad factura-complemento
 SQL: WITH huerfanos_pago AS (SELECT COUNT(*) AS complementos_sin_factura, COALESCE(SUM(monto_pagado), 0) AS monto_sin_factura FROM cfdi_pagos p LEFT JOIN cfdi_ventas v ON p.cfdi_venta_uuid = v.uuid_sat WHERE v.uuid_sat IS NULL), facturas_sin_pago AS (SELECT COUNT(*) AS facturas_sin_complemento, COALESCE(SUM(total), 0) AS monto_sin_complemento FROM cfdi_ventas v LEFT JOIN cfdi_pagos p ON v.uuid_sat = p.cfdi_venta_uuid WHERE v.metodo_pago = 'PPD' AND p.uuid_complemento IS NULL), totales AS (SELECT COUNT(*) AS total_facturas FROM cfdi_ventas UNION ALL SELECT COUNT(*) FROM cfdi_pagos) SELECT ROUND(hp.monto_sin_factura, 2) AS monto_complementos_huerfanos, hp.complementos_sin_factura, ROUND(fs.monto_sin_complemento, 2) AS monto_facturas_sin_conciliar, fs.facturas_sin_complemento, ROUND((hp.complementos_sin_factura + fs.facturas_sin_complemento) * 100.0 / NULLIF((SELECT SUM(total_facturas) FROM totales), 0), 2) AS pct_registros_sin_conciliar FROM huerfanos_pago hp, facturas_sin_pago fs LIMIT {self.max_rows};
+
+Pregunta: Facturas pagadas (con complemento de pago)
+SQL: SELECT v.receptor_nombre AS cliente, v.folio, v.serie, v.fecha_emision, ROUND(v.total, 2) AS monto_factura, ROUND(COALESCE(SUM(p.monto_pagado), 0), 2) AS total_pagado, ROUND(v.total - COALESCE(SUM(p.monto_pagado), 0), 2) AS saldo_pendiente, COUNT(p.uuid_complemento) AS num_pagos, MAX(p.fecha_pago) AS ultima_fecha_pago, CASE WHEN v.total - COALESCE(SUM(p.monto_pagado), 0) <= 0.01 THEN 'PAGADA' WHEN COALESCE(SUM(p.monto_pagado), 0) > 0 THEN 'PAGO PARCIAL' ELSE 'SIN PAGO' END AS estado_pago FROM cfdi_ventas v INNER JOIN cfdi_pagos p ON v.uuid_sat = p.cfdi_venta_uuid GROUP BY v.receptor_nombre, v.folio, v.serie, v.fecha_emision, v.total ORDER BY v.fecha_emision DESC LIMIT {self.max_rows};
+
+Pregunta: Facturas totalmente pagadas (saldo cero)
+SQL: SELECT v.receptor_nombre AS cliente, v.folio, v.serie, v.fecha_emision, ROUND(v.total, 2) AS monto_factura, ROUND(COALESCE(SUM(p.monto_pagado), 0), 2) AS total_pagado, MAX(p.fecha_pago) AS fecha_pago_final, CURRENT_DATE::date - MAX(p.fecha_pago)::date AS dias_desde_pago FROM cfdi_ventas v INNER JOIN cfdi_pagos p ON v.uuid_sat = p.cfdi_venta_uuid GROUP BY v.receptor_nombre, v.folio, v.serie, v.fecha_emision, v.total HAVING v.total - COALESCE(SUM(p.monto_pagado), 0) <= 0.01 ORDER BY fecha_pago_final DESC LIMIT {self.max_rows};
+
+Pregunta: Facturas parcialmente pagadas (con saldo pendiente)
+SQL: SELECT v.receptor_nombre AS cliente, v.folio, v.serie, v.fecha_emision, ROUND(v.total, 2) AS monto_original, ROUND(COALESCE(SUM(p.monto_pagado), 0), 2) AS pagado, ROUND(v.total - COALESCE(SUM(p.monto_pagado), 0), 2) AS saldo_pendiente, ROUND((COALESCE(SUM(p.monto_pagado), 0) * 100.0 / v.total), 1) AS pct_pagado, COUNT(p.uuid_complemento) AS num_parcialidades, MAX(p.fecha_pago) AS ultimo_pago FROM cfdi_ventas v LEFT JOIN cfdi_pagos p ON v.uuid_sat = p.cfdi_venta_uuid WHERE v.metodo_pago = 'PPD' GROUP BY v.receptor_nombre, v.folio, v.serie, v.fecha_emision, v.total HAVING COALESCE(SUM(p.monto_pagado), 0) > 0 AND v.total - COALESCE(SUM(p.monto_pagado), 0) > 0.01 ORDER BY saldo_pendiente DESC LIMIT {self.max_rows};
+
+Pregunta: Facturas sin pagar (sin complemento registrado)
+SQL: SELECT v.receptor_nombre AS cliente, v.folio, v.serie, v.fecha_emision, ROUND(v.total, 2) AS monto, v.metodo_pago, CURRENT_DATE - v.fecha_emision::date AS dias_vencidos, CASE WHEN v.metodo_pago = 'PUE' THEN 'Pago en una sola exhibición' WHEN v.metodo_pago = 'PPD' THEN 'ALERTA - Sin complemento registrado' ELSE v.metodo_pago END AS estado FROM cfdi_ventas v LEFT JOIN cfdi_pagos p ON v.uuid_sat = p.cfdi_venta_uuid WHERE p.uuid_complemento IS NULL ORDER BY dias_vencidos DESC LIMIT {self.max_rows};
+
+Pregunta: Resumen de estado de pagos
+SQL: SELECT CASE WHEN p.uuid_complemento IS NOT NULL AND v.total - COALESCE(SUM(p.monto_pagado) OVER (PARTITION BY v.uuid_sat), 0) <= 0.01 THEN 'Totalmente pagadas' WHEN p.uuid_complemento IS NOT NULL AND COALESCE(SUM(p.monto_pagado) OVER (PARTITION BY v.uuid_sat), 0) > 0 THEN 'Parcialmente pagadas' WHEN p.uuid_complemento IS NULL AND v.metodo_pago = 'PPD' THEN 'Sin pago registrado (PPD)' WHEN p.uuid_complemento IS NULL AND v.metodo_pago = 'PUE' THEN 'PUE sin complemento' ELSE 'Otros' END AS estado_pago, COUNT(DISTINCT v.uuid_sat) AS num_facturas, ROUND(SUM(DISTINCT v.total * v.tipo_cambio), 2) AS monto_total FROM cfdi_ventas v LEFT JOIN cfdi_pagos p ON v.uuid_sat = p.cfdi_venta_uuid GROUP BY estado_pago ORDER BY num_facturas DESC LIMIT {self.max_rows};
 
 Pregunta: ¿Cuáles clientes compran cada vez menos? (tendencia negativa)
 SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quarter', fecha_emision) AS trimestre, SUM(total * tipo_cambio) AS total_mxn FROM cfdi_ventas GROUP BY receptor_nombre, trimestre), con_tendencia AS (SELECT cliente, trimestre, total_mxn, LAG(total_mxn) OVER (PARTITION BY cliente ORDER BY trimestre) AS trimestre_anterior FROM por_trimestre) SELECT cliente, trimestre, ROUND(total_mxn, 2) AS ventas_actual, ROUND(trimestre_anterior, 2) AS ventas_anterior, ROUND((total_mxn - trimestre_anterior) * 100.0 / NULLIF(trimestre_anterior, 0), 2) AS cambio_pct FROM con_tendencia WHERE trimestre_anterior IS NOT NULL AND total_mxn < trimestre_anterior ORDER BY cambio_pct ASC LIMIT {self.max_rows};
