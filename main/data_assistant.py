@@ -255,9 +255,12 @@ def _render_smart_table(df: pd.DataFrame):
 
     # Aplicar formato de moneda/porcentaje
     display_num_cols = display_df.select_dtypes(include=['int64', 'float64', 'int32', 'float32']).columns
+    # Excluir columnas de conteo del formato monetario
+    count_keywords = ['num_', 'count', 'cantidad', 'total_clientes', 'total_facturas', 'conteo']
     col_config = {}
     for col in display_num_cols:
-        if any(kw in col.lower() for kw in ['total', 'monto', 'factur', 'venta', 'importe', 'saldo', 'mxn', 'compra', 'promedio', 'media', 'desviacion', 'minimo', 'maximo']):
+        is_count = any(kw in col.lower() for kw in count_keywords)
+        if not is_count and any(kw in col.lower() for kw in ['total', 'monto', 'facturacion', 'venta', 'importe', 'saldo', 'mxn', 'compra', 'promedio', 'media', 'desviacion', 'minimo', 'maximo', 'precio']):
             col_config[col] = st.column_config.NumberColumn(format="$%.2f")
         elif 'pct' in col.lower() or 'porcentaje' in col.lower() or '%' in col:
             col_config[col] = st.column_config.NumberColumn(format="%.1f%%")
@@ -944,9 +947,11 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
         logger.error(traceback.format_exc())
 
     # Default: tabla con formato
+    count_keywords = ['num_', 'count', 'cantidad', 'total_clientes', 'total_facturas', 'conteo']
     col_config = {}
     for col in num_cols:
-        if any(kw in col.lower() for kw in ['total', 'monto', 'factur', 'venta', 'importe', 'saldo', 'mxn', 'compra']):
+        is_count = any(kw in col.lower() for kw in count_keywords)
+        if not is_count and any(kw in col.lower() for kw in ['total', 'monto', 'facturacion', 'venta', 'importe', 'saldo', 'mxn', 'compra']):
             col_config[col] = st.column_config.NumberColumn(format="$%.2f")
         elif 'pct' in col.lower() or 'porcentaje' in col.lower() or '%' in col:
             col_config[col] = st.column_config.NumberColumn(format="%.1f%%")
