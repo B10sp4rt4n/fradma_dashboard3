@@ -190,6 +190,129 @@ CHART_COLORS = [
 ]
 
 
+def _render_stats_kpi(df: pd.DataFrame):
+    """
+    Renderiza 1 fila estadística como tarjetas KPI agrupadas por significado.
+    Más legible que una tabla horizontal con 8+ columnas.
+    """
+    row = df.iloc[0]
+    cols = df.columns.tolist()
+
+    def _fmt(v, is_count=False):
+        if not isinstance(v, (int, float)):
+            return str(v)
+        if is_count:
+            return f"{int(v):,}"
+        return f"${v:,.2f}" if abs(v) >= 1 else f"{v:.4f}"
+
+    # Clasificar columnas por rol estadístico
+    count_kws   = ['total_factura', 'total_concepto', 'num_factura', 'num_concepto',
+                   'count', 'conteo', 'n_empresas']
+    central_kws = ['promedio', 'media', 'avg', 'mediana', 'median',
+                   'precio_promedio', 'precio_mediana', 'moda']
+    disp_kws    = ['desviacion', 'stddev', 'varianza', 'variance']
+    range_kws   = ['minimo', 'min', 'maximo', 'max', 'precio_minimo', 'precio_maximo']
+    pct_kws     = ['percentil', 'quartil', 'p25', 'p50', 'p75']
+
+    def _match(c, kws): return any(k in c.lower() for k in kws)
+
+    count_c   = [c for c in cols if _match(c, count_kws)]
+    central_c = [c for c in cols if _match(c, central_kws) and c not in count_c]
+    disp_c    = [c for c in cols if _match(c, disp_kws)]
+    range_c   = [c for c in cols if _match(c, range_kws)]
+    pct_c     = [c for c in cols if _match(c, pct_kws)]
+    other_c   = [c for c in cols if c not in count_c + central_c + disp_c + range_c + pct_c]
+
+    # ── 1. Número héroe: total de registros ──────────────────────────────
+    if count_c:
+        v = row[count_c[0]]
+        label = count_c[0].replace('_', ' ').title()
+        st.markdown(
+            f"<div style='text-align:center; padding:8px 0 4px'>"
+            f"<span style='font-size:2rem; font-weight:700; color:#2196F3'>"
+            f"{_fmt(v, is_count=True)}</span>"
+            f"<br><span style='font-size:0.85rem; color:#888'>{label}</span>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown("---")
+
+    # ── 2. Tendencia central (promedio vs mediana con delta) ──────────────
+    if central_c:
+        st.markdown("##### 📍 Tendencia Central")
+        ui_cols = st.columns(min(len(central_c), 4))
+        vals_central = {}
+        for i, c in enumerate(central_c[:4]):
+            v = float(row[c])
+            vals_central[c] = v
+            with ui_cols[i]:
+                st.metric(c.replace('_', ' ').title(), _fmt(v))
+
+        # Insight automático promedio vs mediana
+        avg_v = next((vals_central[c] for c in central_c if _match(c, ['promedio', 'media', 'avg', 'precio_promedio'])), None)
+        med_v = next((vals_central[c] for c in central_c if _match(c, ['mediana', 'median', 'precio_mediana'])), None)
+        if avg_v is not None and med_v is not None and med_v > 0:
+            ratio = avg_v / med_v
+            if ratio > 1.5:
+                st.caption("⚠️ **Promedio >> Mediana**: existen facturas de alto valor que distorsionan el promedio. La mediana es más representativa del cliente típico.")
+            elif ratio < 0.8:
+                st.caption("ℹ️ **Promedio < Mediana**: hay facturas pequeñas o créditos que bajan el promedio.")
+            else:
+                st.caption("✅ **Promedio ≈ Mediana**: distribución equilibrada, sin outliers extremos.")
+
+    # ── 3. Rango min / max ───────────────────────────────────────────────
+    if range_c:
+        st.markdown("##### ↕️ Rango")
+        ui_cols = st.columns(min(len(range_c), 4))
+        for i, c in enumerate(range_c[:4]):
+            v = float(row[c])
+            with ui_cols[i]:
+                icon = "🔻" if _match(c, ['min', 'minimo']) else "🔺"
+                st.metric(f"{icon} {c.replace('_', ' ').title()}", _fmt(v))
+
+    # ── 4. Dispersión ────────────────────────────────────────────────────
+    if disp_c:
+        st.markdown("##### 📏 Dispersión")
+        ui_cols = st.columns(min(len(disp_c), 3))
+        for i, c in enumerate(disp_c[:3]):
+            v = float(row[c])
+            with ui_cols[i]:
+                st.metric(c.replace('_', ' ').title(), _fmt(v))
+        # Insight: CV (coef de variación) si hay promedio
+        avg_v2 = next((float(row[c]) for c in central_c if _match(c, ['promedio', 'media', 'avg'])), None)
+        std_v  = float(row[disp_c[0]]) if disp_c else None
+        if avg_v2 and std_v and avg_v2 > 0:
+            cv = std_v / avg_v2 * 100
+            if cv > 100:
+                st.caption(f"⚠️ **Alta variabilidad** (CV={cv:.0f}%): los montos son muy dispares entre clientes.")
+            elif cv > 50:
+                st.caption(f"📊 **Variabilidad moderada** (CV={cv:.0f}%): hay diferencias significativas entre facturas.")
+            else:
+                st.caption(f"✅ **Baja variabilidad** (CV={cv:.0f}%): los montos son relativamente homogéneos.")
+
+    # ── 5. Percentiles (caja de distribución) ───────────────────────────
+    if pct_c:
+        st.markdown("##### 📊 Percentiles")
+        ui_cols = st.columns(min(len(pct_c), 4))
+        for i, c in enumerate(pct_c[:4]):
+            v = float(row[c])
+            with ui_cols[i]:
+                st.metric(c.replace('_', ' ').replace('Percentil ', 'P').title(), _fmt(v))
+        p25_v = next((float(row[c]) for c in pct_c if '25' in c), None)
+        p75_v = next((float(row[c]) for c in pct_c if '75' in c), None)
+        if p25_v is not None and p75_v is not None:
+            iqr = p75_v - p25_v
+            st.caption(f"📦 **Rango intercuartil (IQR):** {_fmt(iqr)} — el 50% central de las facturas está en este rango.")
+
+    # ── 6. Otras columnas numéricas ──────────────────────────────────────
+    if other_c:
+        ui_cols = st.columns(min(len(other_c), 4))
+        for i, c in enumerate(other_c[:4]):
+            v = row[c]
+            with ui_cols[i]:
+                st.metric(c.replace('_', ' ').title(), _fmt(v) if isinstance(v, (int, float)) else str(v))
+
+
 def _render_smart_table(df: pd.DataFrame):
     """
     Renderiza tabla inteligente: detecta columnas con valor constante
@@ -201,6 +324,15 @@ def _render_smart_table(df: pd.DataFrame):
         return
 
     num_cols = df.select_dtypes(include=['int64', 'float64', 'int32', 'float32']).columns.tolist()
+
+    # ── Caso especial: 1 fila con columnas estadísticas → KPI cards ──────
+    stat_kws = ['promedio', 'media', 'avg', 'mediana', 'desviacion', 'stddev',
+                'minimo', 'maximo', 'percentil', 'varianza', 'precio_promedio',
+                'precio_mediana', 'precio_minimo', 'precio_maximo', 'total_facturas',
+                'total_conceptos', 'num_facturas', 'num_conceptos']
+    if len(df) == 1 and any(any(kw in c.lower() for kw in stat_kws) for c in num_cols):
+        _render_stats_kpi(df)
+        return
 
     # Solo separar si hay más de 3 filas (con 1-2 filas no tiene sentido)
     if len(df) > 3:
@@ -1596,8 +1728,11 @@ def _render_roi_compact():
         da_hrs = sum(a.get("hrs_saved", 0) for a in da_actions)
         da_value = sum(a.get("value", 0) for a in da_actions)
         
-        # Contar solo consultas únicas (no acciones internas)
+        # Contar consultas únicas
         da_queries = len([a for a in da_actions if a.get("action") in ["nl2sql_query", "nl2sql_complex_query"]])
+        
+        # Contar reportes/exportaciones
+        da_reports = len([a for a in da_actions if a.get("action") in ["nl2sql_pdf_report", "nl2sql_export"]])
         
         # Calcular días laborales
         da_workdays = da_hrs / 8.0  # 8 horas = 1 día laboral
@@ -1649,15 +1784,22 @@ def _render_roi_compact():
             # Fallback si no hay plotly o no hay horas
             st.metric("⏱️ Hrs ahorradas", f"{da_hrs:.1f}")
         
-        # Métrica de valor y consultas realizadas
+        # Métrica de valor y acciones realizadas
         col1, col2 = st.columns(2)
         with col1:
             st.metric("💵 Valor", f"${da_value:,.0f}")
         with col2:
+            # Mostrar desglose de acciones
+            total_actions = da_queries + da_reports
+            if da_reports > 0:
+                action_label = f"{da_queries} consulta(s) + {da_reports} reporte(s)"
+            else:
+                action_label = f"{da_queries} consulta(s)"
+            
             st.metric(
-                "🔢 Consultas", 
-                f"{da_queries}",
-                help="Número de consultas SQL realizadas. Cada consulta incluye: generación SQL + interpretación IA + gráfica automática"
+                "📊 Acciones", 
+                f"{total_actions}",
+                help=f"{action_label}. Las consultas incluyen: SQL + interpretación IA + gráfica. Los reportes incluyen: exportación formato profesional."
             )
         
         # Justificación de inversión - SIEMPRE visible si hay horas
@@ -1669,14 +1811,25 @@ def _render_roi_compact():
             st.markdown("---")
             st.markdown("### 💼 Justificación de Inversión")
             
-            # Desglose de qué incluye cada consulta
+            # Desglose de acciones completadas
+            action_details = []
             if da_queries > 0:
-                st.caption(
-                    f"ℹ️ **{da_queries} consulta(s)** realizadas. Cada una incluye:\n"
-                    f"• ⚡ Generación automática de SQL\n"
-                    f"• 🤖 Interpretación con IA\n"
-                    f"• 📊 Gráfica inteligente"
+                action_details.append(
+                    f"**{da_queries} consulta(s):**\n"
+                    f"  • ⚡ SQL automático\n"
+                    f"  • 🤖 Interpretación IA\n"
+                    f"  • 📊 Gráfica inteligente"
                 )
+            if da_reports > 0:
+                action_details.append(
+                    f"**{da_reports} reporte(s):**\n"
+                    f"  • 📄 Exportación PDF/CSV\n"
+                    f"  • 🎨 Formato profesional\n"
+                    f"  • ✅ Listo para presentar"
+                )
+            
+            if action_details:
+                st.caption("ℹ️ " + "\n\n".join(action_details))
             
             # Equivalencia con analista
             if months_analyst >= 0.01:
