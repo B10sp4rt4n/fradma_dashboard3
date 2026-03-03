@@ -1657,7 +1657,7 @@ def _render_roi_compact():
         # Justificación de inversión - SIEMPRE visible si hay horas
         if da_hrs > 0:
             months_analyst = da_workdays / 22.0  # 22 días laborales por mes
-            analyst_salary = 25000
+            analyst_salary = tracker.get_analyst_salary()  # Obtener sueldo configurable
             annual_projection = da_value * 12 if da_hrs >= 1 else 0  # Solo proyección anual si hay >= 1 hora/mes
             
             st.markdown("---")

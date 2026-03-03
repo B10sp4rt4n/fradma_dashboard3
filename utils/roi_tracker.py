@@ -234,6 +234,14 @@ class ROITracker:
             "message": f"🚨 Riesgo evitado: ${value:,.0f} MXN"
         }
     
+    def get_analyst_salary(self) -> float:
+        """Obtiene el sueldo configurado de analista o el default"""
+        return self.session_state.get("analyst_monthly_salary", self.ANALYST_MONTHLY_SALARY)
+    
+    def set_analyst_salary(self, salary: float):
+        """Configura el sueldo de referencia del analista"""
+        self.session_state["analyst_monthly_salary"] = max(1000, salary)  # Mínimo $1k
+    
     def hrs_to_workdays(self, hours: float) -> float:
         """Convierte horas a días laborales (8 hrs = 1 día)"""
         return hours / self.HOURS_PER_WORKDAY
@@ -257,13 +265,14 @@ class ROITracker:
         months_analyst = workdays / self.WORKDAYS_PER_MONTH
         # Si esto se repitiera cada mes
         monthly_savings = (hours * self.DEFAULT_HOURLY_RATES['analyst']) 
+        analyst_salary = self.get_analyst_salary()
         
         return {
             'workdays': workdays,
             'months_analyst': months_analyst,
             'monthly_savings': monthly_savings,
-            'analyst_salary': self.ANALYST_MONTHLY_SALARY,
-            'justification': f"Equivalente a {months_analyst:.2f} mes(es) de un analista a ${self.ANALYST_MONTHLY_SALARY:,}/mes"
+            'analyst_salary': analyst_salary,
+            'justification': f"Equivalente a {months_analyst:.2f} mes(es) de un analista a ${analyst_salary:,}/mes"
         }
     
     def get_summary(self) -> Dict:

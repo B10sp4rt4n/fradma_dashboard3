@@ -556,6 +556,28 @@ with st.sidebar:
     st.markdown("---")
     
     # ----------------------------------------------------------------
+    # CONFIGURACIÓN ROI: Ajustar sueldo de referencia
+    # ----------------------------------------------------------------
+    with st.expander("⚙️ Configuración ROI", expanded=False):
+        st.markdown("**💼 Sueldo de Referencia**")
+        roi_tracker_config = init_roi_tracker(st.session_state)
+        current_salary = roi_tracker_config.get_analyst_salary()
+        
+        new_salary = st.number_input(
+            "Sueldo mensual de analista (MXN)",
+            min_value=5000,
+            max_value=100000,
+            value=int(current_salary),
+            step=1000,
+            help="Ajusta el sueldo de referencia para calcular equivalencias. Típico: $20k-$30k MXN/mes"
+        )
+        
+        if new_salary != current_salary:
+            roi_tracker_config.set_analyst_salary(new_salary)
+            st.success(f"✅ Sueldo actualizado a ${new_salary:,} MXN/mes")
+            st.info("💡 Los cálculos de ROI usarán este nuevo valor de referencia")
+    
+    # ----------------------------------------------------------------
     # WIDGET ROI: Muestra el valor generado en tiempo real
     # ----------------------------------------------------------------
     try:
