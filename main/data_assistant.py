@@ -1588,7 +1588,7 @@ def _render_roi_panel():
 
 
 def _render_roi_compact():
-    """Widget ROI compacto para la barra lateral del chat."""
+    """Widget ROI compacto para la barra lateral del chat con visualización de reloj circular."""
     try:
         tracker = init_roi_tracker(st.session_state)
         da_actions = [a for a in tracker.session_state.roi_data.get("actions", [])
@@ -1598,10 +1598,57 @@ def _render_roi_compact():
         da_count = len(da_actions)
 
         st.markdown("### 💰 Tu ROI")
-        st.metric("⏱️ Hrs ahorradas", f"{da_hrs:.1f}")
-        st.metric("💵 Valor", f"${da_value:,.0f} MXN")
-        st.caption(f"🔢 {da_count} consulta(s) esta sesión")
-    except Exception:
+        
+        # Crear gauge circular tipo reloj para las horas ahorradas
+        if PLOTLY_AVAILABLE and da_hrs > 0:
+            # Gauge circular con apariencia de reloj
+            max_hours = max(8, da_hrs * 1.2)  # Max dinámico basado en horas acumuladas
+            
+            fig = go.Figure(go.Indicator(
+                mode="gauge+number",
+                value=da_hrs,
+                number={'suffix': " hrs", 'font': {'size': 24, 'color': '#2196F3'}},
+                title={'text': "⏱️ Horas Ahorradas", 'font': {'size': 14}},
+                gauge={
+                    'axis': {'range': [0, max_hours], 'tickwidth': 1, 'tickcolor': "darkgray"},
+                    'bar': {'color': "#2196F3", 'thickness': 0.75},
+                    'bgcolor': "white",
+                    'borderwidth': 2,
+                    'bordercolor': "gray",
+                    'steps': [
+                        {'range': [0, max_hours * 0.33], 'color': '#E3F2FD'},
+                        {'range': [max_hours * 0.33, max_hours * 0.67], 'color': '#BBDEFB'},
+                        {'range': [max_hours * 0.67, max_hours], 'color': '#90CAF9'},
+                    ],
+                    'threshold': {
+                        'line': {'color': "#4CAF50", 'width': 3},
+                        'thickness': 0.75,
+                        'value': da_hrs
+                    }
+                }
+            ))
+            
+            fig.update_layout(
+                height=200,
+                margin=dict(l=20, r=20, t=40, b=20),
+                paper_bgcolor="rgba(0,0,0,0)",
+                font={'color': "darkgray", 'family': "Arial"},
+            )
+            
+            st.plotly_chart(fig, use_container_width=True, key="roi_gauge")
+        else:
+            # Fallback si no hay plotly o no hay horas
+            st.metric("⏱️ Hrs ahorradas", f"{da_hrs:.1f}")
+        
+        # Métrica de valor en formato compacto
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("💵 Valor", f"${da_value:,.0f}")
+        with col2:
+            st.metric("🔢 Consultas", f"{da_count}")
+            
+    except Exception as e:
+        logger.error(f"Error renderizando ROI compact: {e}")
         pass
 
 

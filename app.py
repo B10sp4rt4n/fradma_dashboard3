@@ -4,6 +4,12 @@ import os
 from dotenv import load_dotenv
 from unidecode import unidecode
 
+try:
+    import plotly.graph_objects as go
+    PLOTLY_AVAILABLE = True
+except ImportError:
+    PLOTLY_AVAILABLE = False
+
 # Cargar variables de entorno desde .env (si existe)
 load_dotenv()
 
@@ -557,33 +563,76 @@ with st.sidebar:
         roi_summary = roi_tracker.get_summary()
         
         with st.expander("💰 Tu ROI", expanded=True):
-            # Métricas de hoy
+            # Gauge circular para horas de hoy
             st.markdown("**⏱️ Hoy**")
+            
+            if PLOTLY_AVAILABLE and roi_summary['today']['hrs'] > 0:
+                max_hours = max(4, roi_summary['today']['hrs'] * 1.5)
+                
+                fig = go.Figure(go.Indicator(
+                    mode="gauge+number",
+                    value=roi_summary['today']['hrs'],
+                    number={'suffix': " hrs", 'font': {'size': 20, 'color': '#2196F3'}},
+                    gauge={
+                        'axis': {'range': [0, max_hours], 'tickwidth': 1, 'tickcolor': "darkgray"},
+                        'bar': {'color': "#2196F3", 'thickness': 0.7},
+                        'bgcolor': "white",
+                        'borderwidth': 2,
+                        'bordercolor': "gray",
+                        'steps': [
+                            {'range': [0, max_hours * 0.33], 'color': '#E3F2FD'},
+                            {'range': [max_hours * 0.33, max_hours * 0.67], 'color': '#BBDEFB'},
+                            {'range': [max_hours * 0.67, max_hours], 'color': '#90CAF9'},
+                        ],
+                        'threshold': {
+                            'line': {'color': "#4CAF50", 'width': 3},
+                            'thickness': 0.75,
+                            'value': roi_summary['today']['hrs']
+                        }
+                    }
+                ))
+                
+                fig.update_layout(
+                    height=180,
+                    margin=dict(l=10, r=10, t=30, b=10),
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    font={'color': "darkgray", 'family': "Arial", 'size': 10},
+                )
+                
+                st.plotly_chart(fig, use_container_width=True, key="roi_gauge_today")
+            else:
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric(
+                        "Horas",
+                        f"{roi_summary['today']['hrs']:.1f}",
+                        delta=None,
+                        help="Tiempo ahorrado hoy"
+                    )
+                with col2:
+                    st.metric(
+                        "Valor",
+                        f"${roi_summary['today']['value']:,.0f}",
+                        delta=None,
+                        help="Valor generado hoy"
+                    )
+            
+            # Métricas del mes con valor destacado
+            st.markdown("---")
+            st.markdown("**📅 Este mes**")
             col1, col2 = st.columns(2)
             with col1:
                 st.metric(
-                    "Horas",
-                    f"{roi_summary['today']['hrs']:.1f}",
-                    delta=None,
-                    help="Tiempo ahorrado hoy"
+                    "💵 Valor",
+                    f"${roi_summary['month']['value']:,.0f}",
+                    help="Valor total generado este mes"
                 )
             with col2:
                 st.metric(
-                    "Valor",
-                    f"${roi_summary['today']['value']:,.0f}",
-                    delta=None,
-                    help="Valor generado hoy"
+                    "⏱️ Horas",
+                    f"{roi_summary['month']['hrs']:.1f}",
+                    help="Horas ahorradas este mes"
                 )
-            
-            # Métricas del mes
-            st.markdown("---")
-            st.markdown("**📅 Este mes**")
-            st.metric(
-                "Ahorro acumulado",
-                f"${roi_summary['month']['value']:,.0f}",
-                delta=f"{roi_summary['month']['hrs']:.0f} hrs",
-                help="Valor total generado este mes"
-            )
             
             # Métricas del año
             st.markdown("---")
