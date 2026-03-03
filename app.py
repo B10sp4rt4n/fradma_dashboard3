@@ -644,15 +644,32 @@ with st.sidebar:
                     help="Días laborales ahorrados"
                 )
             
-            # Justificación de inversión (solo si hay suficientes días)
-            if roi_summary['month']['workdays'] >= 1.0:
+            # Justificación de inversión - SIEMPRE visible si hay horas
+            if roi_summary['month']['hrs'] > 0:
                 analyst_equiv = roi_summary['month']['analyst_equiv']
-                st.success(
-                    f"💼 **Justificación de inversión:**\n\n"
-                    f"✨ Equivalente a **{analyst_equiv['months_analyst']:.2f} mes(es)** "
-                    f"de un analista a ${analyst_equiv['analyst_salary']:,}/mes\n\n"
-                    f"🎯 Ahorro proyectado anual: **${analyst_equiv['monthly_savings'] * 12:,.0f}**"
+                
+                st.markdown("---")
+                st.markdown("#### 💼 Justificación de Inversión")
+                
+                # Mostrar equivalencia básica
+                st.info(
+                    f"📊 **Este mes has ahorrado:**\n\n"
+                    f"⏱️ {roi_summary['month']['hrs']:.1f} horas = {roi_summary['month']['workdays']:.2f} días laborales\n\n"
+                    f"👤 Equivalente a **{analyst_equiv['months_analyst']:.3f} mes(es)** de un analista\n\n"
+                    f"💰 Valor: **${roi_summary['month']['value']:,.0f}** MXN"
                 )
+                
+                # Proyección anual (si hay suficientes datos)
+                if roi_summary['month']['workdays'] >= 0.5:
+                    st.success(
+                        f"🎯 **Proyección anual:**\n\n"
+                        f"📅 ~{roi_summary['month']['workdays'] * 12:.1f} días laborales/año\n\n"
+                        f"💵 Ahorro estimado: **${analyst_equiv['monthly_savings'] * 12:,.0f}** MXN/año\n\n"
+                        f"✨ ROI de la plataforma claramente justificado"
+                    )
+                
+                # Referencia de sueldo
+                st.caption(f"📌 Referencia: Sueldo promedio de analista ${analyst_equiv['analyst_salary']:,} MXN/mes")
             
             # Métricas del año
             st.markdown("---")

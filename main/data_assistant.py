@@ -1654,14 +1654,34 @@ def _render_roi_compact():
         with col2:
             st.metric("🔢 Consultas", f"{da_count}")
         
-        # Justificación de inversión (solo si hay suficientes horas)
-        if da_workdays >= 1.0:
+        # Justificación de inversión - SIEMPRE visible si hay horas
+        if da_hrs > 0:
             months_analyst = da_workdays / 22.0  # 22 días laborales por mes
-            st.success(
-                f"💼 Equivalente a **{months_analyst:.2f} mes(es)** "
-                f"de un analista ($25k/mes)\n\n"
-                f"✨ Justificación perfecta para la inversión en la plataforma"
-            )
+            analyst_salary = 25000
+            annual_projection = da_value * 12 if da_hrs >= 1 else 0  # Solo proyección anual si hay >= 1 hora/mes
+            
+            st.markdown("---")
+            st.markdown("### 💼 Justificación de Inversión")
+            
+            # Equivalencia con analista
+            if months_analyst >= 0.01:
+                st.info(
+                    f"📊 **Equivalencia de costo:**\n\n"
+                    f"⏱️ {da_hrs:.1f} hrs = {da_workdays:.2f} días laborales\n\n"
+                    f"👤 = **{months_analyst:.3f} mes(es)** de un analista\n\n"
+                    f"💰 Costo evitado: **${months_analyst * analyst_salary:,.0f}** MXN"
+                )
+            
+            # Proyección anual (solo si tiene suficientes datos)
+            if da_hrs >= 1.0:
+                st.success(
+                    f"🎯 **Proyección anual:**\n\n"
+                    f"Si mantienes este ritmo, ahorrarás aproximadamente:\n\n"
+                    f"📅 {da_workdays * 12:.1f} días/año\n\n"
+                    f"💵 **${annual_projection:,.0f}** MXN/año"
+                )
+            else:
+                st.caption("💡 Acumula más horas para ver proyección anual")
             
     except Exception as e:
         logger.error(f"Error renderizando ROI compact: {e}")
