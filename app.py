@@ -600,6 +600,10 @@ with st.sidebar:
                 )
                 
                 st.plotly_chart(fig, use_container_width=True, key="roi_gauge_today")
+                
+                # Mostrar días laborales
+                if roi_summary['today']['workdays'] >= 0.1:
+                    st.caption(f"📅 {roi_summary['today']['workdays']:.1f} días laborales (8 hrs = 1 día)")
             else:
                 col1, col2 = st.columns(2)
                 with col1:
@@ -617,10 +621,10 @@ with st.sidebar:
                         help="Valor generado hoy"
                     )
             
-            # Métricas del mes con valor destacado
+            # Métricas del mes con días laborales
             st.markdown("---")
             st.markdown("**📅 Este mes**")
-            col1, col2 = st.columns(2)
+            col1, col2, col3 = st.columns(3)
             with col1:
                 st.metric(
                     "💵 Valor",
@@ -633,16 +637,39 @@ with st.sidebar:
                     f"{roi_summary['month']['hrs']:.1f}",
                     help="Horas ahorradas este mes"
                 )
+            with col3:
+                st.metric(
+                    "📅 Días",
+                    f"{roi_summary['month']['workdays']:.1f}",
+                    help="Días laborales ahorrados"
+                )
+            
+            # Justificación de inversión (solo si hay suficientes días)
+            if roi_summary['month']['workdays'] >= 1.0:
+                analyst_equiv = roi_summary['month']['analyst_equiv']
+                st.success(
+                    f"💼 **Justificación de inversión:**\n\n"
+                    f"✨ Equivalente a **{analyst_equiv['months_analyst']:.2f} mes(es)** "
+                    f"de un analista a ${analyst_equiv['analyst_salary']:,}/mes\n\n"
+                    f"🎯 Ahorro proyectado anual: **${analyst_equiv['monthly_savings'] * 12:,.0f}**"
+                )
             
             # Métricas del año
             st.markdown("---")
             st.markdown("**📊 Este año**")
-            st.metric(
-                "ROI Total",
-                f"${roi_summary['year']['value']:,.0f}",
-                delta=f"{roi_summary['year']['hrs']:.0f} hrs",
-                help="Valor total generado este año"
-            )
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric(
+                    "ROI Total",
+                    f"${roi_summary['year']['value']:,.0f}",
+                    help="Valor total generado este año"
+                )
+            with col2:
+                st.metric(
+                    "Días Ahorrados",
+                    f"{roi_summary['year']['workdays']:.1f}",
+                    help="Días laborales ahorrados este año"
+                )
             
             # Nota de acción
             if roi_summary['today']['actions'] > 0:

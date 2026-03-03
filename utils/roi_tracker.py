@@ -60,6 +60,14 @@ class ROITracker:
         "user": 500,        # Usuario estándar
     }
     
+    # Constantes para cálculo de días laborales
+    HOURS_PER_WORKDAY = 8
+    WORKDAYS_PER_MONTH = 22
+    WORKDAYS_PER_YEAR = 260
+    
+    # Sueldo de referencia de un analista (MXN mensual)
+    ANALYST_MONTHLY_SALARY = 25000  # $25k MXN/mes típico
+    
     def __init__(self, session_state):
         """
         Inicializa el tracker con el session_state de Streamlit
@@ -226,33 +234,78 @@ class ROITracker:
             "message": f"🚨 Riesgo evitado: ${value:,.0f} MXN"
         }
     
+    def hrs_to_workdays(self, hours: float) -> float:
+        """Convierte horas a días laborales (8 hrs = 1 día)"""
+        return hours / self.HOURS_PER_WORKDAY
+    
+    def calculate_analyst_cost_equivalent(self, hours: float) -> Dict:
+        """
+        Calcula el costo equivalente en sueldos de analista
+        
+        Args:
+            hours: Horas ahorradas
+            
+        Returns:
+            Dict con equivalencias: {
+                'workdays': días laborales,
+                'months_analyst': meses de analista equivalentes,
+                'monthly_savings': ahorro mensual si fuera recurrente
+            }
+        """
+        workdays = self.hrs_to_workdays(hours)
+        # Un analista trabaja ~22 días/mes
+        months_analyst = workdays / self.WORKDAYS_PER_MONTH
+        # Si esto se repitiera cada mes
+        monthly_savings = (hours * self.DEFAULT_HOURLY_RATES['analyst']) 
+        
+        return {
+            'workdays': workdays,
+            'months_analyst': months_analyst,
+            'monthly_savings': monthly_savings,
+            'analyst_salary': self.ANALYST_MONTHLY_SALARY,
+            'justification': f"Equivalente a {months_analyst:.2f} mes(es) de un analista a ${self.ANALYST_MONTHLY_SALARY:,}/mes"
+        }
+    
     def get_summary(self) -> Dict:
         """
-        Obtiene resumen del ROI acumulado
+        Obtiene resumen del ROI acumulado con días laborales calculados
         
         Returns:
-            Dict con métricas: today, month, year, total
+            Dict con métricas: today, month, year, total (incluyendo workdays)
         """
+        today_hrs = self.session_state.roi_data["today"]["hrs"]
+        month_hrs = self.session_state.roi_data["month"]["hrs"]
+        year_hrs = self.session_state.roi_data["year"]["hrs"]
+        total_hrs = self.session_state.roi_data["total_hrs_saved"]
+        
         return {
             "today": {
-                "hrs": self.session_state.roi_data["today"]["hrs"],
+                "hrs": today_hrs,
+                "workdays": self.hrs_to_workdays(today_hrs),
                 "value": self.session_state.roi_data["today"]["value"],
-                "actions": self.session_state.roi_data["today"]["actions_count"]
+                "actions": self.session_state.roi_data["today"]["actions_count"],
+                "analyst_equiv": self.calculate_analyst_cost_equivalent(today_hrs)
             },
             "month": {
-                "hrs": self.session_state.roi_data["month"]["hrs"],
+                "hrs": month_hrs,
+                "workdays": self.hrs_to_workdays(month_hrs),
                 "value": self.session_state.roi_data["month"]["value"],
-                "actions": self.session_state.roi_data["month"]["actions_count"]
+                "actions": self.session_state.roi_data["month"]["actions_count"],
+                "analyst_equiv": self.calculate_analyst_cost_equivalent(month_hrs)
             },
             "year": {
-                "hrs": self.session_state.roi_data["year"]["hrs"],
+                "hrs": year_hrs,
+                "workdays": self.hrs_to_workdays(year_hrs),
                 "value": self.session_state.roi_data["year"]["value"],
-                "actions": self.session_state.roi_data["year"]["actions_count"]
+                "actions": self.session_state.roi_data["year"]["actions_count"],
+                "analyst_equiv": self.calculate_analyst_cost_equivalent(year_hrs)
             },
             "total": {
-                "hrs": self.session_state.roi_data["total_hrs_saved"],
+                "hrs": total_hrs,
+                "workdays": self.hrs_to_workdays(total_hrs),
                 "value": self.session_state.roi_data["total_value"],
-                "actions": len(self.session_state.roi_data["actions"])
+                "actions": len(self.session_state.roi_data["actions"]),
+                "analyst_equiv": self.calculate_analyst_cost_equivalent(total_hrs)
             }
         }
     

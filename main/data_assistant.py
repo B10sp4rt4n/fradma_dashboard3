@@ -1596,6 +1596,9 @@ def _render_roi_compact():
         da_hrs = sum(a.get("hrs_saved", 0) for a in da_actions)
         da_value = sum(a.get("value", 0) for a in da_actions)
         da_count = len(da_actions)
+        
+        # Calcular días laborales
+        da_workdays = da_hrs / 8.0  # 8 horas = 1 día laboral
 
         st.markdown("### 💰 Tu ROI")
         
@@ -1636,16 +1639,29 @@ def _render_roi_compact():
             )
             
             st.plotly_chart(fig, use_container_width=True, key="roi_gauge")
+            
+            # Mostrar días laborales destacados
+            if da_workdays >= 0.1:
+                st.info(f"📅 **{da_workdays:.1f} días laborales** ahorrados (8 hrs = 1 día)")
         else:
             # Fallback si no hay plotly o no hay horas
             st.metric("⏱️ Hrs ahorradas", f"{da_hrs:.1f}")
         
-        # Métrica de valor en formato compacto
+        # Métrica de valor y equivalencia con analista
         col1, col2 = st.columns(2)
         with col1:
             st.metric("💵 Valor", f"${da_value:,.0f}")
         with col2:
             st.metric("🔢 Consultas", f"{da_count}")
+        
+        # Justificación de inversión (solo si hay suficientes horas)
+        if da_workdays >= 1.0:
+            months_analyst = da_workdays / 22.0  # 22 días laborales por mes
+            st.success(
+                f"💼 Equivalente a **{months_analyst:.2f} mes(es)** "
+                f"de un analista ($25k/mes)\n\n"
+                f"✨ Justificación perfecta para la inversión en la plataforma"
+            )
             
     except Exception as e:
         logger.error(f"Error renderizando ROI compact: {e}")
