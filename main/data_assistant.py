@@ -1966,16 +1966,35 @@ def _render_result_message(msg: dict, msg_idx: int = 0):
         logger.info(f"📊 Render msg: chart_type={chart_type}, question='{question[:80]}', spec={chart_spec}")
 
         # ============================================================
-        # Pestañas: Gráfica | Tabla | SQL  (PRIMERO para que _auto_chart guarde la fig)
+        # Pestañas: Gráfica | KPIs | Tabla | SQL  (PRIMERO para que _auto_chart guarde la fig)
         # ============================================================
-        tab_chart, tab_table, tab_sql = st.tabs(["📊 Gráfica", "📋 Tabla", "🔍 SQL"])
+        tab_chart, tab_kpi, tab_table, tab_sql = st.tabs(["📊 Gráfica", "📊 KPIs", "📋 Tabla", "🔍 SQL"])
 
         with tab_chart:
             _auto_chart(df, chart_type, question, chart_spec=chart_spec)
 
-        with tab_table:
-            # Separar columnas con valores constantes (estadísticos globales) del detalle
+        with tab_kpi:
+            # KPIs inteligentes: cards agrupadas con insights para estadísticos,
+            # o resumen de columnas constantes + detalle para consultas tabulares
             _render_smart_table(df)
+
+        with tab_table:
+            # Tabla cruda completa con formato de moneda/porcentaje
+            display_num_cols = df.select_dtypes(include=['int64', 'float64', 'int32', 'float32']).columns
+            count_keywords = ['num_', 'count', 'cantidad', 'total_clientes', 'total_facturas', 'conteo']
+            col_config = {}
+            for col in display_num_cols:
+                is_count = any(kw in col.lower() for kw in count_keywords)
+                if not is_count and any(kw in col.lower() for kw in ['total', 'monto', 'facturacion', 'venta',
+                                                                       'importe', 'saldo', 'mxn', 'compra',
+                                                                       'promedio', 'media', 'desviacion',
+                                                                       'minimo', 'maximo', 'precio',
+                                                                       'mediana', 'percentil']):
+                    col_config[col] = st.column_config.NumberColumn(format="$%.2f")
+                elif 'pct' in col.lower() or 'porcentaje' in col.lower() or '%' in col:
+                    col_config[col] = st.column_config.NumberColumn(format="%.1f%%")
+            st.dataframe(df, use_container_width=True, hide_index=True, column_config=col_config)
+            st.caption(f"📋 {len(df)} fila(s) · {len(df.columns)} columna(s)")
 
         with tab_sql:
             st.code(msg.get("sql", ""), language="sql")
