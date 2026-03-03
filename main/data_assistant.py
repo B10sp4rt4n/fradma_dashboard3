@@ -1595,7 +1595,9 @@ def _render_roi_compact():
                       if a.get("module") == "data_assistant"]
         da_hrs = sum(a.get("hrs_saved", 0) for a in da_actions)
         da_value = sum(a.get("value", 0) for a in da_actions)
-        da_count = len(da_actions)
+        
+        # Contar solo consultas únicas (no acciones internas)
+        da_queries = len([a for a in da_actions if a.get("action") in ["nl2sql_query", "nl2sql_complex_query"]])
         
         # Calcular días laborales
         da_workdays = da_hrs / 8.0  # 8 horas = 1 día laboral
@@ -1614,7 +1616,7 @@ def _render_roi_compact():
                 title={'text': "⏱️ Horas Ahorradas", 'font': {'size': 14}},
                 gauge={
                     'axis': {'range': [0, max_hours], 'tickwidth': 1, 'tickcolor': "darkgray"},
-                    'bar': {'color': "#2196F3", 'thickness': 0.75},
+                    'bar': {'color': '#2196F3', 'thickness': 0.75},
                     'bgcolor': "white",
                     'borderwidth': 2,
                     'bordercolor': "gray",
@@ -1647,12 +1649,16 @@ def _render_roi_compact():
             # Fallback si no hay plotly o no hay horas
             st.metric("⏱️ Hrs ahorradas", f"{da_hrs:.1f}")
         
-        # Métrica de valor y equivalencia con analista
+        # Métrica de valor y consultas realizadas
         col1, col2 = st.columns(2)
         with col1:
             st.metric("💵 Valor", f"${da_value:,.0f}")
         with col2:
-            st.metric("🔢 Consultas", f"{da_count}")
+            st.metric(
+                "🔢 Consultas", 
+                f"{da_queries}",
+                help="Número de consultas SQL realizadas. Cada consulta incluye: generación SQL + interpretación IA + gráfica automática"
+            )
         
         # Justificación de inversión - SIEMPRE visible si hay horas
         if da_hrs > 0:
@@ -1662,6 +1668,15 @@ def _render_roi_compact():
             
             st.markdown("---")
             st.markdown("### 💼 Justificación de Inversión")
+            
+            # Desglose de qué incluye cada consulta
+            if da_queries > 0:
+                st.caption(
+                    f"ℹ️ **{da_queries} consulta(s)** realizadas. Cada una incluye:\n"
+                    f"• ⚡ Generación automática de SQL\n"
+                    f"• 🤖 Interpretación con IA\n"
+                    f"• 📊 Gráfica inteligente"
+                )
             
             # Equivalencia con analista
             if months_analyst >= 0.01:

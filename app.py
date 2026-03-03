@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import os
+from datetime import datetime
 from dotenv import load_dotenv
 from unidecode import unidecode
 
@@ -710,9 +711,24 @@ with st.sidebar:
                     help="Días laborales ahorrados este año"
                 )
             
-            # Nota de acción
+            # Nota de actividad
             if roi_summary['today']['actions'] > 0:
-                st.success(f"✨ {roi_summary['today']['actions']} acción(es) completada(s) hoy")
+                # Calcular consultas únicas del data assistant
+                all_actions = roi_tracker.session_state.roi_data.get("actions", [])
+                da_queries_today = len([
+                    a for a in all_actions 
+                    if a.get("module") == "data_assistant" 
+                    and a.get("action") in ["nl2sql_query", "nl2sql_complex_query"]
+                    and a.get("timestamp").date() == datetime.now().date()
+                ])
+                
+                if da_queries_today > 0:
+                    st.success(
+                        f"✨ **{da_queries_today} consulta(s)** realizadas hoy\n\n"
+                        f"Cada consulta incluye: SQL + interpretación IA + gráfica automática"
+                    )
+                else:
+                    st.success(f"✨ {roi_summary['today']['actions']} acción(es) completada(s) hoy")
             else:
                 st.info("💡 Completa acciones para ver tu ROI crecer")
     except Exception as e:
