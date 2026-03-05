@@ -487,13 +487,23 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
 
     logger.info(f"📊 _auto_chart: chart_type_in={chart_type}, rows={len(df)}, num_cols={len(num_cols)}, user_wants_chart={user_wants_chart}, ai_visual={ai_assigned_visual}")
     
-    # Si es consulta estadística con 1 fila → stats_summary
-    # PERO NO si la IA ya asignó tipo visual o el usuario pidió gráficas
-    if len(df) == 1 and len(num_cols) >= 3 and (is_stats_query or has_stat_cols):
+    # Si es consulta estadística con 1 fila → forzar SIEMPRE stats_summary
+    # (un scatter/line de 1 fila con columnas desviacion/percentil no tiene sentido)
+    # EXCEPTO si el usuario explícitamente pidió gráfica/visualización
+    if len(df) == 1 and len(num_cols) >= 3 and has_stat_cols:
+        if not user_wants_chart:
+            # IA puede haber asignado "line", "scatter", etc. — ignorarla aquí
+            chart_type = "stats_summary"
+            logger.info("📊 Forzando stats_summary (1 fila con cols estadísticas, sin petición de gráfica)")
+        else:
+            # Usuario pidió gráficas con 1 fila → bar chart de las columnas numéricas
+            chart_type = "bar"
+            logger.info(f"📊 Forzando bar chart para 1 fila estadística (usuario quiere chart)")
+    # Si es stats por pregunta (no por columnas) y 1 fila
+    elif len(df) == 1 and len(num_cols) >= 3 and is_stats_query:
         if not user_wants_chart and not ai_assigned_visual:
             chart_type = "stats_summary"
         elif (user_wants_chart or ai_assigned_visual) and chart_type in ("table", "stats_summary", "metric"):
-            # Usuario pidió gráficas con 1 fila → bar chart de las columnas numéricas
             chart_type = "bar"
             logger.info(f"📊 Forzando bar chart para 1 fila con {len(num_cols)} columnas numéricas")
     # Si tiene varias filas con columnas estadísticas → aún puede ser stats o box
@@ -1119,12 +1129,21 @@ def _render_stats_chart(df: pd.DataFrame, num_cols: list, cat_cols: list,
             st.markdown(f"#### 📊 {title}")
 
             # Clasificar columnas por tipo de estadística
-            count_cols = [c for c in num_cols if any(k in c.lower() for k in ['count', 'num_factura', 'num_concepto', 'total_factura', 'total_concepto'])]
-            central_cols = [c for c in num_cols if any(k in c.lower() for k in ['media', 'promedio', 'avg', 'mediana', 'median', 'moda', 'precio_promedio', 'precio_mediana'])]
-            dispersion_cols = [c for c in num_cols if any(k in c.lower() for k in ['desviacion', 'stddev', 'varianza', 'variance'])]
-            range_cols = [c for c in num_cols if any(k in c.lower() for k in ['minimo', 'min', 'maximo', 'max'])]
-            percentile_cols = [c for c in num_cols if any(k in c.lower() for k in ['percentil', 'quartil', 'p25', 'p50', 'p75'])]
-            other_cols = [c for c in num_cols if c not in count_cols + central_cols + dispersion_cols + range_cols + percentile_cols]
+            count_cols = [c for c in num_cols if any(k in c.lower() for k in
+                          ['count', 'num_factura', 'num_concepto', 'total_factura',
+                           'total_concepto', 'total_registro', 'n_empresa'])]
+            central_cols = [c for c in num_cols if any(k in c.lower() for k in
+                            ['media', 'promedio', 'avg', 'mediana', 'median',
+                             'moda', 'precio_promedio', 'precio_mediana'])]
+            dispersion_cols = [c for c in num_cols if any(k in c.lower() for k in
+                               ['desviacion', 'stddev', 'varianza', 'variance'])]
+            range_cols = [c for c in num_cols if any(k in c.lower() for k in
+                          ['minimo', 'min_', 'maximo', 'max_', 'precio_minimo',
+                           'precio_maximo']) or c.lower() in ('minimo', 'maximo', 'min', 'max')]
+            percentile_cols = [c for c in num_cols if any(k in c.lower() for k in
+                               ['percentil', 'quartil', 'p25', 'p50', 'p75'])]
+            other_cols = [c for c in num_cols if c not in
+                          count_cols + central_cols + dispersion_cols + range_cols + percentile_cols]
 
             # Tarjetas de conteo
             if count_cols:
@@ -1177,14 +1196,20 @@ def _render_stats_chart(df: pd.DataFrame, num_cols: list, cat_cols: list,
                 for i, col in enumerate(other_cols[:4]):
                     with cols_ui[i]:
                         v = df[col].iloc[0]
-                        st.metric(col.replace('_', ' ').title(), _fmt_money(v))
+                        st.metric(col.replace('_', ' ').title(),
+                                  _fmt_money(v) if isinstance(v, (int, float)) else str(v))
 
-            # Gráfica de barras horizontal con todas las métricas
-            stat_data = []
-            for col in num_cols:
-                if col not in count_cols:
-                    stat_data.append({"Métrica": col.replace('_', ' ').title(), "Valor": float(df[col].iloc[0])})
-            if stat_data:
+            # Gráfica de barras: solo comparar valores de la misma categoría (central vs percentiles)
+            # Evitar mezclar escalas completamente dispares (desviación enorme vs percentil_25 pequeño)
+            comparable_cols = central_cols + percentile_cols  # misma escala: promedios y percentiles
+            if not comparable_cols:
+                comparable_cols = [c for c in num_cols if c not in count_cols]
+
+            if comparable_cols:
+                stat_data = [
+                    {"Métrica": c.replace('_', ' ').title(), "Valor": float(df[c].iloc[0])}
+                    for c in comparable_cols
+                ]
                 stat_df = pd.DataFrame(stat_data)
                 fig = px.bar(
                     stat_df, x="Valor", y="Métrica",
