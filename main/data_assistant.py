@@ -400,6 +400,173 @@ def _render_smart_table(df: pd.DataFrame):
     st.dataframe(display_df, use_container_width=True, hide_index=True, column_config=col_config)
 
 
+def _render_kpi_tab(df: pd.DataFrame):
+    """
+    Tab KPIs: calcula y muestra métricas clave de cualquier DataFrame.
+    - Formato kpi/valor/unidad → cards ejecutivas
+    - 1 fila estadística       → usa _render_stats_kpi
+    - Multicol numérica        → suma, conteo, promedio, top/bottom
+    """
+    if df.empty:
+        st.info("Sin datos para calcular KPIs.")
+        return
+
+    cols_lower = [c.lower() for c in df.columns]
+
+    # ── Caso especial: resultado con columnas kpi + valor + unidad ────────
+    has_kpi_col   = any(c in ('kpi', 'indicador', 'metrica', 'nombre') for c in cols_lower)
+    has_valor_col = any(c in ('valor', 'value') for c in cols_lower)
+    if has_kpi_col and has_valor_col:
+        kpi_col   = df.columns[cols_lower.index(next(c for c in cols_lower if c in ('kpi', 'indicador', 'metrica', 'nombre')))]
+        valor_col = df.columns[cols_lower.index(next(c for c in cols_lower if c in ('valor', 'value')))]
+        unidad_col = next((df.columns[i] for i, c in enumerate(cols_lower) if c in ('unidad', 'unit', 'tipo')), None)
+
+        ICONS = {
+            'facturac': '💰', 'venta': '💰', 'mxn': '💰',
+            'factura': '📄', 'ticket': '🎫',
+            'cliente': '👥', 'crecimiento': '📈', '%': '📊',
+        }
+
+        def _kpi_icon(name: str) -> str:
+            nl = name.lower()
+            for k, ico in ICONS.items():
+                if k in nl:
+                    return ico
+            return '📊'
+
+        def _fmt_val(raw_val, unidad: str = '') -> str:
+            try:
+                v = float(str(raw_val).replace(',', ''))
+            except (ValueError, TypeError):
+                return str(raw_val)
+            import math
+            if math.isnan(v) or math.isinf(v):
+                return "—"
+            u = (unidad or '').lower()
+            if 'mxn' in u or 'facturaci' in u:
+                return f"${v:,.2f}"
+            if '%' in u or 'crecimiento' in u:
+                return f"{v:,.1f}%"
+            if 'factura' in u or 'cliente' in u or 'registro' in u:
+                return f"{int(v):,}"
+            if abs(v) >= 1000:
+                return f"${v:,.2f}"
+            return f"{v:,.2f}"
+
+        rows = df[[kpi_col, valor_col] + ([unidad_col] if unidad_col else [])].values.tolist()
+
+        # Render en filas de 3 o 4 tarjetas
+        n_per_row = 4 if len(rows) >= 6 else 3
+        for i in range(0, len(rows), n_per_row):
+            chunk = rows[i:i + n_per_row]
+            ui_cols = st.columns(len(chunk))
+            for j, row in enumerate(chunk):
+                nombre = str(row[0])
+                raw    = row[1]
+                unidad = str(row[2]) if unidad_col else ''
+                ico    = _kpi_icon(nombre)
+                val_fmt = _fmt_val(raw, unidad)
+                with ui_cols[j]:
+                    st.metric(f"{ico} {nombre}", val_fmt)
+        return
+        return
+
+    # Caso especial: 1 fila con columnas estadísticas
+    stat_kws = ['promedio', 'media', 'avg', 'mediana', 'desviacion', 'stddev',
+                'minimo', 'maximo', 'percentil', 'varianza', 'precio_promedio',
+                'precio_mediana', 'precio_minimo', 'precio_maximo', 'total_facturas',
+                'total_conceptos', 'num_facturas', 'num_conceptos']
+    num_cols = df.select_dtypes(include=['int64', 'float64', 'int32', 'float32']).columns.tolist()
+    if len(df) == 1 and any(any(kw in c.lower() for kw in stat_kws) for c in num_cols):
+        _render_stats_kpi(df)
+        return
+
+    # ── KPIs calculados desde el DataFrame ───────────────────────────────
+    count_kws  = ['num_', 'count', 'cantidad', 'facturas', 'conteo', 'registros']
+    money_kws  = ['total', 'monto', 'facturacion', 'venta', 'importe', 'saldo',
+                  'mxn', 'compra', 'cobrado', 'monetario', 'ventas']
+    pct_kws    = ['pct', 'porcentaje', 'crecimiento', 'tasa']
+
+    def _is_count(c): return any(k in c.lower() for k in count_kws)
+    def _is_money(c): return any(k in c.lower() for k in money_kws)
+    def _is_pct(c):   return any(k in c.lower() for k in pct_kws)
+
+    def _fmt(v, col=""):
+        if not isinstance(v, (int, float)): return str(v)
+        if _is_count(col): return f"{int(v):,}"
+        if _is_pct(col):   return f"{v:,.1f}%"
+        if _is_money(col) or abs(v) >= 1000: return f"${v:,.2f}"
+        return f"{v:,.2f}"
+
+    str_cols = df.select_dtypes(include=['object']).columns.tolist()
+
+    # ── Fila 1: métricas globales ───────────────────────────────────────
+    st.markdown("##### 📊 Resumen global")
+    kpi_items = []
+
+    # Número de registros siempre
+    kpi_items.append(("📋 Registros", f"{len(df):,}", None))
+
+    # Por columna numérica: suma si dinero/count, promedio si otro
+    for col in num_cols[:4]:
+        total_val = df[col].sum()
+        avg_val   = df[col].mean()
+        if _is_count(col):
+            kpi_items.append((f"Σ {col.replace('_',' ').title()}", f"{int(total_val):,}", None))
+        elif _is_money(col):
+            kpi_items.append((f"Σ {col.replace('_',' ').title()}", f"${total_val:,.2f}", f"Prom: ${avg_val:,.2f}"))
+        elif _is_pct(col):
+            kpi_items.append((f"Prom {col.replace('_',' ').title()}", f"{avg_val:,.1f}%", None))
+        else:
+            kpi_items.append((f"Σ {col.replace('_',' ').title()}", _fmt(total_val, col), f"Prom: {_fmt(avg_val, col)}"))
+
+    cols_ui = st.columns(min(len(kpi_items), 4))
+    for i, (label, val, delta) in enumerate(kpi_items[:4]):
+        with cols_ui[i]:
+            st.metric(label, val, delta)
+    if len(kpi_items) > 4:
+        cols_ui2 = st.columns(min(len(kpi_items) - 4, 4))
+        for i, (label, val, delta) in enumerate(kpi_items[4:8]):
+            with cols_ui2[i]:
+                st.metric(label, val, delta)
+
+    # ── Fila 2: top / bottom ────────────────────────────────────────────
+    if str_cols and num_cols:
+        st.markdown("---")
+        dim_col = str_cols[0]
+        val_col = next((c for c in num_cols if _is_money(c)), num_cols[0])
+
+        top_n = df.nlargest(3, val_col)[[dim_col, val_col]]
+        bot_n = df.nsmallest(3, val_col)[[dim_col, val_col]]
+
+        col_top, col_bot = st.columns(2)
+        with col_top:
+            st.markdown(f"##### 🏆 Top 3 por {val_col.replace('_', ' ').title()}")
+            for _, row in top_n.iterrows():
+                st.markdown(
+                    f"**{row[dim_col]}** — {_fmt(float(row[val_col]), val_col)}"
+                )
+        with col_bot:
+            st.markdown(f"##### 🔻 Menor 3 por {val_col.replace('_', ' ').title()}")
+            for _, row in bot_n.iterrows():
+                st.markdown(
+                    f"**{row[dim_col]}** — {_fmt(float(row[val_col]), val_col)}"
+                )
+
+        # ── Concentración: % que representa el top 1 ────────────────────
+        if len(df) > 1:
+            total_sum = df[val_col].sum()
+            top1_val  = df[val_col].max()
+            if total_sum > 0:
+                pct_top1 = top1_val / total_sum * 100
+                top1_name = df.loc[df[val_col].idxmax(), dim_col]
+                st.markdown("---")
+                if pct_top1 > 30:
+                    st.warning(f"⚠️ **{top1_name}** concentra el **{pct_top1:.1f}%** del total — riesgo de dependencia.")
+                else:
+                    st.info(f"ℹ️ **{top1_name}** es el principal con **{pct_top1:.1f}%** del total.")
+
+
 def _render_plotly_chart_and_save(fig, use_container_width=True):
     """Renderiza figura de Plotly y la guarda en session_state para exportación."""
     # Guardar en session_state para uso posterior (ej. PDF)
@@ -423,6 +590,14 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
     """
     if not PLOTLY_AVAILABLE or df.empty:
         st.dataframe(df, use_container_width=True, hide_index=True)
+        return
+
+    # ── Detección temprana: formato kpi/valor/unidad → dashboard de cards ──
+    cols_lower = [c.lower() for c in df.columns]
+    _has_kpi   = any(c in ('kpi', 'indicador', 'metrica', 'nombre') for c in cols_lower)
+    _has_valor = any(c in ('valor', 'value') for c in cols_lower)
+    if _has_kpi and _has_valor:
+        _render_kpi_tab(df)
         return
 
     spec = chart_spec or {}
@@ -1990,18 +2165,27 @@ def _render_result_message(msg: dict, msg_idx: int = 0):
         question = msg.get("question", "") or msg.get("content", "")
         logger.info(f"📊 Render msg: chart_type={chart_type}, question='{question[:80]}', spec={chart_spec}")
 
-        # ============================================================
-        # Pestañas: Gráfica | KPIs | Tabla | SQL  (PRIMERO para que _auto_chart guarde la fig)
-        # ============================================================
-        tab_chart, tab_kpi, tab_table, tab_sql = st.tabs(["📊 Gráfica", "📊 KPIs", "📋 Tabla", "🔍 SQL"])
+        # Detectar si el resultado es un dashboard de KPIs (columnas kpi/valor/unidad)
+        _cols_lower = [c.lower() for c in df.columns]
+        _is_kpi_dashboard = (
+            any(c in ('kpi', 'indicador', 'metrica', 'nombre') for c in _cols_lower)
+            and any(c in ('valor', 'value') for c in _cols_lower)
+        )
 
-        with tab_chart:
-            _auto_chart(df, chart_type, question, chart_spec=chart_spec)
-
-        with tab_kpi:
-            # KPIs inteligentes: cards agrupadas con insights para estadísticos,
-            # o resumen de columnas constantes + detalle para consultas tabulares
-            _render_smart_table(df)
+        # ============================================================
+        # Pestañas: Gráfica | KPIs | Tabla | SQL
+        # ============================================================
+        if _is_kpi_dashboard:
+            # KPI dashboard: no tiene sentido graficar — mostrar solo cards
+            tab_kpi, tab_table, tab_sql = st.tabs(["📊 KPIs", "📋 Tabla", "🔍 SQL"])
+            with tab_kpi:
+                _render_kpi_tab(df)
+        else:
+            tab_chart, tab_kpi, tab_table, tab_sql = st.tabs(["📊 Gráfica", "📊 KPIs", "📋 Tabla", "🔍 SQL"])
+            with tab_chart:
+                _auto_chart(df, chart_type, question, chart_spec=chart_spec)
+            with tab_kpi:
+                _render_kpi_tab(df)
 
         with tab_table:
             # Tabla cruda completa con formato de moneda/porcentaje

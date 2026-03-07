@@ -49,7 +49,7 @@ logger = configurar_logger("nl2sql", nivel="INFO")
 # =====================================================================
 MAX_ROWS = 1000
 QUERY_TIMEOUT_SECONDS = 30
-MAX_SQL_LENGTH = 2000
+MAX_SQL_LENGTH = 8000
 
 # Patrones SQL peligrosos (case-insensitive)
 FORBIDDEN_PATTERNS = [
@@ -306,7 +306,7 @@ Ventas agrupadas por línea de negocio y mes.
 - SIEMPRE busca en cfdi_ventas usando receptor_nombre o receptor_rfc para identificar clientes.
 - NUNCA respondas que no hay datos sin antes intentar una consulta sobre cfdi_ventas.
 - Si la pregunta menciona un mes (ej. "enero"), usa EXTRACT(MONTH FROM fecha_emision) = N.
-- Si no se especifica año, asume el año actual: EXTRACT(YEAR FROM fecha_emision) = EXTRACT(YEAR FROM CURRENT_DATE).
+- Si no se especifica año, infiere el año más lógico: si el mes pedido es menor o igual al mes actual, usa el año actual; si el mes pedido es mayor al mes actual (mes aún no ha llegado en este año), usa el año anterior (EXTRACT(YEAR FROM CURRENT_DATE) - 1). Por ejemplo, en marzo de 2026, noviembre corresponde a 2025.
 """
 
 
@@ -494,6 +494,9 @@ class NL2SQLEngine:
             # Limpiar el SQL (remover markdown code blocks si existen)
             sql = self._clean_sql(raw_sql)
 
+            # Garantizar que si se mencionó un mes, el filtro esté en el SQL
+            sql = self._ensure_month_filter(question, sql)
+
             try:
                 logger.info(f"SQL generado: {sql[:100]}...")
             except UnicodeEncodeError:
@@ -526,14 +529,17 @@ REGLAS ESTRICTAS:
 2. Siempre incluye LIMIT {self.max_rows} para evitar resultados excesivos.
 3. Usa alias descriptivos en español para las columnas del resultado.
 4. Formatea montos con 2 decimales.
-5. Para montos multi-moneda, normaliza a MXN: total * tipo_cambio.
+5. Para montos multi-moneda, normaliza a MXN: total * COALESCE(tipo_cambio, 1).
 6. Ordena resultados de forma lógica (generalmente por monto DESC o fecha DESC).
 7. Usa DATE_TRUNC para agrupaciones por periodo.
 8. Para porcentajes, calcula con ROUND(x * 100.0 / total, 2).
 9. Responde SOLO con la consulta SQL, sin explicación ni markdown. NO uses emojis ni caracteres especiales.
 10. SIEMPRE intenta generar una consulta SQL válida. NUNCA generes el fallback de "Pregunta no compatible". Si la pregunta es genérica (ej: "qué gráficas me ofreces", "qué estadísticas tienes", "qué puedes hacer", "muéstrame análisis"), genera un resumen estadístico completo de cfdi_ventas con COUNT, AVG, MIN, MAX, STDDEV, PERCENTILE_CONT(0.25), PERCENTILE_CONT(0.5), PERCENTILE_CONT(0.75) sobre el campo total. Si la pregunta es sobre capacidades o ayuda, genera igualmente ese resumen estadístico como demostración.
 11. Cuando pregunten por "empresas", "clientes" o "quién compró", busca en receptor_nombre de cfdi_ventas.
-12. Para meses por nombre (enero=1, febrero=2, ... diciembre=12), usa EXTRACT(MONTH FROM fecha_emision).
+12. Para meses por nombre, usa EXTRACT(MONTH FROM fecha_emision) = N. Mapeo COMPLETO:
+  enero/ene=1, febrero/feb=2, marzo/mar=3, abril/abr=4, mayo/may=5, junio/jun=6,
+  julio/jul=7, agosto/ago=8, septiembre/sep/sept=9, octubre/oct=10, noviembre/nov=11, diciembre/dic=12.
+  SIEMPRE aplica el filtro de mes cuando el usuario lo mencione, incluso si pide un tipo de gráfica (pie, dona, pay, pastel, barras, etc.). El filtro de mes NUNCA es opcional.
 13. Para estadísticas usa funciones de PostgreSQL: AVG() para promedio/media, PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY col) para mediana, STDDEV() o STDDEV_POP() para desviación estándar, VARIANCE() para varianza, MIN() y MAX() para rango, MODE() WITHIN GROUP (ORDER BY col) para moda.
 14. Cuando pidan "estadísticas", "resumen estadístico" o "análisis estadístico", genera una consulta que incluya COUNT, AVG, MIN, MAX, STDDEV y PERCENTILE_CONT(0.5) del campo numérico relevante.
 15. Para percentiles usa PERCENTILE_CONT(0.25/0.50/0.75) WITHIN GROUP (ORDER BY columna).
@@ -610,24 +616,49 @@ REGLAS AVANZADAS DE ANALYTICS:
 
 {SCHEMA_CONTEXT}
 
+REGLA CRÍTICA — KPIs vs Estadísticas:
+- "kpis", "kpis comerciales", "indicadores", "dashboard", "resumen ejecutivo", "métricas de negocio" → genera UNA CTE con múltiples indicadores de negocio en FILAS separadas (kpi_nombre, valor, unidad). NUNCA generes estadísticas (AVG, STDDEV, percentiles) para estas preguntas.
+- "estadísticas", "resumen estadístico", "distribución" → genera AVG, STDDEV, percentiles como columnas en 1 fila.
+
 EJEMPLOS:
+Pregunta: dame kpis comerciales
+SQL: WITH mes_activo AS (SELECT DATE_TRUNC('month', MAX(fecha_emision)) AS mes_ref FROM cfdi_ventas), ventas_mes AS (SELECT COUNT(*) AS facturas_mes, ROUND(SUM(total * COALESCE(tipo_cambio, 1)), 2) AS facturacion_mes, COUNT(DISTINCT receptor_rfc) AS clientes_activos_mes FROM cfdi_ventas CROSS JOIN mes_activo WHERE DATE_TRUNC('month', fecha_emision) = mes_activo.mes_ref), ventas_mes_ant AS (SELECT ROUND(SUM(total * COALESCE(tipo_cambio, 1)), 2) AS facturacion_mes_ant FROM cfdi_ventas CROSS JOIN mes_activo WHERE DATE_TRUNC('month', fecha_emision) = mes_activo.mes_ref - INTERVAL '1 month'), ventas_anio AS (SELECT ROUND(SUM(total * COALESCE(tipo_cambio, 1)), 2) AS facturacion_anio, COUNT(DISTINCT receptor_rfc) AS clientes_totales FROM cfdi_ventas CROSS JOIN mes_activo WHERE EXTRACT(YEAR FROM fecha_emision) = EXTRACT(YEAR FROM mes_activo.mes_ref)) SELECT 'Facturación del mes' AS kpi, vm.facturacion_mes::text AS valor, 'MXN' AS unidad FROM ventas_mes vm UNION ALL SELECT 'Facturas emitidas (mes)', vm.facturas_mes::text, 'facturas' FROM ventas_mes vm UNION ALL SELECT 'Clientes activos (mes)', vm.clientes_activos_mes::text, 'clientes' FROM ventas_mes vm UNION ALL SELECT 'Facturación acumulada (año)', va.facturacion_anio::text, 'MXN' FROM ventas_anio va UNION ALL SELECT 'Clientes únicos (año)', va.clientes_totales::text, 'clientes' FROM ventas_anio va UNION ALL SELECT 'Ticket promedio (mes)', ROUND(vm.facturacion_mes / NULLIF(vm.facturas_mes, 0), 2)::text, 'MXN/factura' FROM ventas_mes vm UNION ALL SELECT 'Crecimiento vs mes anterior', ROUND((vm.facturacion_mes - vma.facturacion_mes_ant) * 100.0 / NULLIF(vma.facturacion_mes_ant, 0), 1)::text, '%' FROM ventas_mes vm, ventas_mes_ant vma;
+
+Pregunta: kpis de ventas
+SQL: WITH mes_activo AS (SELECT DATE_TRUNC('month', MAX(fecha_emision)) AS mes_ref FROM cfdi_ventas), ventas_mes AS (SELECT COUNT(*) AS facturas_mes, ROUND(SUM(total * COALESCE(tipo_cambio, 1)), 2) AS facturacion_mes, COUNT(DISTINCT receptor_rfc) AS clientes_activos_mes FROM cfdi_ventas CROSS JOIN mes_activo WHERE DATE_TRUNC('month', fecha_emision) = mes_activo.mes_ref), ventas_mes_ant AS (SELECT ROUND(SUM(total * COALESCE(tipo_cambio, 1)), 2) AS facturacion_mes_ant FROM cfdi_ventas CROSS JOIN mes_activo WHERE DATE_TRUNC('month', fecha_emision) = mes_activo.mes_ref - INTERVAL '1 month'), ventas_anio AS (SELECT ROUND(SUM(total * COALESCE(tipo_cambio, 1)), 2) AS facturacion_anio, COUNT(DISTINCT receptor_rfc) AS clientes_totales FROM cfdi_ventas CROSS JOIN mes_activo WHERE EXTRACT(YEAR FROM fecha_emision) = EXTRACT(YEAR FROM mes_activo.mes_ref)) SELECT 'Facturación del mes' AS kpi, vm.facturacion_mes::text AS valor, 'MXN' AS unidad FROM ventas_mes vm UNION ALL SELECT 'Facturas emitidas (mes)', vm.facturas_mes::text, 'facturas' FROM ventas_mes vm UNION ALL SELECT 'Clientes activos (mes)', vm.clientes_activos_mes::text, 'clientes' FROM ventas_mes vm UNION ALL SELECT 'Facturación acumulada (año)', va.facturacion_anio::text, 'MXN' FROM ventas_anio va UNION ALL SELECT 'Clientes únicos (año)', va.clientes_totales::text, 'clientes' FROM ventas_anio va UNION ALL SELECT 'Ticket promedio (mes)', ROUND(vm.facturacion_mes / NULLIF(vm.facturas_mes, 0), 2)::text, 'MXN/factura' FROM ventas_mes vm UNION ALL SELECT 'Crecimiento vs mes anterior', ROUND((vm.facturacion_mes - vma.facturacion_mes_ant) * 100.0 / NULLIF(vma.facturacion_mes_ant, 0), 1)::text, '%' FROM ventas_mes vm, ventas_mes_ant vma;
+
 Pregunta: ¿Cuánto se facturó este mes?
 SQL: SELECT SUM(total) AS total_facturado, moneda FROM cfdi_ventas WHERE DATE_TRUNC('month', fecha_emision) = DATE_TRUNC('month', CURRENT_DATE) GROUP BY moneda LIMIT {self.max_rows};
 
 Pregunta: Top 5 clientes por facturación
-SQL: SELECT receptor_nombre AS cliente, COUNT(*) AS num_facturas, SUM(total * tipo_cambio) AS total_mxn FROM cfdi_ventas GROUP BY receptor_nombre ORDER BY total_mxn DESC LIMIT 5;
+SQL: SELECT receptor_nombre AS cliente, COUNT(*) AS num_facturas, SUM(total * COALESCE(tipo_cambio, 1)) AS total_mxn FROM cfdi_ventas GROUP BY receptor_nombre ORDER BY total_mxn DESC LIMIT 5;
 
 Pregunta: Ventas mensuales de este año
-SQL: SELECT DATE_TRUNC('month', fecha_emision) AS mes, COUNT(*) AS facturas, SUM(total * tipo_cambio) AS total_mxn FROM cfdi_ventas WHERE EXTRACT(YEAR FROM fecha_emision) = EXTRACT(YEAR FROM CURRENT_DATE) GROUP BY mes ORDER BY mes LIMIT {self.max_rows};
+SQL: SELECT DATE_TRUNC('month', fecha_emision) AS mes, COUNT(*) AS facturas, SUM(total * COALESCE(tipo_cambio, 1)) AS total_mxn FROM cfdi_ventas WHERE EXTRACT(YEAR FROM fecha_emision) = EXTRACT(YEAR FROM CURRENT_DATE) GROUP BY mes ORDER BY mes LIMIT {self.max_rows};
 
 Pregunta: Facturación en el tiempo / por mes / mensual / histórica
-SQL: SELECT DATE_TRUNC('month', fecha_emision) AS mes, COUNT(*) AS num_facturas, ROUND(SUM(total * tipo_cambio), 2) AS facturacion_total FROM cfdi_ventas GROUP BY mes ORDER BY mes LIMIT {self.max_rows};
+SQL: SELECT DATE_TRUNC('month', fecha_emision) AS mes, COUNT(*) AS num_facturas, ROUND(SUM(total * COALESCE(tipo_cambio, 1)), 2) AS facturacion_total FROM cfdi_ventas GROUP BY mes ORDER BY mes LIMIT {self.max_rows};
 
 Pregunta: Muestra facturación en el tiempo a manera de gráfico de barras
-SQL: SELECT DATE_TRUNC('month', fecha_emision) AS mes, COUNT(*) AS num_facturas, ROUND(SUM(total * tipo_cambio), 2) AS facturacion_total FROM cfdi_ventas GROUP BY mes ORDER BY mes LIMIT {self.max_rows};
+SQL: SELECT DATE_TRUNC('month', fecha_emision) AS mes, COUNT(*) AS num_facturas, ROUND(SUM(total * COALESCE(tipo_cambio, 1)), 2) AS facturacion_total FROM cfdi_ventas GROUP BY mes ORDER BY mes LIMIT {self.max_rows};
 
 Pregunta: ¿Cuál empresa compró menos en enero?
 SQL: SELECT receptor_nombre AS cliente, COUNT(*) AS num_facturas, SUM(total) AS total_comprado FROM cfdi_ventas WHERE EXTRACT(MONTH FROM fecha_emision) = 1 AND EXTRACT(YEAR FROM fecha_emision) = EXTRACT(YEAR FROM CURRENT_DATE) GROUP BY receptor_nombre ORDER BY total_comprado ASC LIMIT 1;
+
+Pregunta: pay de noviembre
+SQL: SELECT receptor_nombre AS cliente, COUNT(*) AS facturas, ROUND(SUM(total * COALESCE(tipo_cambio, 1)), 2) AS total FROM cfdi_ventas WHERE EXTRACT(MONTH FROM fecha_emision) = 11 AND EXTRACT(YEAR FROM fecha_emision) = EXTRACT(YEAR FROM CURRENT_DATE) GROUP BY receptor_nombre ORDER BY total DESC LIMIT 15;
+
+Pregunta: gráfica de pie de noviembre
+SQL: SELECT receptor_nombre AS cliente, COUNT(*) AS facturas, ROUND(SUM(total * COALESCE(tipo_cambio, 1)), 2) AS total FROM cfdi_ventas WHERE EXTRACT(MONTH FROM fecha_emision) = 11 AND EXTRACT(YEAR FROM fecha_emision) = EXTRACT(YEAR FROM CURRENT_DATE) GROUP BY receptor_nombre ORDER BY total DESC LIMIT 15;
+
+Pregunta: dona de ventas en oct
+SQL: SELECT receptor_nombre AS cliente, ROUND(SUM(total * COALESCE(tipo_cambio, 1)), 2) AS ventas FROM cfdi_ventas WHERE EXTRACT(MONTH FROM fecha_emision) = 10 AND EXTRACT(YEAR FROM fecha_emision) = EXTRACT(YEAR FROM CURRENT_DATE) GROUP BY receptor_nombre ORDER BY ventas DESC LIMIT 15;
+
+Pregunta: pastel de clientes de dic
+SQL: SELECT receptor_nombre AS cliente, ROUND(SUM(total * COALESCE(tipo_cambio, 1)), 2) AS ventas FROM cfdi_ventas WHERE EXTRACT(MONTH FROM fecha_emision) = 12 AND EXTRACT(YEAR FROM fecha_emision) = EXTRACT(YEAR FROM CURRENT_DATE) GROUP BY receptor_nombre ORDER BY ventas DESC LIMIT 15;
+
+Pregunta: ventas de nov
+SQL: SELECT receptor_nombre AS cliente, COUNT(*) AS facturas, ROUND(SUM(total * COALESCE(tipo_cambio, 1)), 2) AS total_vendido FROM cfdi_ventas WHERE EXTRACT(MONTH FROM fecha_emision) = 11 AND EXTRACT(YEAR FROM fecha_emision) = EXTRACT(YEAR FROM CURRENT_DATE) GROUP BY receptor_nombre ORDER BY total_vendido DESC LIMIT {self.max_rows};
 
 Pregunta: ¿Cuánto le vendimos a DISTRIBUIDORA FESA?
 SQL: SELECT receptor_nombre AS cliente, COUNT(*) AS facturas, SUM(total) AS total_vendido, MIN(fecha_emision) AS primera_compra, MAX(fecha_emision) AS ultima_compra FROM cfdi_ventas WHERE UPPER(receptor_nombre) LIKE '%FESA%' GROUP BY receptor_nombre LIMIT {self.max_rows};
@@ -651,34 +682,34 @@ Pregunta: Dame el resumen estadístico de precios unitarios de productos
 SQL: SELECT COUNT(*) AS total_conceptos, ROUND(AVG(valor_unitario), 2) AS precio_promedio, ROUND(STDDEV(valor_unitario), 2) AS desviacion_estandar, ROUND(MIN(valor_unitario), 2) AS precio_minimo, ROUND(MAX(valor_unitario), 2) AS precio_maximo, ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY valor_unitario)::numeric, 2) AS precio_mediana FROM cfdi_conceptos LIMIT {self.max_rows};
 
 Pregunta: Crecimiento de ventas mes a mes (MoM)
-SQL: WITH ventas_mes AS (SELECT DATE_TRUNC('month', fecha_emision) AS mes, SUM(total * tipo_cambio) AS total_mxn FROM cfdi_ventas GROUP BY mes ORDER BY mes) SELECT mes, ROUND(total_mxn, 2) AS ventas, ROUND(LAG(total_mxn) OVER (ORDER BY mes), 2) AS mes_anterior, ROUND((total_mxn - LAG(total_mxn) OVER (ORDER BY mes)) * 100.0 / NULLIF(LAG(total_mxn) OVER (ORDER BY mes), 0), 2) AS crecimiento_pct FROM ventas_mes LIMIT {self.max_rows};
+SQL: WITH ventas_mes AS (SELECT DATE_TRUNC('month', fecha_emision) AS mes, SUM(total * COALESCE(tipo_cambio, 1)) AS total_mxn FROM cfdi_ventas GROUP BY mes ORDER BY mes) SELECT mes, ROUND(total_mxn, 2) AS ventas, ROUND(LAG(total_mxn) OVER (ORDER BY mes), 2) AS mes_anterior, ROUND((total_mxn - LAG(total_mxn) OVER (ORDER BY mes)) * 100.0 / NULLIF(LAG(total_mxn) OVER (ORDER BY mes), 0), 2) AS crecimiento_pct FROM ventas_mes LIMIT {self.max_rows};
 
 Pregunta: Reporte ejecutivo mensual con todas las estadísticas y crecimiento
-SQL: WITH ventas_mes AS (SELECT DATE_TRUNC('month', fecha_emision) AS mes, COUNT(*) AS num_facturas, ROUND(SUM(total * tipo_cambio), 2) AS facturacion_total, ROUND(AVG(total * tipo_cambio), 2) AS promedio_factura, ROUND(STDDEV(total * tipo_cambio), 2) AS desviacion_estandar, ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY total * tipo_cambio)::numeric, 2) AS mediana_factura FROM cfdi_ventas GROUP BY mes ORDER BY mes) SELECT mes, num_facturas, facturacion_total, promedio_factura, desviacion_estandar, mediana_factura, ROUND(SUM(facturacion_total) OVER (ORDER BY mes ROWS UNBOUNDED PRECEDING), 2) AS acumulado_ventas, ROUND((facturacion_total - LAG(facturacion_total) OVER (ORDER BY mes)) * 100.0 / NULLIF(LAG(facturacion_total) OVER (ORDER BY mes), 0), 2) AS crecimiento_mensual_pct FROM ventas_mes LIMIT {self.max_rows};
+SQL: WITH ventas_mes AS (SELECT DATE_TRUNC('month', fecha_emision) AS mes, COUNT(*) AS num_facturas, ROUND(SUM(total * COALESCE(tipo_cambio, 1)), 2) AS facturacion_total, ROUND(AVG(total * COALESCE(tipo_cambio, 1)), 2) AS promedio_factura, ROUND(STDDEV(total * COALESCE(tipo_cambio, 1)), 2) AS desviacion_estandar, ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY total * COALESCE(tipo_cambio, 1))::numeric, 2) AS mediana_factura FROM cfdi_ventas GROUP BY mes ORDER BY mes) SELECT mes, num_facturas, facturacion_total, promedio_factura, desviacion_estandar, mediana_factura, ROUND(SUM(facturacion_total) OVER (ORDER BY mes ROWS UNBOUNDED PRECEDING), 2) AS acumulado_ventas, ROUND((facturacion_total - LAG(facturacion_total) OVER (ORDER BY mes)) * 100.0 / NULLIF(LAG(facturacion_total) OVER (ORDER BY mes), 0), 2) AS crecimiento_mensual_pct FROM ventas_mes LIMIT {self.max_rows};
 
 Pregunta: Ventas acumuladas por mes este año
-SQL: SELECT DATE_TRUNC('month', fecha_emision) AS mes, SUM(total * tipo_cambio) AS ventas_mes, SUM(SUM(total * tipo_cambio)) OVER (ORDER BY DATE_TRUNC('month', fecha_emision) ROWS UNBOUNDED PRECEDING) AS acumulado FROM cfdi_ventas WHERE EXTRACT(YEAR FROM fecha_emision) = EXTRACT(YEAR FROM CURRENT_DATE) GROUP BY mes ORDER BY mes LIMIT {self.max_rows};
+SQL: SELECT DATE_TRUNC('month', fecha_emision) AS mes, SUM(total * COALESCE(tipo_cambio, 1)) AS ventas_mes, SUM(SUM(total * COALESCE(tipo_cambio, 1))) OVER (ORDER BY DATE_TRUNC('month', fecha_emision) ROWS UNBOUNDED PRECEDING) AS acumulado FROM cfdi_ventas WHERE EXTRACT(YEAR FROM fecha_emision) = EXTRACT(YEAR FROM CURRENT_DATE) GROUP BY mes ORDER BY mes LIMIT {self.max_rows};
 
 Pregunta: Promedio móvil de 3 meses de facturación
-SQL: WITH ventas_mes AS (SELECT DATE_TRUNC('month', fecha_emision) AS mes, SUM(total * tipo_cambio) AS total_mxn FROM cfdi_ventas GROUP BY mes ORDER BY mes) SELECT mes, ROUND(total_mxn, 2) AS ventas, ROUND(AVG(total_mxn) OVER (ORDER BY mes ROWS BETWEEN 2 PRECEDING AND CURRENT ROW), 2) AS promedio_movil_3m FROM ventas_mes LIMIT {self.max_rows};
+SQL: WITH ventas_mes AS (SELECT DATE_TRUNC('month', fecha_emision) AS mes, SUM(total * COALESCE(tipo_cambio, 1)) AS total_mxn FROM cfdi_ventas GROUP BY mes ORDER BY mes) SELECT mes, ROUND(total_mxn, 2) AS ventas, ROUND(AVG(total_mxn) OVER (ORDER BY mes ROWS BETWEEN 2 PRECEDING AND CURRENT ROW), 2) AS promedio_movil_3m FROM ventas_mes LIMIT {self.max_rows};
 
 Pregunta: Ranking de clientes por facturación
-SQL: SELECT receptor_nombre AS cliente, SUM(total * tipo_cambio) AS total_mxn, RANK() OVER (ORDER BY SUM(total * tipo_cambio) DESC) AS ranking, COUNT(*) AS facturas FROM cfdi_ventas GROUP BY receptor_nombre ORDER BY ranking LIMIT {self.max_rows};
+SQL: SELECT receptor_nombre AS cliente, SUM(total * COALESCE(tipo_cambio, 1)) AS total_mxn, RANK() OVER (ORDER BY SUM(total * COALESCE(tipo_cambio, 1)) DESC) AS ranking, COUNT(*) AS facturas FROM cfdi_ventas GROUP BY receptor_nombre ORDER BY ranking LIMIT {self.max_rows};
 
 Pregunta: Clasificación ABC de clientes (Pareto)
-SQL: WITH clientes AS (SELECT receptor_nombre AS cliente, SUM(total * tipo_cambio) AS total_mxn FROM cfdi_ventas GROUP BY receptor_nombre), acumulado AS (SELECT cliente, total_mxn, SUM(total_mxn) OVER (ORDER BY total_mxn DESC) AS acum, SUM(total_mxn) OVER () AS gran_total FROM clientes) SELECT cliente, ROUND(total_mxn, 2) AS total_mxn, ROUND(acum * 100.0 / gran_total, 2) AS pct_acumulado, CASE WHEN acum * 100.0 / gran_total <= 80 THEN 'A' WHEN acum * 100.0 / gran_total <= 95 THEN 'B' ELSE 'C' END AS clasificacion_abc FROM acumulado ORDER BY total_mxn DESC LIMIT {self.max_rows};
+SQL: WITH clientes AS (SELECT receptor_nombre AS cliente, SUM(total * COALESCE(tipo_cambio, 1)) AS total_mxn FROM cfdi_ventas GROUP BY receptor_nombre), acumulado AS (SELECT cliente, total_mxn, SUM(total_mxn) OVER (ORDER BY total_mxn DESC) AS acum, SUM(total_mxn) OVER () AS gran_total FROM clientes) SELECT cliente, ROUND(total_mxn, 2) AS total_mxn, ROUND(acum * 100.0 / gran_total, 2) AS pct_acumulado, CASE WHEN acum * 100.0 / gran_total <= 80 THEN 'A' WHEN acum * 100.0 / gran_total <= 95 THEN 'B' ELSE 'C' END AS clasificacion_abc FROM acumulado ORDER BY total_mxn DESC LIMIT {self.max_rows};
 
 Pregunta: Segmentación RFM de clientes
-SQL: WITH rfm AS (SELECT receptor_nombre AS cliente, (CURRENT_DATE - MAX(fecha_emision::date)) AS recencia_dias, COUNT(*) AS frecuencia, ROUND(SUM(total * tipo_cambio), 2) AS monetario FROM cfdi_ventas GROUP BY receptor_nombre), scored AS (SELECT cliente, recencia_dias, frecuencia, monetario, NTILE(5) OVER (ORDER BY recencia_dias DESC) AS r_score, NTILE(5) OVER (ORDER BY frecuencia ASC) AS f_score, NTILE(5) OVER (ORDER BY monetario ASC) AS m_score FROM rfm) SELECT cliente, recencia_dias, frecuencia, monetario, r_score, f_score, m_score, (r_score * 100 + f_score * 10 + m_score) AS rfm_score, CASE WHEN r_score >= 4 AND f_score >= 4 AND m_score >= 4 THEN 'Champions' WHEN r_score >= 3 AND f_score >= 3 THEN 'Leales' WHEN r_score >= 4 AND f_score <= 2 THEN 'Nuevos' WHEN r_score <= 2 AND f_score >= 3 THEN 'En Riesgo' WHEN r_score <= 2 AND f_score <= 2 THEN 'Hibernando' ELSE 'Potenciales' END AS segmento FROM scored ORDER BY rfm_score DESC LIMIT {self.max_rows};
+SQL: WITH rfm AS (SELECT receptor_nombre AS cliente, (CURRENT_DATE - MAX(fecha_emision::date)) AS recencia_dias, COUNT(*) AS frecuencia, ROUND(SUM(total * COALESCE(tipo_cambio, 1)), 2) AS monetario FROM cfdi_ventas GROUP BY receptor_nombre), scored AS (SELECT cliente, recencia_dias, frecuencia, monetario, NTILE(5) OVER (ORDER BY recencia_dias DESC) AS r_score, NTILE(5) OVER (ORDER BY frecuencia ASC) AS f_score, NTILE(5) OVER (ORDER BY monetario ASC) AS m_score FROM rfm) SELECT cliente, recencia_dias, frecuencia, monetario, r_score, f_score, m_score, (r_score * 100 + f_score * 10 + m_score) AS rfm_score, CASE WHEN r_score >= 4 AND f_score >= 4 AND m_score >= 4 THEN 'Champions' WHEN r_score >= 3 AND f_score >= 3 THEN 'Leales' WHEN r_score >= 4 AND f_score <= 2 THEN 'Nuevos' WHEN r_score <= 2 AND f_score >= 3 THEN 'En Riesgo' WHEN r_score <= 2 AND f_score <= 2 THEN 'Hibernando' ELSE 'Potenciales' END AS segmento FROM scored ORDER BY rfm_score DESC LIMIT {self.max_rows};
 
 Pregunta: Detectar facturas anómalas (outliers)
 SQL: WITH stats AS (SELECT AVG(total) AS media, STDDEV(total) AS desv FROM cfdi_ventas) SELECT v.receptor_nombre AS cliente, v.folio, v.fecha_emision, ROUND(v.total, 2) AS monto, ROUND((v.total - s.media) / NULLIF(s.desv, 0), 2) AS z_score, CASE WHEN ABS((v.total - s.media) / NULLIF(s.desv, 0)) > 3 THEN 'Anomalia Alta' WHEN ABS((v.total - s.media) / NULLIF(s.desv, 0)) > 2 THEN 'Anomalia Media' ELSE 'Normal' END AS clasificacion FROM cfdi_ventas v, stats s WHERE ABS((v.total - s.media) / NULLIF(s.desv, 0)) > 2 ORDER BY z_score DESC LIMIT {self.max_rows};
 
 Pregunta: Concentración de clientes (riesgo)
-SQL: WITH totales AS (SELECT receptor_nombre AS cliente, SUM(total * tipo_cambio) AS total_mxn FROM cfdi_ventas GROUP BY receptor_nombre) SELECT cliente, ROUND(total_mxn, 2) AS total_mxn, ROUND(total_mxn * 100.0 / SUM(total_mxn) OVER (), 2) AS pct_del_total, CASE WHEN total_mxn * 100.0 / SUM(total_mxn) OVER () > 30 THEN 'CRITICO' WHEN total_mxn * 100.0 / SUM(total_mxn) OVER () > 15 THEN 'ALTO' WHEN total_mxn * 100.0 / SUM(total_mxn) OVER () > 5 THEN 'MEDIO' ELSE 'BAJO' END AS nivel_riesgo FROM totales ORDER BY total_mxn DESC LIMIT {self.max_rows};
+SQL: WITH totales AS (SELECT receptor_nombre AS cliente, SUM(total * COALESCE(tipo_cambio, 1)) AS total_mxn FROM cfdi_ventas GROUP BY receptor_nombre) SELECT cliente, ROUND(total_mxn, 2) AS total_mxn, ROUND(total_mxn * 100.0 / SUM(total_mxn) OVER (), 2) AS pct_del_total, CASE WHEN total_mxn * 100.0 / SUM(total_mxn) OVER () > 30 THEN 'CRITICO' WHEN total_mxn * 100.0 / SUM(total_mxn) OVER () > 15 THEN 'ALTO' WHEN total_mxn * 100.0 / SUM(total_mxn) OVER () > 5 THEN 'MEDIO' ELSE 'BAJO' END AS nivel_riesgo FROM totales ORDER BY total_mxn DESC LIMIT {self.max_rows};
 
 Pregunta: DSO y tasa de cobro
-SQL: WITH facturado AS (SELECT SUM(total * tipo_cambio) AS total_facturado, COUNT(*) AS n_facturas FROM cfdi_ventas WHERE fecha_emision >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '3 months'), cobrado AS (SELECT COALESCE(SUM(monto_pagado), 0) AS total_cobrado FROM cfdi_pagos WHERE fecha_pago >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '3 months'), pendiente AS (SELECT COALESCE(SUM(saldo_insoluto), 0) AS saldo_pendiente FROM cfdi_pagos WHERE saldo_insoluto > 0) SELECT ROUND(f.total_facturado, 2) AS facturado_3m, ROUND(c.total_cobrado, 2) AS cobrado_3m, ROUND(c.total_cobrado * 100.0 / NULLIF(f.total_facturado, 0), 2) AS tasa_cobro_pct, ROUND(p.saldo_pendiente, 2) AS saldo_pendiente, ROUND(p.saldo_pendiente / NULLIF(f.total_facturado / 90.0, 0), 1) AS dso_dias FROM facturado f, cobrado c, pendiente p LIMIT 1;
+SQL: WITH facturado AS (SELECT SUM(total * COALESCE(tipo_cambio, 1)) AS total_facturado, COUNT(*) AS n_facturas FROM cfdi_ventas WHERE fecha_emision >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '3 months'), cobrado AS (SELECT COALESCE(SUM(monto_pagado), 0) AS total_cobrado FROM cfdi_pagos WHERE fecha_pago >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '3 months'), pendiente AS (SELECT COALESCE(SUM(saldo_insoluto), 0) AS saldo_pendiente FROM cfdi_pagos WHERE saldo_insoluto > 0) SELECT ROUND(f.total_facturado, 2) AS facturado_3m, ROUND(c.total_cobrado, 2) AS cobrado_3m, ROUND(c.total_cobrado * 100.0 / NULLIF(f.total_facturado, 0), 2) AS tasa_cobro_pct, ROUND(p.saldo_pendiente, 2) AS saldo_pendiente, ROUND(p.saldo_pendiente / NULLIF(f.total_facturado / 90.0, 0), 1) AS dso_dias FROM facturado f, cobrado c, pendiente p LIMIT 1;
 
 Pregunta: Cartera de clientes con estado de conciliación
 SQL: SELECT v.receptor_nombre AS cliente, COUNT(DISTINCT v.uuid_sat) AS num_facturas, ROUND(SUM(v.total * v.tipo_cambio), 2) AS total_facturado, ROUND(COALESCE(SUM(p.monto_pagado), 0), 2) AS total_cobrado, ROUND(SUM(v.total * v.tipo_cambio) - COALESCE(SUM(p.monto_pagado), 0), 2) AS saldo_pendiente, COUNT(p.uuid_complemento) AS facturas_con_complemento, COUNT(DISTINCT v.uuid_sat) - COUNT(p.uuid_complemento) AS facturas_sin_conciliar, CASE WHEN COUNT(p.uuid_complemento) = 0 THEN 'Sin complementos' WHEN COUNT(p.uuid_complemento) < COUNT(DISTINCT v.uuid_sat) THEN 'Conciliación parcial' ELSE 'Conciliado' END AS estado_conciliacion FROM cfdi_ventas v LEFT JOIN cfdi_pagos p ON v.uuid_sat = p.cfdi_venta_uuid WHERE v.metodo_pago = 'PPD' GROUP BY v.receptor_nombre HAVING SUM(v.total * v.tipo_cambio) - COALESCE(SUM(p.monto_pagado), 0) > 0 ORDER BY saldo_pendiente DESC LIMIT {self.max_rows};
@@ -729,7 +760,7 @@ Pregunta: Reporte ejecutivo de PPD con graficos / Análisis completo de facturas
 SQL: WITH resumen_por_estado AS (SELECT CASE WHEN p.uuid_complemento IS NOT NULL AND COALESCE(p.saldo_insoluto, v.total - COALESCE(p.monto_pagado, 0)) <= 0.01 THEN 'Pagadas' WHEN p.uuid_complemento IS NOT NULL AND COALESCE(p.monto_pagado, 0) > 0 THEN 'Parcialmente pagadas' WHEN p.uuid_complemento IS NULL THEN 'Sin pagar' ELSE 'Otros' END AS estado_pago, v.receptor_nombre AS cliente, v.total FROM cfdi_ventas v LEFT JOIN cfdi_pagos p ON v.uuid_sat = p.cfdi_venta_uuid WHERE v.metodo_pago = 'PPD'), por_cliente_estado AS (SELECT cliente, estado_pago, COUNT(*) AS num_facturas, ROUND(SUM(total), 2) AS monto, ROUND(SUM(total) * 100.0 / SUM(SUM(total)) OVER (PARTITION BY estado_pago), 1) AS pct_del_estado FROM resumen_por_estado GROUP BY cliente, estado_pago) SELECT cliente, estado_pago, num_facturas, monto, pct_del_estado FROM por_cliente_estado ORDER BY estado_pago, monto DESC LIMIT {self.max_rows};
 
 Pregunta: ¿Cuáles clientes compran cada vez menos? (tendencia negativa)
-SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quarter', fecha_emision) AS trimestre, SUM(total * tipo_cambio) AS total_mxn FROM cfdi_ventas GROUP BY receptor_nombre, trimestre), con_tendencia AS (SELECT cliente, trimestre, total_mxn, LAG(total_mxn) OVER (PARTITION BY cliente ORDER BY trimestre) AS trimestre_anterior FROM por_trimestre) SELECT cliente, trimestre, ROUND(total_mxn, 2) AS ventas_actual, ROUND(trimestre_anterior, 2) AS ventas_anterior, ROUND((total_mxn - trimestre_anterior) * 100.0 / NULLIF(trimestre_anterior, 0), 2) AS cambio_pct FROM con_tendencia WHERE trimestre_anterior IS NOT NULL AND total_mxn < trimestre_anterior ORDER BY cambio_pct ASC LIMIT {self.max_rows};
+SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quarter', fecha_emision) AS trimestre, SUM(total * COALESCE(tipo_cambio, 1)) AS total_mxn FROM cfdi_ventas GROUP BY receptor_nombre, trimestre), con_tendencia AS (SELECT cliente, trimestre, total_mxn, LAG(total_mxn) OVER (PARTITION BY cliente ORDER BY trimestre) AS trimestre_anterior FROM por_trimestre) SELECT cliente, trimestre, ROUND(total_mxn, 2) AS ventas_actual, ROUND(trimestre_anterior, 2) AS ventas_anterior, ROUND((total_mxn - trimestre_anterior) * 100.0 / NULLIF(trimestre_anterior, 0), 2) AS cambio_pct FROM con_tendencia WHERE trimestre_anterior IS NOT NULL AND total_mxn < trimestre_anterior ORDER BY cambio_pct ASC LIMIT {self.max_rows};
 """
 
     def _clean_sql(self, raw: str) -> str:
@@ -767,9 +798,91 @@ SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quart
             logger.warning("⚠️ Detectado PERCENTILE_CONT con OVER() (sin ROUND) — removiendo OVER clause")
             sql = pattern_invalid_percentile2.sub(r'\1', sql)
 
+        # --- FIX: total * tipo_cambio sin COALESCE → NULL cuando tipo_cambio es NULL ---
+        sql = re.sub(
+            r'\btotal\s*\*\s*tipo_cambio\b(?!\s*,\s*1\s*\))',
+            'total * COALESCE(tipo_cambio, 1)',
+            sql,
+            flags=re.IGNORECASE,
+        )
+
         # Remover punto y coma extra al final
         sql = sql.rstrip(';') + ';'
 
+        return sql
+
+    # Mapeo completo de nombres de meses en español → número
+    _MONTH_MAP: dict = {
+        'enero': 1, 'ene': 1,
+        'febrero': 2, 'feb': 2,
+        'marzo': 3, 'mar': 3,
+        'abril': 4, 'abr': 4,
+        'mayo': 5, 'may': 5,
+        'junio': 6, 'jun': 6,
+        'julio': 7, 'jul': 7,
+        'agosto': 8, 'ago': 8,
+        'septiembre': 9, 'sep': 9, 'sept': 9,
+        'octubre': 10, 'oct': 10,
+        'noviembre': 11, 'nov': 11,
+        'diciembre': 12, 'dic': 12,
+    }
+
+    def _detect_month(self, question: str) -> Optional[int]:
+        """Detecta si la pregunta menciona un mes y retorna su número (1-12)."""
+        q = question.lower()
+        # Buscar nombres completos primero (más largos = más específicos)
+        for name in sorted(self._MONTH_MAP, key=len, reverse=True):
+            if re.search(rf'\b{name}\b', q):
+                return self._MONTH_MAP[name]
+        return None
+
+    def _ensure_month_filter(self, question: str, sql: str) -> str:
+        """Si la pregunta menciona un mes pero el SQL no lo filtra, inyecta el WHERE."""
+        from datetime import date as _date
+        month_num = self._detect_month(question)
+        if month_num is None:
+            return sql
+
+        # Corregir año si GPT usó CURRENT_DATE pero el mes ya pasó este año
+        current_month = _date.today().month
+        if month_num > current_month:
+            # El mes pedido aún no llega este año → es del año pasado
+            year_expr = "EXTRACT(YEAR FROM CURRENT_DATE) - 1"
+        else:
+            year_expr = "EXTRACT(YEAR FROM CURRENT_DATE)"
+
+        # Si el SQL ya filtra por mes, solo corregir el año si es necesario
+        if re.search(r'EXTRACT\s*\(\s*MONTH', sql, re.IGNORECASE):
+            if month_num > current_month:
+                # Reemplazar EXTRACT(YEAR FROM CURRENT_DATE) por el ajustado
+                sql = re.sub(
+                    r'EXTRACT\s*\(\s*YEAR\s+FROM\s+CURRENT_DATE\s*\)',
+                    f'({year_expr})',
+                    sql,
+                    flags=re.IGNORECASE,
+                )
+            return sql
+
+        month_clause = (
+            f"EXTRACT(MONTH FROM fecha_emision) = {month_num} "
+            f"AND EXTRACT(YEAR FROM fecha_emision) = {year_expr}"
+        )
+
+        sql_upper = sql.upper()
+        if 'WHERE' in sql_upper:
+            idx = sql_upper.index('WHERE') + len('WHERE')
+            sql = sql[:idx] + f' {month_clause} AND' + sql[idx:]
+        elif 'GROUP BY' in sql_upper:
+            idx = sql_upper.index('GROUP BY')
+            sql = sql[:idx] + f'WHERE {month_clause} ' + sql[idx:]
+        elif 'ORDER BY' in sql_upper:
+            idx = sql_upper.index('ORDER BY')
+            sql = sql[:idx] + f'WHERE {month_clause} ' + sql[idx:]
+        elif 'LIMIT' in sql_upper:
+            idx = sql_upper.index('LIMIT')
+            sql = sql[:idx] + f'WHERE {month_clause} ' + sql[idx:]
+
+        logger.info(f"Filtro de mes inyectado: MONTH={month_num} ('{question}')")
         return sql
 
     # -----------------------------------------------------------------
