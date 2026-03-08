@@ -393,10 +393,10 @@ def _render_smart_table(df: pd.DataFrame):
     col_config = {}
     for col in display_num_cols:
         is_count = any(kw in col.lower() for kw in count_keywords)
-        if not is_count and any(kw in col.lower() for kw in ['total', 'monto', 'facturacion', 'venta', 'importe', 'saldo', 'mxn', 'compra', 'promedio', 'media', 'desviacion', 'minimo', 'maximo', 'precio']):
-            col_config[col] = st.column_config.NumberColumn(format="$%.2f")
-        elif 'pct' in col.lower() or 'porcentaje' in col.lower() or '%' in col:
+        if 'pct' in col.lower() or 'porcentaje' in col.lower() or col.lower().endswith('_pct') or '%' in col:
             col_config[col] = st.column_config.NumberColumn(format="%.1f%%")
+        elif not is_count and any(kw in col.lower() for kw in ['total', 'monto', 'facturacion', 'venta', 'importe', 'saldo', 'mxn', 'compra', 'promedio', 'media', 'desviacion', 'minimo', 'maximo', 'precio']):
+            col_config[col] = st.column_config.NumberColumn(format="$%.2f")
 
     st.dataframe(display_df, use_container_width=True, hide_index=True, column_config=col_config)
 
@@ -1269,10 +1269,10 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
     col_config = {}
     for col in num_cols:
         is_count = any(kw in col.lower() for kw in count_keywords)
-        if not is_count and any(kw in col.lower() for kw in ['total', 'monto', 'facturacion', 'venta', 'importe', 'saldo', 'mxn', 'compra']):
-            col_config[col] = st.column_config.NumberColumn(format="$%.2f")
-        elif 'pct' in col.lower() or 'porcentaje' in col.lower() or '%' in col:
+        if 'pct' in col.lower() or 'porcentaje' in col.lower() or col.lower().endswith('_pct') or '%' in col:
             col_config[col] = st.column_config.NumberColumn(format="%.1f%%")
+        elif not is_count and any(kw in col.lower() for kw in ['total', 'monto', 'facturacion', 'venta', 'importe', 'saldo', 'mxn', 'compra']):
+            col_config[col] = st.column_config.NumberColumn(format="$%.2f")
 
     st.dataframe(df, use_container_width=True, hide_index=True, column_config=col_config)
 
@@ -2195,14 +2195,14 @@ def _render_result_message(msg: dict, msg_idx: int = 0):
             col_config = {}
             for col in display_num_cols:
                 is_count = any(kw in col.lower() for kw in count_keywords)
-                if not is_count and any(kw in col.lower() for kw in ['total', 'monto', 'facturacion', 'venta',
-                                                                       'importe', 'saldo', 'mxn', 'compra',
-                                                                       'promedio', 'media', 'desviacion',
-                                                                       'minimo', 'maximo', 'precio',
-                                                                       'mediana', 'percentil']):
-                    col_config[col] = st.column_config.NumberColumn(format="$%.2f")
-                elif 'pct' in col.lower() or 'porcentaje' in col.lower() or '%' in col:
+                if 'pct' in col.lower() or 'porcentaje' in col.lower() or col.lower().endswith('_pct') or '%' in col:
                     col_config[col] = st.column_config.NumberColumn(format="%.1f%%")
+                elif not is_count and any(kw in col.lower() for kw in ['total', 'monto', 'facturacion', 'venta',
+                                                                        'importe', 'saldo', 'mxn', 'compra',
+                                                                        'promedio', 'media', 'desviacion',
+                                                                        'minimo', 'maximo', 'precio',
+                                                                        'mediana', 'percentil']):
+                    col_config[col] = st.column_config.NumberColumn(format="$%.2f")
             st.dataframe(df, use_container_width=True, hide_index=True, column_config=col_config)
             st.caption(f"📋 {len(df)} fila(s) · {len(df.columns)} columna(s)")
 

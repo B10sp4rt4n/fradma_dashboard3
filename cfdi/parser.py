@@ -40,7 +40,7 @@ class CFDIParser:
         """
         try:
             # Parsear XML
-            if xml_path.startswith('<?xml') or xml_path.startswith('\ufeff<?xml'):
+            if xml_path.startswith('<') or xml_path.startswith('\ufeff<'):
                 # Es contenido XML directo
                 # Eliminar BOM si existe
                 content = xml_path.lstrip('\ufeff')
@@ -201,8 +201,8 @@ class ComplementoPagoParser:
             Lista de dicts con pagos documentados
         """
         try:
-            if xml_path.startswith('<?xml'):
-                root = ET.fromstring(xml_path)
+            if xml_path.startswith('<') or xml_path.startswith('\ufeff<'):
+                root = ET.fromstring(xml_path.lstrip('\ufeff'))
             else:
                 tree = ET.parse(xml_path)
                 root = tree.getroot()
@@ -286,8 +286,12 @@ def parse_cfdi_batch(xml_files: List[str], empresa_id: str) -> Dict:
             # Intentar parsear como venta
             venta = parser_venta.parse_cfdi_venta(xml_file)
             venta['empresa_id'] = empresa_id
-            results['ventas'].append(venta)
-            
+
+            # Los CFDI tipo 'P' son complementos de pago, no facturas de ingreso.
+            # Solo se agregan a ventas si son tipo 'I' (ingreso) u otros tipos no-pago.
+            if venta.get('tipo_de_comprobante') != 'P':
+                results['ventas'].append(venta)
+
             # Si tiene complemento de pago, también parsearlo
             try:
                 pagos = parser_pago.parse_complemento_pago(xml_file)
