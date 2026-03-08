@@ -724,7 +724,24 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
             plot_df = plot_df.sort_values(y_col, ascending=True)
     else:
         # Si es temporal, ordenar por la columna temporal
-        plot_df = plot_df.sort_values(x_col, ascending=True)
+        # Detectar etiquetas "Mes YYYY" (ej: "Ene 2025") generadas por el post-procesador
+        _MES_NUM = {
+            'Ene': 1, 'Feb': 2, 'Mar': 3, 'Abr': 4, 'May': 5, 'Jun': 6,
+            'Jul': 7, 'Ago': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dic': 12,
+        }
+        _sample = plot_df[x_col].dropna().astype(str).head(5)
+        _is_mes_label = _sample.str.match(
+            r'^(Ene|Feb|Mar|Abr|May|Jun|Jul|Ago|Sep|Oct|Nov|Dic)\s+\d{4}$'
+        ).any()
+        if _is_mes_label:
+            def _mes_sort_key(s):
+                parts = str(s).split()
+                if len(parts) == 2:
+                    return int(parts[1]) * 12 + _MES_NUM.get(parts[0], 0)
+                return 0
+            plot_df = plot_df.iloc[plot_df[x_col].map(_mes_sort_key).argsort().values]
+        else:
+            plot_df = plot_df.sort_values(x_col, ascending=True)
 
     # --- Helper: truncar etiquetas largas y auto-switch a horizontal ---
     def _smart_label_prep(df_in, label_col, max_chars=45):
