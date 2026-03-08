@@ -1240,7 +1240,177 @@ def crear_reporte_pdf_ejecutivo(
         story.append(Paragraph(texto_plano, interpretacion_style))
     
     story.append(Spacer(1, 0.3*inch))
-    
+
+    # ── KPIs ──────────────────────────────────────────────────────────────
+    if not df.empty:
+        story.append(Paragraph("KPIs Principales", subtitulo_style))
+
+        cols_lower_k = [c.lower() for c in df.columns]
+        num_cols_k = df.select_dtypes(include=['int64', 'float64', 'int32', 'float32']).columns.tolist()
+
+        count_kws_k = ['num_', 'count', 'cantidad', 'facturas', 'conteo', 'registros']
+        money_kws_k = ['total', 'monto', 'facturacion', 'venta', 'importe', 'saldo',
+                       'mxn', 'compra', 'cobrado', 'monetario', 'ventas']
+        pct_kws_k   = ['pct', 'porcentaje', 'crecimiento', 'tasa']
+
+        def _is_ck(c): return any(k in c.lower() for k in count_kws_k)
+        def _is_mk(c): return any(k in c.lower() for k in money_kws_k)
+        def _is_pk(c): return any(k in c.lower() for k in pct_kws_k)
+
+        def _fmtk(v, col=""):
+            import math
+            if not isinstance(v, (int, float)): return str(v)
+            if math.isnan(v) or math.isinf(v): return "—"
+            if _is_ck(col): return f"{int(v):,}"
+            if _is_pk(col): return f"{v:,.1f}%"
+            if _is_mk(col) or abs(v) >= 1000: return f"${v:,.2f}"
+            return f"{v:,.2f}"
+
+        has_kpi_col_k   = any(c in ('kpi', 'indicador', 'metrica', 'nombre') for c in cols_lower_k)
+        has_valor_col_k = any(c in ('valor', 'value') for c in cols_lower_k)
+
+        kpi_style_header = ParagraphStyle(
+            'KPIHeader', parent=styles['Normal'],
+            fontSize=9, textColor=colors.white,
+            fontName='Helvetica-Bold', alignment=TA_CENTER
+        )
+        kpi_style_label = ParagraphStyle(
+            'KPILabel', parent=styles['Normal'],
+            fontSize=9, textColor=colors.HexColor('#2c3e50'),
+            fontName='Helvetica'
+        )
+        kpi_style_value = ParagraphStyle(
+            'KPIValue', parent=styles['Normal'],
+            fontSize=11, textColor=colors.HexColor('#1f77b4'),
+            fontName='Helvetica-Bold', alignment=TA_CENTER
+        )
+
+        if has_kpi_col_k and has_valor_col_k:
+            # Caso especial: columnas kpi/valor/unidad
+            kc   = df.columns[cols_lower_k.index(next(c for c in cols_lower_k if c in ('kpi', 'indicador', 'metrica', 'nombre')))]
+            vc   = df.columns[cols_lower_k.index(next(c for c in cols_lower_k if c in ('valor', 'value')))]
+            uc   = next((df.columns[i] for i, c in enumerate(cols_lower_k) if c in ('unidad', 'unit', 'tipo')), None)
+
+            kpi_data_pdf = [
+                [Paragraph('Indicador', kpi_style_header), Paragraph('Valor', kpi_style_header)]
+            ]
+            for _, row in df.iterrows():
+                nombre = str(row[kc])
+                raw    = row[vc]
+                unidad = str(row[uc]) if uc else ''
+                try:
+                    v = float(str(raw).replace(',', ''))
+                    u = unidad.lower()
+                    if 'mxn' in u or 'facturaci' in u:
+                        val_fmt = f"${v:,.2f}"
+                    elif '%' in u or 'crecimiento' in u:
+                        val_fmt = f"{v:,.1f}%"
+                    elif 'factura' in u or 'cliente' in u or 'registro' in u:
+                        val_fmt = f"{int(v):,}"
+                    elif abs(v) >= 1000:
+                        val_fmt = f"${v:,.2f}"
+                    else:
+                        val_fmt = f"{v:,.2f}"
+                except (ValueError, TypeError):
+                    val_fmt = str(raw)
+                kpi_data_pdf.append([
+                    Paragraph(nombre[:50], kpi_style_label),
+                    Paragraph(val_fmt, kpi_style_value)
+                ])
+
+            kpi_tbl = Table(kpi_data_pdf, colWidths=[3.5*inch, 3.0*inch])
+            kpi_tbl.setStyle(TableStyle([
+                ('BACKGROUND',    (0, 0), (-1, 0), colors.HexColor('#1f77b4')),
+                ('BACKGROUND',    (0, 1), (-1, -1), colors.HexColor('#eaf3fb')),
+                ('ROWBACKGROUNDS',(0, 1), (-1, -1), [colors.white, colors.HexColor('#eaf3fb')]),
+                ('GRID',          (0, 0), (-1, -1), 0.5, colors.HexColor('#b0c4de')),
+                ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
+                ('TOPPADDING',    (0, 0), (-1, -1), 6),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ]))
+            story.append(kpi_tbl)
+
+        elif num_cols_k:
+            # Caso general: calcular KPIs desde columnas numéricas
+            import math
+            kpi_items_pdf = [("Registros", f"{len(df):,}", "total")]
+            for col in num_cols_k[:5]:
+                total_v = df[col].sum()
+                avg_v   = df[col].mean()
+                label   = col.replace('_', ' ').title()
+                if _is_ck(col):
+                    kpi_items_pdf.append((f"Total {label}", f"{int(total_v):,}", "count"))
+                elif _is_mk(col):
+                    kpi_items_pdf.append((label, f"${total_v:,.2f}", f"Prom: ${avg_v:,.2f}"))
+                elif _is_pk(col):
+                    kpi_items_pdf.append((label, f"{avg_v:,.1f}%", "pct"))
+                else:
+                    kpi_items_pdf.append((label, _fmtk(total_v, col), f"Prom: {_fmtk(avg_v, col)}"))
+
+            # Renderizar como tabla de 3 col: Métrica | Valor | Detalle
+            kpi_hdr  = [
+                Paragraph('Métrica',  kpi_style_header),
+                Paragraph('Valor',    kpi_style_header),
+                Paragraph('Detalle',  kpi_style_header),
+            ]
+            kpi_rows = [kpi_hdr]
+            for lbl, val, det in kpi_items_pdf:
+                det_txt = det if (det and not isinstance(det, str) and not det.startswith(('total','count','pct'))) or (isinstance(det, str) and det.startswith('Prom')) else ''
+                kpi_rows.append([
+                    Paragraph(lbl, kpi_style_label),
+                    Paragraph(val, kpi_style_value),
+                    Paragraph(det_txt or '', kpi_style_label),
+                ])
+
+            kpi_tbl = Table(kpi_rows, colWidths=[2.5*inch, 2.0*inch, 2.0*inch])
+            kpi_tbl.setStyle(TableStyle([
+                ('BACKGROUND',    (0, 0), (-1, 0), colors.HexColor('#1f77b4')),
+                ('ROWBACKGROUNDS',(0, 1), (-1, -1), [colors.white, colors.HexColor('#eaf3fb')]),
+                ('GRID',          (0, 0), (-1, -1), 0.5, colors.HexColor('#b0c4de')),
+                ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
+                ('TOPPADDING',    (0, 0), (-1, -1), 6),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ]))
+            story.append(kpi_tbl)
+
+            # Top 3 / Menor 3 si hay dim categórica + columna monetaria
+            str_cols_k = df.select_dtypes(include=['object']).columns.tolist()
+            if str_cols_k and len(df) > 3:
+                dim_c = str_cols_k[0]
+                val_c = next((c for c in num_cols_k if _is_mk(c)), num_cols_k[0])
+                val_lbl = val_c.replace('_', ' ').title()
+                total_sum = df[val_c].sum()
+
+                top3    = df.nlargest(3, val_c)[[dim_c, val_c]]
+                story.append(Spacer(1, 0.15*inch))
+
+                top_hdr = [
+                    Paragraph(f'Top 3 — {val_lbl}', kpi_style_header),
+                    Paragraph('Monto', kpi_style_header),
+                    Paragraph('% del Total', kpi_style_header),
+                ]
+                top_rows = [top_hdr]
+                for _, r in top3.iterrows():
+                    pct = (float(r[val_c]) / total_sum * 100) if total_sum else 0
+                    top_rows.append([
+                        Paragraph(str(r[dim_c])[:40], kpi_style_label),
+                        Paragraph(_fmtk(float(r[val_c]), val_c), kpi_style_value),
+                        Paragraph(f"{pct:.1f}%", kpi_style_label),
+                    ])
+
+                top_tbl = Table(top_rows, colWidths=[3.0*inch, 2.0*inch, 1.5*inch])
+                top_tbl.setStyle(TableStyle([
+                    ('BACKGROUND',    (0, 0), (-1, 0), colors.HexColor('#27ae60')),
+                    ('ROWBACKGROUNDS',(0, 1), (-1, -1), [colors.white, colors.HexColor('#e8f8f0')]),
+                    ('GRID',          (0, 0), (-1, -1), 0.5, colors.HexColor('#a9dfbf')),
+                    ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
+                    ('TOPPADDING',    (0, 0), (-1, -1), 5),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+                ]))
+                story.append(top_tbl)
+
+        story.append(Spacer(1, 0.3*inch))
+
     # Gráfica (si está disponible)
     if fig is not None:
         story.append(Paragraph("Visualización", subtitulo_style))
