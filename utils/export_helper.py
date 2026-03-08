@@ -1089,8 +1089,8 @@ def crear_reporte_pdf_ejecutivo(
         from reportlab.lib import colors
         from reportlab.lib.units import inch
         from reportlab.platypus import (
-            SimpleDocTemplate, Table, TableStyle, Paragraph, 
-            Spacer, PageBreak, Image
+            SimpleDocTemplate, Table, TableStyle, Paragraph,
+            Spacer, PageBreak, Image, KeepTogether
         )
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
         from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
@@ -1243,7 +1243,6 @@ def crear_reporte_pdf_ejecutivo(
 
     # ── KPIs ──────────────────────────────────────────────────────────────
     if not df.empty:
-        story.append(Paragraph("KPIs Principales", subtitulo_style))
 
         cols_lower_k = [c.lower() for c in df.columns]
         num_cols_k = df.select_dtypes(include=['int64', 'float64', 'int32', 'float32']).columns.tolist()
@@ -1318,7 +1317,7 @@ def crear_reporte_pdf_ejecutivo(
                     Paragraph(val_fmt, kpi_style_value)
                 ])
 
-            kpi_tbl = Table(kpi_data_pdf, colWidths=[3.5*inch, 3.0*inch])
+            kpi_tbl = Table(kpi_data_pdf, colWidths=[3.5*inch, 3.0*inch], splitByRow=False)
             kpi_tbl.setStyle(TableStyle([
                 ('BACKGROUND',    (0, 0), (-1, 0), colors.HexColor('#1f77b4')),
                 ('BACKGROUND',    (0, 1), (-1, -1), colors.HexColor('#eaf3fb')),
@@ -1328,7 +1327,10 @@ def crear_reporte_pdf_ejecutivo(
                 ('TOPPADDING',    (0, 0), (-1, -1), 6),
                 ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
             ]))
-            story.append(kpi_tbl)
+            story.append(KeepTogether([
+                Paragraph('KPIs Principales', subtitulo_style),
+                kpi_tbl,
+            ]))
 
         elif num_cols_k:
             # Caso general: calcular KPIs desde columnas numéricas
@@ -1362,7 +1364,7 @@ def crear_reporte_pdf_ejecutivo(
                     Paragraph(det_txt or '', kpi_style_label),
                 ])
 
-            kpi_tbl = Table(kpi_rows, colWidths=[2.5*inch, 2.0*inch, 2.0*inch])
+            kpi_tbl = Table(kpi_rows, colWidths=[2.5*inch, 2.0*inch, 2.0*inch], splitByRow=False)
             kpi_tbl.setStyle(TableStyle([
                 ('BACKGROUND',    (0, 0), (-1, 0), colors.HexColor('#1f77b4')),
                 ('ROWBACKGROUNDS',(0, 1), (-1, -1), [colors.white, colors.HexColor('#eaf3fb')]),
@@ -1371,9 +1373,12 @@ def crear_reporte_pdf_ejecutivo(
                 ('TOPPADDING',    (0, 0), (-1, -1), 6),
                 ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
             ]))
-            story.append(kpi_tbl)
+            story.append(KeepTogether([
+                Paragraph('KPIs Principales', subtitulo_style),
+                kpi_tbl,
+            ]))
 
-            # Top 3 / Menor 3 si hay dim categórica + columna monetaria
+            # Top 3 si hay dim categórica + columna monetaria
             str_cols_k = df.select_dtypes(include=['object']).columns.tolist()
             if str_cols_k and len(df) > 3:
                 dim_c = str_cols_k[0]
@@ -1381,8 +1386,7 @@ def crear_reporte_pdf_ejecutivo(
                 val_lbl = val_c.replace('_', ' ').title()
                 total_sum = df[val_c].sum()
 
-                top3    = df.nlargest(3, val_c)[[dim_c, val_c]]
-                story.append(Spacer(1, 0.15*inch))
+                top3 = df.nlargest(3, val_c)[[dim_c, val_c]]
 
                 top_hdr = [
                     Paragraph(f'Top 3 — {val_lbl}', kpi_style_header),
@@ -1398,7 +1402,7 @@ def crear_reporte_pdf_ejecutivo(
                         Paragraph(f"{pct:.1f}%", kpi_style_label),
                     ])
 
-                top_tbl = Table(top_rows, colWidths=[3.0*inch, 2.0*inch, 1.5*inch])
+                top_tbl = Table(top_rows, colWidths=[3.0*inch, 2.0*inch, 1.5*inch], splitByRow=False)
                 top_tbl.setStyle(TableStyle([
                     ('BACKGROUND',    (0, 0), (-1, 0), colors.HexColor('#27ae60')),
                     ('ROWBACKGROUNDS',(0, 1), (-1, -1), [colors.white, colors.HexColor('#e8f8f0')]),
@@ -1407,7 +1411,7 @@ def crear_reporte_pdf_ejecutivo(
                     ('TOPPADDING',    (0, 0), (-1, -1), 5),
                     ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
                 ]))
-                story.append(top_tbl)
+                story.append(KeepTogether([Spacer(1, 0.15*inch), top_tbl]))
 
         story.append(Spacer(1, 0.3*inch))
 
@@ -1442,8 +1446,6 @@ def crear_reporte_pdf_ejecutivo(
             story.append(Spacer(1, 0.2*inch))
     
     # Tabla de datos
-    story.append(Paragraph("Datos", subtitulo_style))
-    
     if not df.empty:
         # Limitar a 20 filas para el PDF
         df_display = df.head(20).copy()
@@ -1467,7 +1469,10 @@ def crear_reporte_pdf_ejecutivo(
             data.append(fila)
         
         # Crear tabla
-        table = Table(data)
+        # Tablas pequeñas (≤8 filas): no partir, mover a siguiente página si no cabe
+        # Tablas grandes: sí permitir partir entre páginas (splitByRow=True por defecto)
+        n_data_rows = len(data) - 1  # sin encabezado
+        table = Table(data, splitByRow=(n_data_rows > 8))
         
         # Estilo de tabla
         table.setStyle(TableStyle([
@@ -1494,8 +1499,13 @@ def crear_reporte_pdf_ejecutivo(
             ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')])
         ]))
         
-        story.append(table)
-        
+        # Tablas pequeñas: mover completas si no caben; grandes: título aparte y dejar que fluyan
+        if n_data_rows <= 8:
+            story.append(KeepTogether([Paragraph("Datos", subtitulo_style), table]))
+        else:
+            story.append(Paragraph("Datos", subtitulo_style))
+            story.append(table)
+
         # Nota si hay más datos
         if len(df) > 20:
             story.append(Spacer(1, 0.1*inch))
