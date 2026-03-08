@@ -20,6 +20,7 @@
 9. [Lo Que No Haremos](#9-lo-que-no-haremos)
 10. [Rol del Socio Estratégico](#10-rol-del-socio-estratégico)
 11. [Criterios de Éxito por Fase](#11-criterios-de-éxito-por-fase)
+12. [Análisis Competitivo](#12-análisis-competitivo)
 
 ---
 
@@ -331,6 +332,60 @@ Un socio estratégico puede aportar en tres dimensiones:
 - [ ] Churn < 5% mensual
 - [ ] 1 alianza institucional activa (cámara o asociación empresarial)
 - [ ] LTV/CAC ≥ 10x
+
+---
+
+## 12. Análisis Competitivo
+
+### El Mapa de Competencia
+
+El mercado se divide en cuatro cuadrantes. Ningún competidor ocupa el mismo espacio que CIMA.
+
+```
+                    ESPECIALIZADO MÉXICO / FISCAL
+                              ▲
+                              │
+                         ★ CIMA
+                              │
+  HERRAMIENTA          ───────┼───────       PLATAFORMA
+  (requiere analista)         │             (lista para usar)
+                         CONTPAQi /
+                         Aspel BI
+                              │
+                              ▼
+                    GENÉRICO / NO FISCAL
+```
+
+- **Power BI / Tableau / Metabase:** herramientas genéricas, sin conocimiento de CFDI, requieren analista de datos para configurar. Setup: 40–120 horas. TCO 3 años (10 usuarios): $86,400–$162,000 USD.
+- **CONTPAQi / Aspel reportes:** sí conocen el contexto fiscal mexicano, pero son reportes estáticos del ERP, sin BI interactivo, sin NL2SQL, sin análisis ad hoc. El cliente no puede hacer preguntas que no estén preconstruidas.
+- **Facturama / Alegra / Bind ERP:** módulos de facturación con reportes básicos. No son plataformas de análisis. No procesan XMLs históricos de terceros (solo los que el cliente emite en su sistema).
+- **ChatGPT / Copilot genéricos:** no tienen acceso a los datos del cliente. Responden en general sobre contabilidad, pero no sobre "¿cuáles son mis clientes más rentables este trimestre?"
+
+### Tabla de Posicionamiento Directo
+
+| Criterio | CIMA | Power BI | CONTPAQi BI | Metabase | Facturama |
+|---|---|---|---|---|---|
+| **Ingesta CFDI 4.0 nativa** | ✅ Automática | ❌ No | ⚠️ Solo los propios | ❌ No | ⚠️ Solo emisión |
+| **NL2SQL sobre datos propios** | ✅ Incluido | ❌ Copilot extra ($40/user) | ❌ No | ❌ No | ❌ No |
+| **Setup para primer reporte** | ✅ < 5 min | ❌ 40–80 horas | ⚠️ 2–8 horas | ❌ 30–50 horas | ⚠️ 1–4 horas |
+| **Reporte PDF ejecutivo automático** | ✅ 1 clic | ❌ Manual | ❌ Fijo/impresión | ❌ Manual | ❌ No |
+| **Independencia del ERP** | ✅ 100% | ✅ Sí (con conector) | ❌ Requiere CONTPAQi | ✅ Sí (con SQL) | ❌ Solo su sistema |
+| **CxC con antigüedad 30/60/90/120+** | ✅ Preconstruido | ❌ A configurar | ⚠️ Básico | ❌ A construir | ❌ No |
+| **Precio mensual (PYME, MXN)** | **$1,200–$2,800** | $4,000–$10,000/user | $3,500–$8,000 | $1,400–$8,300 | $400–$1,500 |
+| **TCO 3 años (5 usuarios)** | **$50,400 MXN** | ~$1,728,000 MXN | ~$310,000 MXN | ~$302,000 MXN | No comparable |
+| **Curva de aprendizaje** | Muy baja (Excel suficiente) | Alta | Media | Alta | Baja (muy limitado) |
+
+### Por Qué No Es Fácil de Replicar
+
+Los competidores grandes (Microsoft, Salesforce) no atacarán el nicho de CFDI/fiscal mexicano: es un mercado de $3,700M MXN/año, irrelevante para ellos escalarmente pero suficiente para un player especializado.
+
+Los competidores locales (CONTPAQi, Aspel) tienen el conocimiento fiscal pero están atados a su propia base de datos de ERP. No pueden procesar XMLs de terceros ni añadir IA conversacional sin un rediseño arquitectónico mayor.
+
+El moat de CIMA tiene tres capas:
+
+1. **Know-how fiscal mexicano embebido en código:** reglas SAT, lógica de complementos de pago PPD/PUE, tipos de comprobante, antigüedad de CxC — todo codificado en el parser y el NL2SQL.
+2. **Datos del cliente acumulados en CIMA:** cada empresa que carga su historial de CFDIs genera un activo que no migra fácilmente a otra plataforma. El switching cost crece con el tiempo.
+3. **Posicionamiento como herramienta del contador:** si el programa Partner funciona como se proyecta, el canal de distribución se convierte en una barrera de entrada para cualquier competidor que intente llegar directamente al cliente final.
 
 ---
 
