@@ -14,6 +14,7 @@ Cobertura:
 import pytest
 import re
 from datetime import datetime
+from io import StringIO
 from unittest.mock import MagicMock, patch, PropertyMock
 import pandas as pd
 import json
@@ -216,6 +217,13 @@ class TestValidateSQL:
         ok, msg = validate_sql_static(sql)
         assert ok is False
         assert "excede" in msg.lower()
+
+    def test_reject_overwide_select_query(self):
+        columnas = ", ".join(f"c{i}" for i in range(252))
+        sql = f"SELECT {columnas} FROM cfdi_ventas LIMIT 1;"
+        ok, msg = validate_sql_static(sql)
+        assert ok is False
+        assert "ancho" in msg.lower()
 
     # --- Edge cases ---
     def test_case_insensitive_select(self):
@@ -466,6 +474,71 @@ class TestNL2SQLEngineMock:
         assert result.chart_suggestion == "metric"
         assert result.execution_time > 0
 
+    @patch("utils.nl2sql.OpenAI")
+    @patch("utils.nl2sql.psycopg2")
+    def test_ask_formats_month_columns_and_chart_spec(self, mock_pg, mock_openai):
+        from utils.nl2sql import NL2SQLEngine
+        engine = NL2SQLEngine(
+            connection_string="postgresql://test:test@localhost/test",
+            api_key="sk-test",
+        )
+
+        engine.generate_sql = MagicMock(
+            return_value="SELECT DATE_TRUNC('month', fecha_emision) AS mes FROM cfdi_ventas;"
+        )
+        engine.execute_query = MagicMock(
+            return_value=pd.DataFrame({"mes": pd.to_datetime(["2026-01-01", "2026-02-01"])})
+        )
+        engine.interpret_results = MagicMock(
+            return_value=("Serie mensual", "bar", {"x": "mes", "y": "total"})
+        )
+
+        result = engine.ask("ventas por mes")
+
+        assert result.success is True
+        assert result.dataframe["mes"].tolist() == ["Ene 2026", "Feb 2026"]
+        assert result.chart_suggestion == "bar"
+        assert result.chart_spec == {"x": "mes", "y": "total"}
+
+    @patch("utils.nl2sql.OpenAI")
+    @patch("utils.nl2sql.psycopg2")
+    def test_ask_replaces_non_compatible_fallback(self, mock_pg, mock_openai):
+        from utils.nl2sql import NL2SQLEngine
+        engine = NL2SQLEngine(
+            connection_string="postgresql://test:test@localhost/test",
+            api_key="sk-test",
+        )
+
+        engine.generate_sql = MagicMock(return_value="Mensaje no compatible con esta pregunta")
+        engine.execute_query = MagicMock(return_value=pd.DataFrame({"total_facturas": [10]}))
+        engine.interpret_results = MagicMock(return_value=("Resumen estadístico", "table"))
+
+        result = engine.ask("algo ambiguo")
+
+        assert result.success is True
+        assert "FROM cfdi_ventas" in result.sql
+        assert "AVG(total)" in result.sql
+
+    @patch("utils.nl2sql.OpenAI")
+    @patch("utils.nl2sql.psycopg2")
+    def test_ask_accepts_plain_string_interpretation(self, mock_pg, mock_openai):
+        from utils.nl2sql import NL2SQLEngine
+        engine = NL2SQLEngine(
+            connection_string="postgresql://test:test@localhost/test",
+            api_key="sk-test",
+        )
+
+        engine.generate_sql = MagicMock(return_value="SELECT COUNT(*) AS total FROM cfdi_ventas;")
+        engine.execute_query = MagicMock(return_value=pd.DataFrame({"total": [5]}))
+        engine.interpret_results = MagicMock(return_value="Texto simple")
+
+        result = engine.ask("conteo")
+
+        assert result.success is True
+        assert result.interpretation == "Texto simple"
+        assert result.chart_suggestion == "table"
+        assert result.chart_spec == {}
+
 
 # =====================================================================
 # Tests de UI helpers (sin Streamlit real)
@@ -532,7 +605,7 @@ class TestUIHelpers:
         assert "dataframe_json" in msg
 
         # Roundtrip
-        df_back = pd.read_json(msg["dataframe_json"], orient="split")
+        df_back = pd.read_json(StringIO(msg["dataframe_json"]), orient="split")
         assert len(df_back) == 3
         assert list(df_back.columns) == ["cliente", "total", "facturas"]
 

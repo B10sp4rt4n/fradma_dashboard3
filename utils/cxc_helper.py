@@ -40,6 +40,15 @@ def detectar_columna(df: pd.DataFrame, lista_candidatos: List[str]) -> Optional[
     return None
 
 
+def _parsear_fechas(series: pd.Series) -> pd.Series:
+    """Parsea fechas ISO y formatos locales sin sesgar todo a dayfirst."""
+    parsed = pd.to_datetime(series, errors='coerce')
+    faltantes = parsed.isna() & series.notna()
+    if faltantes.any():
+        parsed.loc[faltantes] = pd.to_datetime(series.loc[faltantes], errors='coerce', dayfirst=True)
+    return parsed
+
+
 def excluir_pagados(df: pd.DataFrame, col_estatus: Optional[str] = None) -> pd.Series:
     """
     Crea una máscara booleana para excluir registros pagados.
@@ -87,32 +96,33 @@ def calcular_dias_overdue(df: pd.DataFrame) -> pd.Series:
         df['dias_overdue'] = calcular_dias_overdue(df)
     """
     
-    # Método 1: dias_restante/dias_restantes (PRIORITARIO - MÁS CONFIABLE)
-    # Positivo = vigente, negativo = vencido, entonces invertir
+    hoy = pd.Timestamp.today().normalize()
+    resultado = pd.Series(np.nan, index=df.index, dtype='float64')
+
+    # Método 1: dias_vencido directo
+    # Se llena solo donde haya valor y el resto continúa al fallback.
+    if 'dias_vencido' in df.columns:
+        dias = pd.to_numeric(df['dias_vencido'], errors='coerce')
+        resultado = resultado.where(~resultado.isna(), dias)
+
+    # Método 2: dias_restante/dias_restantes
+    # Positivo = vigente, negativo = vencido, entonces invertir.
     for col_rest in ['dias_restante', 'dias_restantes']:
         if col_rest in df.columns:
-            dias_restantes = pd.to_numeric(df[col_rest], errors='coerce').fillna(0)
-            # Invertir: si faltan 5 días = -5 overdue (vigente), si pasaron 10 días = +10 overdue (vencido)
-            return -dias_restantes
-    
-    # Método 2: Calcular desde fecha de vencimiento (SEGUNDO MÁS CONFIABLE)
-    # NOTA: fecha_vencimiento se interpreta como el ÚLTIMO DÍA VÁLIDO para pagar
+            dias_restantes = pd.to_numeric(df[col_rest], errors='coerce')
+            calculado = -dias_restantes
+            resultado = resultado.where(~resultado.isna(), calculado)
+            break
+
+    # Método 3: calcular desde fecha de vencimiento
+    # fecha_vencimiento se interpreta como el último día válido para pagar.
     for col_venc in ['vencimiento', 'fecha_vencimiento', 'vencimient']:
         if col_venc in df.columns:
-            fecha_venc = pd.to_datetime(df[col_venc], errors='coerce', dayfirst=True)
-            # Si hoy = fecha_venc: 0 días vencido (aún válido)
-            # Si hoy = fecha_venc + 1: 1 día vencido
-            dias = (pd.Timestamp.today().normalize() - fecha_venc).dt.days
-            return pd.to_numeric(dias, errors='coerce').fillna(0)
-    
-    # Método 3: dias_vencido directo
-    # Convención: positivo = días vencido, NaN/0 = vigente (igual que Reporte Ejecutivo)
-    # Rows de hoja CXC VIGENTES tienen NaN → fillna(0) → vigente ✓
-    # Rows de hoja CXC VENCIDAS tienen valores positivos → vencido ✓
-    if 'dias_vencido' in df.columns:
-        dias = pd.to_numeric(df['dias_vencido'], errors='coerce').fillna(0)
-        return dias
-    
+            fecha_venc = _parsear_fechas(df[col_venc])
+            calculado = (hoy - fecha_venc).dt.days
+            resultado = resultado.where(~resultado.isna(), pd.to_numeric(calculado, errors='coerce'))
+            break
+
     # Método 4: fecha_pago + dias_de_credito
     # NOTA: dias_credito representa días COMPLETOS de gracia
     # Si dias_credito = 30, el cliente puede pagar del día 1 al 30, el día 31 ya está vencido
@@ -120,7 +130,7 @@ def calcular_dias_overdue(df: pd.DataFrame) -> pd.Series:
     col_credito = detectar_columna(df, COLUMNAS_DIAS_CREDITO)
     
     if col_fecha_pago:
-        fecha_base = pd.to_datetime(df[col_fecha_pago], errors='coerce', dayfirst=True)
+        fecha_base = _parsear_fechas(df[col_fecha_pago])
         
         if col_credito:
             dias_credito = pd.to_numeric(df[col_credito], errors='coerce').fillna(0).astype(int)
@@ -131,20 +141,20 @@ def calcular_dias_overdue(df: pd.DataFrame) -> pd.Series:
         fecha_venc = fecha_base + pd.to_timedelta(dias_credito, unit='D')
         # Si hoy = fecha_base + 30 días: 1 día vencido (el día 31 desde factura)
         # Si hoy = fecha_base + 29 días: 0 días vencido (el día 30, aún vigente)
-        dias = (pd.Timestamp.today().normalize() - fecha_venc).dt.days + 1
-        return pd.to_numeric(dias, errors='coerce').fillna(0)
+        dias = (hoy - fecha_venc).dt.days + 1
+        resultado = resultado.where(~resultado.isna(), pd.to_numeric(dias, errors='coerce'))
     
     # Método 5: Si solo existe 'fecha' (fecha de factura), asumir 30 días de crédito estándar
     # NOTA: 30 días completos de gracia, el día 31 es el primer día vencido
     if 'fecha' in df.columns:
-        fecha_factura = pd.to_datetime(df['fecha'], errors='coerce', dayfirst=True)
+        fecha_factura = _parsear_fechas(df['fecha'])
         # fecha + 30 días = día 31 = primer día vencido
         fecha_venc_estimada = fecha_factura + pd.Timedelta(days=30)
-        dias = (pd.Timestamp.today().normalize() - fecha_venc_estimada).dt.days + 1
-        return pd.to_numeric(dias, errors='coerce').fillna(0)
+        dias = (hoy - fecha_venc_estimada).dt.days + 1
+        resultado = resultado.where(~resultado.isna(), pd.to_numeric(dias, errors='coerce'))
     
     # Fallback final: todos vigentes (días = 0)
-    return pd.Series(0, index=df.index)
+    return pd.to_numeric(resultado, errors='coerce').fillna(0)
 
 
 

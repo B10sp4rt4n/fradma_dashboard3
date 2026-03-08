@@ -11,6 +11,7 @@ Fecha: Febrero 2026
 
 import os
 import json
+from io import StringIO
 import streamlit as st
 import pandas as pd
 
@@ -2153,7 +2154,7 @@ def _render_result_message(msg: dict, msg_idx: int = 0):
     df = None
     if "dataframe_json" in msg:
         try:
-            df = pd.read_json(msg["dataframe_json"], orient="split")
+            df = pd.read_json(StringIO(msg["dataframe_json"]), orient="split")
         except Exception:
             df = None
 

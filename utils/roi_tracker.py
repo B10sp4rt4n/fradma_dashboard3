@@ -333,6 +333,8 @@ class ROITracker:
     
     def reset_session(self):
         """Reinicia el tracking de la sesión actual (útil para testing)"""
+        if "roi_data" in self.session_state:
+            del self.session_state["roi_data"]
         self._init_session()
 
 

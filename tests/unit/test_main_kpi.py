@@ -215,10 +215,7 @@ class TestClasificacionVendedores:
         
     def test_calcula_mediana_ticket_promedio(self, df_ventas_eficiencia):
         """Calcula mediana de ticket promedio"""
-        vendedores_ticket = (
-            df_ventas_eficiencia.groupby("agente")
-            .apply(lambda x: x["valor_usd"].sum() / len(x))
-        )
+        vendedores_ticket = df_ventas_eficiencia.groupby("agente")["valor_usd"].mean()
         mediana_ticket = vendedores_ticket.median()
         
         assert mediana_ticket == 1000.0  # (1000, 5000, 500) → 1000

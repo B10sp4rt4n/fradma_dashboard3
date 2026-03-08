@@ -902,6 +902,11 @@ SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quart
         if len(sql) > MAX_SQL_LENGTH:
             return False, f"Query excede el límite de {MAX_SQL_LENGTH} caracteres"
 
+        # Rechazar consultas patológicamente anchas aunque no excedan el largo.
+        select_match = re.search(r'^\s*SELECT\s+(.*?)\bFROM\b', sql, re.IGNORECASE | re.DOTALL)
+        if select_match and select_match.group(1).count(',') > 250:
+            return False, "Query excede el ancho máximo permitido"
+
         # Debe empezar con SELECT o WITH (CTEs) (case-insensitive)
         if not re.match(r'^\s*(SELECT|WITH)\b', sql, re.IGNORECASE):
             return False, "Solo se permiten consultas SELECT"
@@ -1575,11 +1580,46 @@ Si el usuario pidió explícitamente una orientación (ej: "vertical", "horizont
 
             # Paso 3: Ejecutar query
             df = self.execute_query(sql)
+
+            # Post-procesar columnas de fecha truncadas a mes (DATE_TRUNC)
+            # para mostrar etiquetas legibles como "Ene 2026" en vez de timestamps
+            _MESES_ES = {
+                1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun',
+                7: 'Jul', 8: 'Ago', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dic',
+            }
+            for col in df.columns:
+                if col.lower() in ('mes', 'month', 'periodo', 'period'):
+                    if pd.api.types.is_datetime64_any_dtype(df[col]):
+                        df[col] = df[col].dt.month.map(_MESES_ES) + ' ' + df[col].dt.year.astype(str)
+                    else:
+                        try:
+                            dt_col = pd.to_datetime(df[col], errors='coerce')
+                            if dt_col.notna().all():
+                                df[col] = dt_col.dt.month.map(_MESES_ES) + ' ' + dt_col.dt.year.astype(str)
+                        except Exception:
+                            pass
+
             result.dataframe = df
             result.row_count = len(df)
 
             # Paso 4: Interpretar resultados
-            interpretation, chart_type, chart_spec = self.interpret_results(question, sql, df)
+            interpretation_result = self.interpret_results(question, sql, df)
+            if isinstance(interpretation_result, tuple):
+                if len(interpretation_result) == 3:
+                    interpretation, chart_type, chart_spec = interpretation_result
+                elif len(interpretation_result) == 2:
+                    interpretation, chart_type = interpretation_result
+                    chart_spec = {}
+                elif len(interpretation_result) == 1:
+                    interpretation = interpretation_result[0]
+                    chart_type = "table"
+                    chart_spec = {}
+                else:
+                    raise ValueError("interpret_results devolvió una tupla vacía")
+            else:
+                interpretation = str(interpretation_result)
+                chart_type = "table"
+                chart_spec = {}
             result.interpretation = interpretation
             result.chart_suggestion = chart_type
             result.chart_spec = chart_spec
@@ -1704,6 +1744,10 @@ def validate_sql_static(sql: str) -> Tuple[bool, str]:
     """
     if len(sql) > MAX_SQL_LENGTH:
         return False, f"Query excede el límite de {MAX_SQL_LENGTH} caracteres"
+
+    select_match = re.search(r'^\s*SELECT\s+(.*?)\bFROM\b', sql, re.IGNORECASE | re.DOTALL)
+    if select_match and select_match.group(1).count(',') > 250:
+        return False, "Query excede el ancho máximo permitido"
 
     if not re.match(r'^\s*(SELECT|WITH)\b', sql, re.IGNORECASE):
         return False, "Solo se permiten consultas SELECT"

@@ -85,11 +85,18 @@ def _detectar_col_cliente(df: pd.DataFrame) -> str | None:
     return None
 
 
-def _score_calidad(pct_vigente: float, pct_1_30: float, pct_31_60: float, 
-                   pct_61_90: float, pct_mas_90: float) -> tuple[float, str]:
+def _score_calidad(pct_vigente: float, pct_1_30: float | None = None,
+                                     pct_31_60: float | None = None, pct_61_90: float | None = None,
+                                     pct_mas_90: float | None = None) -> tuple[float, str]:
     """
     Score 0-100 de calidad de cartera ponderado por antigüedad de deuda.
-    
+
+        Compatibilidad histórica:
+        - Si se recibe un solo argumento, se interpreta como ``pct_vencida`` total
+            y el score se calcula como ``100 - pct_vencida``.
+        - Si se reciben 5 argumentos, se usa la fórmula ponderada por buckets de
+            antigüedad.
+
     Fórmula:
     - Vigente (≤0 días):   100 puntos
     - Vencida 1-30 días:    85 puntos (penalidad leve)
@@ -99,13 +106,17 @@ def _score_calidad(pct_vigente: float, pct_1_30: float, pct_31_60: float,
     
     Score = Σ(porcentaje × puntos) / 100
     """
-    score = (
-        pct_vigente * 100 +
-        pct_1_30 * 85 +
-        pct_31_60 * 60 +
-        pct_61_90 * 30 +
-        pct_mas_90 * 0
-    ) / 100
+    if all(value is None for value in (pct_1_30, pct_31_60, pct_61_90, pct_mas_90)):
+        pct_vencida = max(0.0, float(pct_vigente))
+        score = 100.0 - pct_vencida
+    else:
+        score = (
+            pct_vigente * 100 +
+            (pct_1_30 or 0) * 85 +
+            (pct_31_60 or 0) * 60 +
+            (pct_61_90 or 0) * 30 +
+            (pct_mas_90 or 0) * 0
+        ) / 100
     
     score = max(0.0, min(100.0, score))  # Asegurar rango 0-100
     
