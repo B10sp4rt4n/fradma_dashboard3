@@ -710,12 +710,16 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
         cat_cols = [x_col] + [c for c in cat_cols if c != x_col]
         logger.info(f"📊 FIX resultado: cat_cols={cat_cols}, num_cols={num_cols}")
 
-    # Preparar subset
-    plot_df = df.head(top_n).copy()
-    
-    # Para series temporales, NO ordenar por valor (mantener orden cronológico)
+    # Para series temporales, NO limitar filas (necesitamos todos los periodos)
+    # y NO ordenar por valor (mantener orden cronológico)
     is_x_temporal = x_col in temporal_cols or df[x_col].dtype in ['datetime64[ns]', 'datetime64']
-    
+
+    # Preparar subset: datos temporales usan todas las filas; otros usan top_n
+    if is_x_temporal:
+        plot_df = df.copy()
+    else:
+        plot_df = df.head(top_n).copy()
+
     if not is_x_temporal:
         # Solo ordenar si NO es temporal
         if sort_order == "desc" and y_col in plot_df.columns:
