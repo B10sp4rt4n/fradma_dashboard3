@@ -1667,6 +1667,30 @@ def _render_hero():
     """, unsafe_allow_html=True)
 
 
+def _auto_connect_from_env():
+    """Si las credenciales están en variables de entorno y no hay sesión activa, conecta automáticamente."""
+    if st.session_state.get("nl2sql_connected"):
+        return  # Ya conectado, nada que hacer
+
+    neon_url = os.getenv("NEON_DATABASE_URL", "")
+    api_key = os.getenv("OPENAI_API_KEY", "")
+
+    if not neon_url or not api_key:
+        return  # Sin env vars → mostrar formulario manual
+
+    # Establecer credenciales en session_state silenciosamente
+    st.session_state["nl2sql_neon_url"] = neon_url
+    st.session_state["nl2sql_api_key"] = api_key
+    if "nl2sql_model" not in st.session_state:
+        st.session_state["nl2sql_model"] = "gpt-4o"
+
+    engine = _get_engine()
+    if engine:
+        ok, _ = engine.test_connection()
+        if ok:
+            st.session_state["nl2sql_connected"] = True
+
+
 def _render_connection_setup():
     """Panel de configuración de conexión."""
     st.markdown("### 🔌 Configurar Conexión")
@@ -2506,6 +2530,9 @@ def run():
 
     # Hero
     _render_hero()
+
+    # Auto-conectar si las credenciales están en variables de entorno (modo SaaS)
+    _auto_connect_from_env()
 
     # Verificar conexión
     is_connected = st.session_state.get("nl2sql_connected", False)
