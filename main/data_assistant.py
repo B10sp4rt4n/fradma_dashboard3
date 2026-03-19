@@ -942,15 +942,26 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                     color=color_col or y_col,
                     color_continuous_scale="Viridis" if not color_col else None,
                     color_discrete_sequence=CHART_COLORS if color_col else None,
-                    text_auto=True,
                 )
+                fig.update_traces(texttemplate="")
                 fig.update_layout(
                     height=dyn_height,
                     yaxis=dict(autorange="reversed", tickfont=dict(size=11)),
                     showlegend=bool(color_col),
                     margin=dict(l=10, r=40, t=50, b=20),
                 )
-                fig.update_traces(textposition="outside", texttemplate="%{x:,.0f}")
+                # Si hay color_col (barras apiladas/agrupadas), anotar total por fila
+                if color_col:
+                    _bar_totals = bar_df.groupby(x_col, sort=False)[y_col].sum()
+                    for cat, total in _bar_totals.items():
+                        fig.add_annotation(
+                            x=total, y=cat,
+                            text=f"${total:,.0f}" if total >= 1000 else f"{total:,.2f}",
+                            showarrow=False, xshift=5, xanchor="left",
+                            font=dict(size=11, color="white"),
+                        )
+                else:
+                    fig.update_traces(textposition="outside", texttemplate="%{x:,.0f}")
             else:
                 fig = px.bar(
                     bar_df, x=x_col, y=y_col,
@@ -958,15 +969,26 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                     color=color_col or y_col,
                     color_continuous_scale="Viridis" if not color_col else None,
                     color_discrete_sequence=CHART_COLORS if color_col else None,
-                    text_auto=True,
                 )
+                fig.update_traces(texttemplate="")
                 # Formatear eje X para fechas
                 if is_temporal:
                     fig.update_xaxes(tickformat="%b %Y", tickangle=-45)
                 else:
                     fig.update_layout(xaxis_tickangle=-45)
                 fig.update_layout(showlegend=bool(color_col))
-                fig.update_traces(textposition="outside", texttemplate="%{y:,.0f}")
+                # Si hay color_col (múltiples series), anotar total por nodo
+                if color_col:
+                    _bar_totals = bar_df.groupby(x_col, sort=False)[y_col].sum()
+                    for cat, total in _bar_totals.items():
+                        fig.add_annotation(
+                            x=cat, y=total,
+                            text=f"${total:,.0f}" if total >= 1000 else f"{total:,.2f}",
+                            showarrow=False, yshift=10, yanchor="bottom",
+                            font=dict(size=11, color="white"),
+                        )
+                else:
+                    fig.update_traces(textposition="outside", texttemplate="%{y:,.0f}")
             _render_plotly_chart_and_save(fig, use_container_width=True)
             return
 
@@ -1023,6 +1045,9 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
             # Calcular total por nodo (mes/categoría) para mostrar encima de cada barra
             _totals = sb_df.groupby(x_col, sort=False)[y_col].sum()
 
+            def _fmt_total(v):
+                return f"${v:,.0f}" if v >= 1000 else f"{v:,.2f}"
+
             if use_hbar:
                 fig = px.bar(
                     sb_df, x=y_col, y=x_col,
@@ -1033,15 +1058,13 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                     barmode="stack",
                 )
                 fig.update_traces(texttemplate="")  # Sin texto en segmentos
-                # Total al final (derecha) de cada barra horizontal
-                _tot_x = [_totals.get(cat, 0) for cat in _totals.index]
-                _tot_y = list(_totals.index)
-                fig.add_scatter(
-                    x=_tot_x, y=_tot_y, mode="text",
-                    text=[f"${v:,.0f}" if v >= 1000 else f"{v:,.2f}" for v in _tot_x],
-                    textposition="middle right", textfont=dict(size=11, color="white"),
-                    showlegend=False, hoverinfo="skip",
-                )
+                # Total al final (derecha) de cada barra — usando anotaciones
+                for cat, total in _totals.items():
+                    fig.add_annotation(
+                        x=total, y=cat, text=_fmt_total(total),
+                        showarrow=False, xshift=5, xanchor="left",
+                        font=dict(size=11, color="white"),
+                    )
                 fig.update_layout(height=dyn_height, yaxis=dict(autorange="reversed", tickfont=dict(size=11)))
             else:
                 fig = px.bar(
@@ -1052,15 +1075,13 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                     barmode="stack",
                 )
                 fig.update_traces(texttemplate="")  # Sin texto en segmentos
-                # Total encima de cada barra apilada vertical
-                _tot_x = list(_totals.index)
-                _tot_y = list(_totals.values)
-                fig.add_scatter(
-                    x=_tot_x, y=_tot_y, mode="text",
-                    text=[f"${v:,.0f}" if v >= 1000 else f"{v:,.2f}" for v in _tot_y],
-                    textposition="top center", textfont=dict(size=11, color="white"),
-                    showlegend=False, hoverinfo="skip",
-                )
+                # Total encima de cada barra apilada — usando anotaciones
+                for cat, total in _totals.items():
+                    fig.add_annotation(
+                        x=cat, y=total, text=_fmt_total(total),
+                        showarrow=False, yshift=10, yanchor="bottom",
+                        font=dict(size=11, color="white"),
+                    )
                 fig.update_layout(xaxis_tickangle=-45)
             _render_plotly_chart_and_save(fig, use_container_width=True)
             return
