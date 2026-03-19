@@ -714,26 +714,44 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
     # y NO ordenar por valor (mantener orden cronológico)
     is_x_temporal = x_col in temporal_cols or df[x_col].dtype in ['datetime64[ns]', 'datetime64']
 
-    # Preparar subset: datos temporales usan todas las filas; otros usan top_n
-    if is_x_temporal:
+    # Si color_col o cualquier otra columna es temporal (ej: x=cliente, color=mes),
+    # tampoco limitar — un "año" implica 12 meses y head(top_n) los cortaría
+    is_any_temporal = is_x_temporal or (
+        color_col and (
+            color_col in temporal_cols or
+            (color_col in df.columns and df[color_col].dtype in ['datetime64[ns]', 'datetime64'])
+        )
+    ) or any(
+        c in temporal_cols or df[c].dtype in ['datetime64[ns]', 'datetime64']
+        for c in df.columns
+    )
+
+    # Preparar subset: datos con dimensión temporal usan todas las filas; otros usan top_n
+    if is_any_temporal:
         plot_df = df.copy()
     else:
         plot_df = df.head(top_n).copy()
 
-    if not is_x_temporal:
-        # Solo ordenar si NO es temporal
+    if not is_any_temporal:
+        # Solo ordenar si NO hay ninguna dimensión temporal
         if sort_order == "desc" and y_col in plot_df.columns:
             plot_df = plot_df.sort_values(y_col, ascending=False)
         elif sort_order == "asc" and y_col in plot_df.columns:
             plot_df = plot_df.sort_values(y_col, ascending=True)
     else:
-        # Si es temporal, ordenar por la columna temporal
+        # Si hay dimensión temporal, ordenar por la columna temporal dominante
+        # Prioridad: x_col temporal > color_col temporal > cualquier temporal
+        _temporal_sort_col = (
+            x_col if is_x_temporal else
+            (color_col if color_col and color_col in temporal_cols else
+             next((c for c in df.columns if c in temporal_cols), x_col))
+        )
         # Detectar etiquetas "Mes YYYY" (ej: "Ene 2025") generadas por el post-procesador
         _MES_NUM = {
             'Ene': 1, 'Feb': 2, 'Mar': 3, 'Abr': 4, 'May': 5, 'Jun': 6,
             'Jul': 7, 'Ago': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dic': 12,
         }
-        _sample = plot_df[x_col].dropna().astype(str).head(5)
+        _sample = plot_df[_temporal_sort_col].dropna().astype(str).head(5)
         _is_mes_label = _sample.str.match(
             r'^(Ene|Feb|Mar|Abr|May|Jun|Jul|Ago|Sep|Oct|Nov|Dic)\s+\d{4}$'
         ).any()
@@ -743,9 +761,9 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                 if len(parts) == 2:
                     return int(parts[1]) * 12 + _MES_NUM.get(parts[0], 0)
                 return 0
-            plot_df = plot_df.iloc[plot_df[x_col].map(_mes_sort_key).argsort().values]
-        else:
-            plot_df = plot_df.sort_values(x_col, ascending=True)
+            plot_df = plot_df.iloc[plot_df[_temporal_sort_col].map(_mes_sort_key).argsort().values]
+        elif _temporal_sort_col in plot_df.columns:
+            plot_df = plot_df.sort_values(_temporal_sort_col, ascending=True)
 
     # --- Helper: truncar etiquetas largas y auto-switch a horizontal ---
     def _smart_label_prep(df_in, label_col, max_chars=45):
