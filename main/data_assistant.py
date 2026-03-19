@@ -2184,7 +2184,11 @@ def _render_chat_interface():
         # Procesar con el engine
         with st.chat_message("assistant", avatar="🤖"):
             with st.spinner("🔍 Analizando pregunta y consultando datos..."):
-                empresa_id = st.session_state.get("nl2sql_empresa_id")
+                # empresa_id: primero del usuario logueado (multiempresa), si no hay usa el override manual
+                empresa_id = (
+                    st.session_state.get("empresa_id")          # seteado en login por usuario
+                    or st.session_state.get("nl2sql_empresa_id")  # override manual (superadmin)
+                )
                 result = engine.ask(question, empresa_id=empresa_id)
 
             # --- ROI Tracking ---

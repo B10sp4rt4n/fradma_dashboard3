@@ -131,7 +131,9 @@ if st.session_state["user"] is None:
                     
                     if user:
                         st.session_state["user"] = user
-                        logger.info(f"Login exitoso: {user.username} ({user.role})")
+                        st.session_state["empresa_id"] = user.empresa_id  # None = superadmin
+                        st.session_state["rfc_empresa"] = user.rfc_empresa
+                        logger.info(f"Login exitoso: {user.username} ({user.role}) empresa={user.empresa_id}")
                         st.success(f"¡Bienvenido, {user.name}! 👋")
                         st.rerun()
                     else:

@@ -74,9 +74,15 @@ def mostrar_panel_usuarios():
         }
         df_users['Rol'] = df_users['role'].map(role_display)
         
+        # Mostrar empresa en tabla si existe la columna
+        display_cols = ['username', 'name', 'email', 'Rol', 'Estado', 'Último Login', 'Creado']
+        if 'empresa_nombre' in df_users.columns:
+            df_users['Empresa'] = df_users['empresa_nombre'].fillna('— superadmin —')
+            display_cols.insert(4, 'Empresa')
+
         # Mostrar tabla
         st.dataframe(
-            df_users[['username', 'name', 'email', 'Rol', 'Estado', 'Último Login', 'Creado']],
+            df_users[display_cols],
             use_container_width=True,
             hide_index=True,
             column_config={
@@ -85,6 +91,7 @@ def mostrar_panel_usuarios():
                 'email': 'Email',
                 'Rol': st.column_config.TextColumn(width='small'),
                 'Estado': st.column_config.TextColumn(width='small'),
+                'Empresa': st.column_config.TextColumn(width='medium'),
                 'Último Login': st.column_config.TextColumn(width='medium'),
                 'Creado': st.column_config.TextColumn(width='small')
             }
@@ -218,11 +225,27 @@ def mostrar_panel_usuarios():
                         UserRole.VIEWER: "👁️ Visualizador (solo ver dashboards)"
                     }[x]
                 )
-                
+
+                # Selector de empresa (Neon)
+                empresas = auth_manager.list_empresas()
+                empresa_opts = [("", "— Sin empresa (superadmin) —")] + [
+                    (e["id"], f"{e['razon_social']}  •  {e['rfc']}") for e in empresas
+                ]
+                empresa_sel = st.selectbox(
+                    "Empresa",
+                    options=[o[0] for o in empresa_opts],
+                    format_func=lambda eid: next(o[1] for o in empresa_opts if o[0] == eid),
+                    help="Sin empresa = ve datos de todas las empresas (superadmin)"
+                )
+                new_empresa_id = empresa_sel if empresa_sel else None
+                new_rfc_empresa = next(
+                    (e["rfc"] for e in empresas if e["id"] == empresa_sel), None
+                )
+
                 new_notes = st.text_area(
                     "Notas (opcional)",
                     placeholder="Ej: Gerente de ventas, acceso temporal, etc.",
-                    height=100
+                    height=80
                 )
             
             submitted = st.form_submit_button("➕ Crear Usuario", type="primary", use_container_width=True)
@@ -246,7 +269,9 @@ def mostrar_panel_usuarios():
                         password=new_password,
                         role=new_role,
                         created_by=current_user.username,
-                        notes=new_notes
+                        notes=new_notes,
+                        empresa_id=new_empresa_id,
+                        rfc_empresa=new_rfc_empresa,
                     )
                     
                     if success:
