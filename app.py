@@ -1291,7 +1291,7 @@ opciones_menu = [
     "💳 KPI Cartera CxC",
     "👥 Vendedores + CxC",
     "🧰 Herramientas Financieras",
-    "📦 Ingesta CFDIs (ZIP)",
+    "� Cargar mis facturas",
     "🤖 Asistente de Datos",
     "📚 Knowledge Base"
 ]
@@ -1407,15 +1407,13 @@ with st.sidebar.expander("ℹ️ Acerca de esta vista"):
         - Herramientas para el día a día
         - Sin necesidad de datos cargados
         """)
-    elif menu == "📦 Ingesta CFDIs (ZIP)":
+    elif menu == "� Cargar mis facturas":
         st.markdown("""
-        **Procesamiento masivo de facturas electrónicas**
+        **Carga tus facturas electrónicas del SAT**
         
-        - Upload de ZIP con XMLs de CFDI 4.0
-        - Parsing automático de facturas
-        - Clasificación IA con GPT-4
-        - Guardado opcional en Neon PostgreSQL
-        - Reportes consolidados por línea de negocio
+        - Sube un ZIP con tus CFDIs (.xml)
+        - Procesamiento automático en segundos
+        - Disponibles inmediatamente en el Asistente de Datos
         """)
     elif menu == "📚 Knowledge Base":
         st.markdown("""
@@ -1595,7 +1593,7 @@ elif menu == "🧰 Herramientas Financieras":
     # Las herramientas financieras no requieren datos cargados
     herramientas_financieras.run()
 
-elif menu == "📦 Ingesta CFDIs (ZIP)":
+elif menu == "� Cargar mis facturas":
     # La ingesta de CFDIs no requiere datos cargados previamente
     ingesta_cfdi.main()
 

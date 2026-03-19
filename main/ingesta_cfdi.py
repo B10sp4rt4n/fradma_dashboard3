@@ -918,16 +918,16 @@ def mostrar_analisis_precios(df_conceptos: pd.DataFrame):
 def main():
     """Función principal de la página."""
     
-    st.title("📦 Ingesta de CFDIs desde ZIP")
+    st.title("� Cargar mis facturas")
     
     st.markdown("""
-    Esta herramienta te permite procesar facturas electrónicas (CFDIs) de forma masiva.
+    Sube tus facturas electrónicas del SAT y las tendrás disponibles en segundos
+    para consultar con el Asistente de Datos.
     
-    **Características:**
-    - ✅ Parseo automático de CFDI 4.0
-    - 📊 Distribución por empresa y producto
-    - 📈 Reportes consolidados personalizables
-    - 💾 Guardado opcional en base de datos
+    **¿Cómo funciona?**
+    1. Descarga tus CFDIs del portal del SAT o de tu sistema de facturación como ZIP
+    2. Súbelo aquí
+    3. Listo — ya puedes preguntarle al asistente sobre tus ventas, clientes y más
     """)
     
     if not CFDI_MODULES_AVAILABLE:
@@ -935,15 +935,15 @@ def main():
         return
     
     # Tabs para organizar la interfaz
-    tab1, tab2, tab3 = st.tabs(["📤 Upload", "⚙️ Configuración", "💾 Base de Datos"])
+    tab1, tab2, tab3 = st.tabs(["📤 Subir facturas", "⚙️ Opciones avanzadas", "💾 Base de Datos"])
     
     with tab1:
-        st.subheader("Subir archivo ZIP")
+        st.subheader("Sube tu archivo de facturas")
         
         uploaded_file = st.file_uploader(
-            "Selecciona un archivo ZIP con XMLs de CFDIs",
+            "Arrastra aquí tu ZIP con facturas electrónicas (.xml)",
             type=['zip'],
-            help="El ZIP debe contener archivos .xml de facturas CFDI 4.0"
+            help="Descarga tus facturas del SAT o tu sistema de facturación y comprime la carpeta en ZIP"
         )
         
         if uploaded_file:
@@ -955,39 +955,37 @@ def main():
         st.info("ℹ️ Los CFDIs se procesarán sin clasificación automática. Puedes analizar los datos por empresa y producto directamente.")
     
     with tab3:
-        st.subheader("Guardar en Base de Datos Neon")
-        
+        st.subheader("Guardar en base de datos")
+
+        # Detectar si hay URL en env var (modo SaaS — sin pedirla al usuario)
+        _neon_env = os.getenv('NEON_DATABASE_URL', '')
+
         guardar_neon = st.checkbox(
-            "💾 Guardar en Neon PostgreSQL",
-            value=False,
-            help="Guarda los CFDIs procesados en base de datos"
+            "💾 Guardar facturas para consulta con el Asistente",
+            value=bool(_neon_env),
+            help="Las facturas quedarán disponibles para hacer preguntas al Asistente de Datos"
         )
         
         if guardar_neon:
-            neon_url = st.text_input(
-                "URL de conexión Neon",
-                type="password",
-                help="postgresql://user:pass@host/db?sslmode=require",
-                value=os.getenv('NEON_DATABASE_URL', '')
-            )
-            
-            # Sanitizar URL de conexión
-            if neon_url:
-                neon_url = neon_url.strip()
-                # Quitar prefijo "psql " si el usuario copió el comando CLI
-                if neon_url.lower().startswith("psql "):
-                    neon_url = neon_url[5:].strip()
-                # Quitar comillas envolventes
-                if (neon_url.startswith('"') and neon_url.endswith('"')) or \
-                   (neon_url.startswith("'") and neon_url.endswith("'")):
-                    neon_url = neon_url[1:-1]
-                # Validar formato
-                if not neon_url.startswith(("postgresql://", "postgres://")):
-                    st.error(
-                        "La URL debe comenzar con `postgresql://` o `postgres://`.\n\n"
-                        "Ejemplo: `postgresql://user:pass@host/db?sslmode=require`"
-                    )
-                    neon_url = None
+            if _neon_env:
+                neon_url = _neon_env
+                st.success("✅ Base de datos configurada")
+            else:
+                neon_url = st.text_input(
+                    "URL de conexión",
+                    type="password",
+                    help="postgresql://user:pass@host/db?sslmode=require"
+                )
+                if neon_url:
+                    neon_url = neon_url.strip()
+                    if neon_url.lower().startswith("psql "):
+                        neon_url = neon_url[5:].strip()
+                    if (neon_url.startswith('"') and neon_url.endswith('"')) or \
+                       (neon_url.startswith("'") and neon_url.endswith("'")):
+                        neon_url = neon_url[1:-1]
+                    if not neon_url.startswith(("postgresql://", "postgres://")):
+                        st.error("URL inválida. Debe comenzar con postgresql://")
+                        neon_url = None
             
             empresa_id = None
             
