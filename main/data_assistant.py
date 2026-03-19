@@ -1019,6 +1019,10 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                 use_hbar = True
             elif user_orientation in ['v', 'vertical']:
                 use_hbar = False
+
+            # Calcular total por nodo (mes/categoría) para mostrar encima de cada barra
+            _totals = sb_df.groupby(x_col, sort=False)[y_col].sum()
+
             if use_hbar:
                 fig = px.bar(
                     sb_df, x=y_col, y=x_col,
@@ -1027,7 +1031,16 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                     orientation="h",
                     color_discrete_sequence=CHART_COLORS,
                     barmode="stack",
-                    text_auto=True,
+                )
+                fig.update_traces(texttemplate="")  # Sin texto en segmentos
+                # Total al final (derecha) de cada barra horizontal
+                _tot_x = [_totals.get(cat, 0) for cat in _totals.index]
+                _tot_y = list(_totals.index)
+                fig.add_scatter(
+                    x=_tot_x, y=_tot_y, mode="text",
+                    text=[f"${v:,.0f}" if v >= 1000 else f"{v:,.2f}" for v in _tot_x],
+                    textposition="middle right", textfont=dict(size=11, color="white"),
+                    showlegend=False, hoverinfo="skip",
                 )
                 fig.update_layout(height=dyn_height, yaxis=dict(autorange="reversed", tickfont=dict(size=11)))
             else:
@@ -1037,7 +1050,16 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                     title=title,
                     color_discrete_sequence=CHART_COLORS,
                     barmode="stack",
-                    text_auto=True,
+                )
+                fig.update_traces(texttemplate="")  # Sin texto en segmentos
+                # Total encima de cada barra apilada vertical
+                _tot_x = list(_totals.index)
+                _tot_y = list(_totals.values)
+                fig.add_scatter(
+                    x=_tot_x, y=_tot_y, mode="text",
+                    text=[f"${v:,.0f}" if v >= 1000 else f"{v:,.2f}" for v in _tot_y],
+                    textposition="top center", textfont=dict(size=11, color="white"),
+                    showlegend=False, hoverinfo="skip",
                 )
                 fig.update_layout(xaxis_tickangle=-45)
             _render_plotly_chart_and_save(fig, use_container_width=True)
