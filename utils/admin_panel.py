@@ -337,7 +337,7 @@ def mostrar_panel_usuarios():
             )
             
             df_history['Fecha/Hora'] = df_history['timestamp'].apply(
-                lambda x: datetime.fromisoformat(x).strftime('%Y-%m-%d %H:%M:%S')
+                lambda x: (x if isinstance(x, datetime) else datetime.fromisoformat(x)).strftime('%Y-%m-%d %H:%M:%S') if x else '-'
             )
             
             # Mostrar tabla
