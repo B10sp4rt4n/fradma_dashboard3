@@ -1291,13 +1291,16 @@ opciones_menu = [
     "💳 KPI Cartera CxC",
     "👥 Vendedores + CxC",
     "🧰 Herramientas Financieras",
-    "� Cargar mis facturas",
-    "🤖 Asistente de Datos",
+    "📂 Cargar mis facturas",
     "📚 Knowledge Base"
 ]
 
-# Si el usuario es admin, agregar opciones de administración
+# Si el usuario puede usar IA, agregar el asistente
 user = get_current_user()
+if user and user.can_use_ai():
+    opciones_menu.append("🤖 Asistente de Datos")
+
+# Si el usuario es admin, agregar opciones de administración
 if user and user.can_manage_users():
     opciones_menu.extend([
         "⚙️ Gestión de Usuarios",
@@ -1407,7 +1410,7 @@ with st.sidebar.expander("ℹ️ Acerca de esta vista"):
         - Herramientas para el día a día
         - Sin necesidad de datos cargados
         """)
-    elif menu == "� Cargar mis facturas":
+    elif menu == "📂 Cargar mis facturas":
         st.markdown("""
         **Carga tus facturas electrónicas del SAT**
         
@@ -1593,7 +1596,7 @@ elif menu == "🧰 Herramientas Financieras":
     # Las herramientas financieras no requieren datos cargados
     herramientas_financieras.run()
 
-elif menu == "� Cargar mis facturas":
+elif menu == "📂 Cargar mis facturas":
     # La ingesta de CFDIs no requiere datos cargados previamente
     ingesta_cfdi.main()
 

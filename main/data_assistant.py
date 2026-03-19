@@ -2540,6 +2540,13 @@ def run():
         st.error("❌ openai no está instalado. Ejecuta: `pip install openai`")
         return
 
+    # Verificar permiso de rol
+    from utils.auth import get_current_user
+    _user = get_current_user()
+    if _user and not _user.can_use_ai():
+        st.warning("🔒 Tu rol no tiene acceso al Asistente de Datos. Contacta al administrador.")
+        return
+
     # Hero
     _render_hero()
 
