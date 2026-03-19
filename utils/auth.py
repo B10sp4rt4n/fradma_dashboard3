@@ -43,6 +43,7 @@ class User:
     role: str
     empresa_id: Optional[str] = None   # UUID de empresas en Neon (None = superadmin)
     rfc_empresa: Optional[str] = None  # RFC para display/validación
+    empresa_nombre: Optional[str] = None  # Nombre legible de la empresa
     created_at: Optional[datetime] = None
     last_login: Optional[datetime] = None
 
@@ -134,9 +135,12 @@ class AuthManager:
             cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             cur.execute(
                 """
-                SELECT email, name, password_hash, role, is_active,
-                       empresa_id::text, rfc_empresa, created_at, last_login
-                FROM users WHERE username = %s
+                SELECT u.email, u.name, u.password_hash, u.role, u.is_active,
+                       u.empresa_id::text, u.rfc_empresa, u.created_at, u.last_login,
+                       e.razon_social AS empresa_nombre
+                FROM users u
+                LEFT JOIN empresas e ON e.id = u.empresa_id
+                WHERE u.username = %s
                 """,
                 (username,),
             )
@@ -185,6 +189,7 @@ class AuthManager:
             role=row["role"],
             empresa_id=row["empresa_id"],
             rfc_empresa=row["rfc_empresa"],
+            empresa_nombre=row.get("empresa_nombre"),
             created_at=row["created_at"],
             last_login=datetime.now(),
         )

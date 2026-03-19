@@ -1658,11 +1658,23 @@ def _render_stats_chart(df: pd.DataFrame, num_cols: list, cat_cols: list,
 def _render_hero():
     """Hero banner."""
     st.markdown(ASSISTANT_CSS, unsafe_allow_html=True)
-    st.markdown("""
+
+    empresa_nombre = st.session_state.get("empresa_nombre")
+    rfc_empresa = st.session_state.get("rfc_empresa")
+
+    if empresa_nombre:
+        empresa_badge = f'<span style="background:#e8f4f8;border:1px solid #b0d4e8;border-radius:20px;padding:3px 12px;font-size:0.85rem;color:#1a5276;font-weight:600;">🏢 {empresa_nombre}</span>'
+        if rfc_empresa:
+            empresa_badge += f' <span style="background:#f0f3f4;border:1px solid #d5dbdb;border-radius:20px;padding:3px 10px;font-size:0.8rem;color:#555;">RFC: {rfc_empresa}</span>'
+    else:
+        empresa_badge = '<span style="background:#fef9e7;border:1px solid #f9e79f;border-radius:20px;padding:3px 12px;font-size:0.85rem;color:#7d6608;">👑 Vista superadmin — todas las empresas</span>'
+
+    st.markdown(f"""
     <div class="assistant-hero">
         <h2>🤖 Asistente de Datos</h2>
-        <p>Haz preguntas en español sobre tus datos de facturación CFDI y obtén 
+        <p>Haz preguntas en español sobre tus datos de facturación CFDI y obtén
         respuestas instantáneas con tablas, gráficas e interpretación inteligente.</p>
+        <div style="margin-top:8px;">{empresa_badge}</div>
     </div>
     """, unsafe_allow_html=True)
 
