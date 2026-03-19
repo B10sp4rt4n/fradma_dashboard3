@@ -306,6 +306,8 @@ Ventas agrupadas por línea de negocio y mes.
 - SIEMPRE busca en cfdi_ventas usando receptor_nombre o receptor_rfc para identificar clientes.
 - NUNCA respondas que no hay datos sin antes intentar una consulta sobre cfdi_ventas.
 - Si la pregunta menciona un mes (ej. "enero"), usa EXTRACT(MONTH FROM fecha_emision) = N.
+- Si el usuario especifica un año explícito (ej. "2025", "enero 2025"), usa SIEMPRE ese año literal: EXTRACT(YEAR FROM fecha_emision) = 2025. NUNCA combines EXTRACT(YEAR FROM CURRENT_DATE) con un año literal — eso genera condiciones contradictorias y 0 resultados.
+- Si el usuario pide un RANGO de meses con año (ej. "enero a diciembre 2025", "reporte 2025"), usa filtro por rango de fechas: fecha_emision >= '2025-01-01' AND fecha_emision < '2026-01-01'. NO uses EXTRACT(MONTH) para rangos.
 - Si no se especifica año, infiere el año más lógico: si el mes pedido es menor o igual al mes actual, usa el año actual; si el mes pedido es mayor al mes actual (mes aún no ha llegado en este año), usa el año anterior (EXTRACT(YEAR FROM CURRENT_DATE) - 1). Por ejemplo, en marzo de 2026, noviembre corresponde a 2025.
 """
 
@@ -836,25 +838,132 @@ SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quart
                 return self._MONTH_MAP[name]
         return None
 
+    def _detect_explicit_year(self, question: str) -> Optional[int]:
+        """Detecta si la pregunta menciona un año explícito (ej. '2025')."""
+        m = re.search(r'\b(20[2-3]\d)\b', question)
+        return int(m.group(1)) if m else None
+
+    def _detect_date_range(self, question: str) -> Optional[tuple]:
+        """Detecta rangos de meses como 'enero a diciembre 2025' o 'enero 2025 a dic 2025'."""
+        q = question.lower()
+        # Patrón 1: "enero a diciembre 2025" (año al final)
+        pattern1 = r'(\w+)\s+(?:a|al|hasta|-)\s+(\w+)\s+(20[2-3]\d)'
+        # Patrón 2: "enero 2025 a dic 2025" (año después de cada mes)
+        pattern2 = r'(\w+)\s+(20[2-3]\d)\s+(?:a|al|hasta|-)\s+(\w+)\s+(20[2-3]\d)'
+        # Patrón 3: "reporte 2025" o "ventas del 2025" (año completo sin meses)
+        pattern3 = r'\b(?:reporte|ventas|facturaci[oó]n|informe|resumen)\b.*?\b(20[2-3]\d)\b'
+
+        m2 = re.search(pattern2, q)
+        if m2:
+            start_name, year1, end_name, year2 = m2.group(1), int(m2.group(2)), m2.group(3), int(m2.group(4))
+            start_month = self._MONTH_MAP.get(start_name)
+            end_month = self._MONTH_MAP.get(end_name)
+            if start_month and end_month:
+                return (year1, start_month, end_month)
+
+        m1 = re.search(pattern1, q)
+        if m1:
+            start_name, end_name, year = m1.group(1), m1.group(2), int(m1.group(3))
+            start_month = self._MONTH_MAP.get(start_name)
+            end_month = self._MONTH_MAP.get(end_name)
+            if start_month and end_month:
+                return (year, start_month, end_month)
+
+        return None
+
     def _ensure_month_filter(self, question: str, sql: str) -> str:
-        """Si la pregunta menciona un mes pero el SQL no lo filtra, inyecta el WHERE."""
+        """Si la pregunta menciona un mes pero el SQL no lo filtra, inyecta el WHERE.
+        
+        Maneja:
+        - Año explícito ("enero 2025") → usa el año literal
+        - Rangos de meses ("enero a diciembre 2025") → usa fecha_emision >= / <
+        - Contradicciones EXTRACT(YEAR FROM CURRENT_DATE) con año literal → las elimina
+        """
         from datetime import date as _date
-        month_num = self._detect_month(question)
-        if month_num is None:
+
+        explicit_year = self._detect_explicit_year(question)
+        date_range = self._detect_date_range(question)
+
+        # --- Caso 1: Rango de meses con año ("enero a diciembre 2025") ---
+        if date_range:
+            year, start_month, end_month = date_range
+            start_date = f"{year}-{start_month:02d}-01"
+            if end_month == 12:
+                end_date = f"{year + 1}-01-01"
+            else:
+                end_date = f"{year}-{end_month + 1:02d}-01"
+            range_clause = f"fecha_emision >= '{start_date}' AND fecha_emision < '{end_date}'"
+
+            # Remover todas las condiciones EXTRACT(MONTH/YEAR FROM fecha_emision) = ...
+            # Cubrir patrones: AND EXTRACT(...) = val, EXTRACT(...) = val AND, standalone
+            for _ in range(4):  # Varias pasadas para limpiar combinaciones
+                sql = re.sub(
+                    r'\s*AND\s+EXTRACT\s*\(\s*(?:MONTH|YEAR)\s+FROM\s+fecha_emision\s*\)\s*=\s*(?:EXTRACT\s*\([^)]*\)(?:\s*-\s*\d+)?|\d+)',
+                    '', sql, flags=re.IGNORECASE
+                )
+                sql = re.sub(
+                    r'EXTRACT\s*\(\s*(?:MONTH|YEAR)\s+FROM\s+fecha_emision\s*\)\s*=\s*(?:EXTRACT\s*\([^)]*\)(?:\s*-\s*\d+)?|\d+)\s*AND\s*',
+                    '', sql, flags=re.IGNORECASE
+                )
+                sql = re.sub(
+                    r'EXTRACT\s*\(\s*(?:MONTH|YEAR)\s+FROM\s+fecha_emision\s*\)\s*=\s*(?:EXTRACT\s*\([^)]*\)(?:\s*-\s*\d+)?|\d+)',
+                    '', sql, flags=re.IGNORECASE
+                )
+            # Limpiar WHERE vacío o malformado
+            sql = re.sub(r'WHERE\s+(GROUP|ORDER|LIMIT)', r'\1', sql, flags=re.IGNORECASE)
+            sql = re.sub(r'WHERE\s+AND\b', 'WHERE', sql, flags=re.IGNORECASE)
+            sql = re.sub(r'WHERE\s*;', ';', sql, flags=re.IGNORECASE)
+
+            sql_upper = sql.upper()
+            if 'WHERE' in sql_upper:
+                idx = sql_upper.index('WHERE') + len('WHERE')
+                sql = sql[:idx] + f' {range_clause} AND' + sql[idx:]
+            elif 'GROUP BY' in sql_upper:
+                idx = sql_upper.index('GROUP BY')
+                sql = sql[:idx] + f'WHERE {range_clause} ' + sql[idx:]
+            elif 'ORDER BY' in sql_upper:
+                idx = sql_upper.index('ORDER BY')
+                sql = sql[:idx] + f'WHERE {range_clause} ' + sql[idx:]
+            elif 'LIMIT' in sql_upper:
+                idx = sql_upper.index('LIMIT')
+                sql = sql[:idx] + f'WHERE {range_clause} ' + sql[idx:]
+
+            logger.info(f"Filtro de rango inyectado: {start_date} a {end_date} ('{question}')")
             return sql
 
-        # Corregir año si GPT usó CURRENT_DATE pero el mes ya pasó este año
+        # --- Caso 2: Mes individual ---
+        month_num = self._detect_month(question)
+        if month_num is None:
+            # Sin mes detectado, pero si hay año explícito, corregir contradicciones
+            if explicit_year:
+                sql = self._fix_year_contradictions(sql, explicit_year)
+            return sql
+
         current_month = _date.today().month
-        if month_num > current_month:
-            # El mes pedido aún no llega este año → es del año pasado
+
+        # Determinar la expresión de año correcta
+        if explicit_year:
+            year_expr = str(explicit_year)
+        elif month_num > current_month:
             year_expr = "EXTRACT(YEAR FROM CURRENT_DATE) - 1"
         else:
             year_expr = "EXTRACT(YEAR FROM CURRENT_DATE)"
 
-        # Si el SQL ya filtra por mes, solo corregir el año si es necesario
+        # Si hay año explícito, limpiar contradicciones con CURRENT_DATE
+        if explicit_year:
+            sql = self._fix_year_contradictions(sql, explicit_year)
+
+        # Si el SQL ya filtra por mes, corregir el año si es necesario
         if re.search(r'EXTRACT\s*\(\s*MONTH', sql, re.IGNORECASE):
-            if month_num > current_month:
-                # Reemplazar EXTRACT(YEAR FROM CURRENT_DATE) por el ajustado
+            if explicit_year:
+                # Reemplazar EXTRACT(YEAR FROM CURRENT_DATE) por el año literal
+                sql = re.sub(
+                    r'EXTRACT\s*\(\s*YEAR\s+FROM\s+CURRENT_DATE\s*\)',
+                    str(explicit_year),
+                    sql,
+                    flags=re.IGNORECASE,
+                )
+            elif month_num > current_month:
                 sql = re.sub(
                     r'EXTRACT\s*\(\s*YEAR\s+FROM\s+CURRENT_DATE\s*\)',
                     f'({year_expr})',
@@ -882,7 +991,45 @@ SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quart
             idx = sql_upper.index('LIMIT')
             sql = sql[:idx] + f'WHERE {month_clause} ' + sql[idx:]
 
-        logger.info(f"Filtro de mes inyectado: MONTH={month_num} ('{question}')")
+        logger.info(f"Filtro de mes inyectado: MONTH={month_num}, YEAR={year_expr} ('{question}')")
+        return sql
+
+    def _fix_year_contradictions(self, sql: str, explicit_year: int) -> str:
+        """Elimina condiciones contradictorias de año en SQL.
+        
+        Si GPT genera tanto EXTRACT(YEAR)=EXTRACT(YEAR FROM CURRENT_DATE) como
+        EXTRACT(YEAR)=2025, elimina la de CURRENT_DATE y mantiene la literal.
+        """
+        # Detectar si hay un año literal en la query
+        has_literal_year = re.search(
+            r'EXTRACT\s*\(\s*YEAR\s+FROM\s+fecha_emision\s*\)\s*=\s*' + str(explicit_year),
+            sql, re.IGNORECASE
+        )
+        has_current_date_year = re.search(
+            r'EXTRACT\s*\(\s*YEAR\s+FROM\s+fecha_emision\s*\)\s*=\s*EXTRACT\s*\(\s*YEAR\s+FROM\s+CURRENT_DATE\s*\)',
+            sql, re.IGNORECASE
+        )
+
+        if has_literal_year and has_current_date_year:
+            # Remover la condición con CURRENT_DATE (la literal es correcta)
+            sql = re.sub(
+                r'\s*AND\s+EXTRACT\s*\(\s*YEAR\s+FROM\s+fecha_emision\s*\)\s*=\s*EXTRACT\s*\(\s*YEAR\s+FROM\s+CURRENT_DATE\s*\)',
+                '', sql, flags=re.IGNORECASE
+            )
+            sql = re.sub(
+                r'EXTRACT\s*\(\s*YEAR\s+FROM\s+fecha_emision\s*\)\s*=\s*EXTRACT\s*\(\s*YEAR\s+FROM\s+CURRENT_DATE\s*\)\s*AND\s*',
+                '', sql, flags=re.IGNORECASE
+            )
+            logger.info(f"Contradicción de año eliminada: manteniendo {explicit_year}")
+        elif has_current_date_year and not has_literal_year:
+            # Solo hay CURRENT_DATE → reemplazar por el año explícito
+            sql = re.sub(
+                r'EXTRACT\s*\(\s*YEAR\s+FROM\s+CURRENT_DATE\s*\)',
+                str(explicit_year),
+                sql, flags=re.IGNORECASE
+            )
+            logger.info(f"Año CURRENT_DATE reemplazado por {explicit_year}")
+
         return sql
 
     # -----------------------------------------------------------------
