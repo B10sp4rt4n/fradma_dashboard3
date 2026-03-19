@@ -58,13 +58,15 @@ def mostrar_panel_usuarios():
             lambda x: '✅ Activo' if x else '❌ Inactivo'
         )
         
-        df_users['Último Login'] = df_users['last_login'].apply(
-            lambda x: datetime.fromisoformat(x).strftime('%Y-%m-%d %H:%M') if x else 'Nunca'
-        )
-        
-        df_users['Creado'] = df_users['created_at'].apply(
-            lambda x: datetime.fromisoformat(x).strftime('%Y-%m-%d') if x else '-'
-        )
+        def _fmt_dt(x, fmt):
+            if not x:
+                return 'Nunca' if '%H' in fmt else '-'
+            if isinstance(x, str):
+                x = datetime.fromisoformat(x)
+            return x.strftime(fmt)
+
+        df_users['Último Login'] = df_users['last_login'].apply(lambda x: _fmt_dt(x, '%Y-%m-%d %H:%M'))
+        df_users['Creado'] = df_users['created_at'].apply(lambda x: _fmt_dt(x, '%Y-%m-%d'))
         
         # Mapeo de roles para display
         role_display = {
