@@ -4,6 +4,7 @@ import numpy as np
 import os
 from unidecode import unidecode
 from datetime import datetime
+from utils.formatos import now_mx
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import plotly.graph_objects as go
@@ -1121,7 +1122,7 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                     ].copy()
                     try:
                         excel_bytes = crear_excel_cobranza_semanal(df_export_cobranza)
-                        fecha_archivo = datetime.now().strftime("%Y%m%d")
+                        fecha_archivo = now_mx().strftime("%Y%m%d")
                         st.download_button(
                             label=f"⬇️ Descargar Excel ({len(df_export_cobranza)} clientes)",
                             data=excel_bytes,
@@ -2038,7 +2039,7 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                 st.download_button(
                     label="📥 Descargar Reporte Excel",
                     data=buffer.getvalue(),
-                    file_name=f"reporte_cxc_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                    file_name=f"reporte_cxc_{now_mx().strftime('%Y%m%d')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     help="Descarga reporte completo con todas las hojas de análisis"
                 )
@@ -2082,7 +2083,7 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                 carta = f"""
 **CARTA DE COBRANZA - {tono.upper()}**
 
-Fecha: {datetime.now().strftime('%d de %B de %Y')}
+Fecha: {now_mx().strftime('%d de %B de %Y')}
 
 Estimado(a) Cliente: **{cliente_carta}**
 
@@ -2136,7 +2137,7 @@ Departamento de Crédito y Cobranza
                     st.download_button(
                         label="📄 Descargar Carta (.txt)",
                         data=carta,
-                        file_name=f"carta_cobranza_{cliente_carta.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.txt",
+                        file_name=f"carta_cobranza_{cliente_carta.replace(' ', '_')}_{now_mx().strftime('%Y%m%d')}.txt",
                         mime="text/plain"
                     )
                 else:

@@ -15,6 +15,7 @@ import streamlit as st
 import pandas as pd
 import requests
 from datetime import datetime, timedelta
+from utils.formatos import now_mx
 import json
 import xml.etree.ElementTree as ET
 from io import BytesIO
@@ -71,7 +72,7 @@ def get_tasas_fallback():
             'COP': 3950.00,
             'ARS': 850.00
         },
-        'date': datetime.now().strftime('%Y-%m-%d'),
+        'date': now_mx().strftime('%Y-%m-%d'),
         'base': 'USD',
         'fallback': True
     }
@@ -758,13 +759,13 @@ def mostrar_calculadora_interes_moratorio():
         
         fecha_vencimiento = st.date_input(
             "Fecha de Vencimiento Original",
-            value=datetime.now().date() - timedelta(days=30),
+            value=now_mx().date() - timedelta(days=30),
             help="Fecha en que la factura debió pagarse"
         )
         
         fecha_calculo = st.date_input(
             "Fecha de Cálculo / Pago",
-            value=datetime.now().date(),
+            value=now_mx().date(),
             help="Fecha hasta la cual calcular el interés (hoy o fecha proyectada de pago)"
         )
         
@@ -971,14 +972,14 @@ def obtener_indicadores_economicos():
         else:
             return {
                 'usd_mxn': 17.20,
-                'fecha': datetime.now().strftime('%Y-%m-%d'),
+                'fecha': now_mx().strftime('%Y-%m-%d'),
                 'success': False
             }
     except Exception as e:
         logger.error(f"Error al obtener indicadores: {e}")
         return {
             'usd_mxn': 17.20,
-            'fecha': datetime.now().strftime('%Y-%m-%d'),
+            'fecha': now_mx().strftime('%Y-%m-%d'),
             'success': False
         }
 
@@ -1561,7 +1562,7 @@ def mostrar_digestor_xml():
             st.download_button(
                 label="⬇️ Descargar Resumen en Excel",
                 data=output,
-                file_name=f"facturas_resumen_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                file_name=f"facturas_resumen_{now_mx().strftime('%Y%m%d_%H%M%S')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 type="primary",
                 use_container_width=True

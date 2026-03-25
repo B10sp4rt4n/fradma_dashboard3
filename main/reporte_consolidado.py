@@ -16,8 +16,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
-import os
-from utils.logger import configurar_logger
+from utils.formatos import now_mx
 from utils.ai_helper import validar_api_key, generar_analisis_consolidado_ia
 from utils.filters_helper import obtener_lineas_filtradas, generar_contexto_filtros
 from utils.cxc_helper import calcular_metricas_basicas, calcular_score_salud, clasificar_score_salud, calcular_dias_overdue
@@ -663,6 +662,6 @@ def run(df_ventas, df_cxc=None, habilitar_ia=False, openai_api_key=None):
     # FOOTER: Información del reporte
     # =====================================================================
     st.markdown("---")
-    st.caption(f"📅 Reporte generado: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | "
+    st.caption(f"📅 Reporte generado: {now_mx().strftime('%Y-%m-%d %H:%M:%S')} | "
               f"Período: {config['tipo_periodo'].capitalize()} | "
               f"Períodos analizados: {periodos_count}")

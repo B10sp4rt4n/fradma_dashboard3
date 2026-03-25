@@ -8,7 +8,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 from datetime import datetime, timedelta
-from utils.formatos import formato_moneda, formato_porcentaje, formato_compacto
+from utils.formatos import formato_moneda, formato_porcentaje, formato_compacto, now_mx
 from utils.logger import configurar_logger
 from utils.ai_helper_premium import generar_insights_ejecutivo_consolidado
 from utils.cxc_helper import calcular_score_salud
@@ -1145,4 +1145,4 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
         
         st.markdown("---")
     
-    st.caption(f"📅 Reporte generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+    st.caption(f"📅 Reporte generado: {now_mx().strftime('%d/%m/%Y %H:%M')}")

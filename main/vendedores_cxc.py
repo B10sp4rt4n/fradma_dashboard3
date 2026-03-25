@@ -14,6 +14,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 from datetime import datetime
+from utils.formatos import now_mx
 from unidecode import unidecode
 import re
 
@@ -1016,7 +1017,7 @@ def run():
         st.download_button(
             label="⬇️ Descargar tabla completa (.csv)",
             data=csv_bytes,
-            file_name=f"vendedores_cxc_{datetime.now().strftime('%Y%m%d')}.csv",
+            file_name=f"vendedores_cxc_{now_mx().strftime('%Y%m%d')}.csv",
             mime="text/csv",
         )
     else:

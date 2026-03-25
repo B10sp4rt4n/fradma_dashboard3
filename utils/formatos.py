@@ -4,6 +4,16 @@ Proporciona funciones helper para monedas, porcentajes y números.
 """
 
 from typing import Optional, Union
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+_TZ_MX = ZoneInfo("America/Mexico_City")
+
+
+def now_mx() -> datetime:
+    """Retorna la hora actual en la zona horaria de México (America/Mexico_City)."""
+    return datetime.now(_TZ_MX)
+
 
 
 def formato_moneda(valor: Optional[Union[int, float]], decimales: int = 2) -> str:

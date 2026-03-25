@@ -11,6 +11,7 @@ import io
 import re
 from typing import Dict, Optional, List
 from datetime import datetime
+from utils.formatos import now_mx
 from utils.formatos import formato_moneda, formato_porcentaje
 
 logger = logging.getLogger(__name__)
@@ -80,7 +81,7 @@ def crear_excel_metricas_cxc(
         writer.sheets['Resumen Ejecutivo'] = worksheet
         
         # Título
-        fecha_actual = datetime.now().strftime("%d/%m/%Y %H:%M")
+        fecha_actual = now_mx().strftime("%d/%m/%Y %H:%M")
         worksheet.write('A1', f'Reporte de Cuentas por Cobrar - {nombre_empresa}', formato_titulo)
         worksheet.write('A2', f'Generado: {fecha_actual}')
         worksheet.write('A3', '')
@@ -203,7 +204,7 @@ def crear_reporte_html(
         >>> html = crear_reporte_html(metricas, df_cxc, df_ventas=df_ventas,
         ...                          secciones=['resumen_ejecutivo', 'score'])
     """
-    fecha_actual = datetime.now().strftime("%d de %B de %Y, %H:%M")
+    fecha_actual = now_mx().strftime("%d de %B de %Y, %H:%M")
     
     # Determinar secciones a incluir
     if secciones is None:
@@ -772,7 +773,7 @@ def crear_reporte_html(
             
             <footer>
                 <p>Reporte generado automáticamente por CIMA Analytics Dashboard</p>
-                <p>© {datetime.now().year} - Todos los derechos reservados</p>
+                <p>© {now_mx().year} - Todos los derechos reservados</p>
             </footer>
         </div>
     </body>
@@ -905,8 +906,8 @@ def crear_excel_cobranza_semanal(
         ws = wb.add_worksheet("Lista Cobranza")
         writer.sheets["Lista Cobranza"] = ws
 
-        fecha_str = datetime.now().strftime("%d/%m/%Y %H:%M")
-        semana_str = datetime.now().strftime("Semana %W · %Y")
+        fecha_str = now_mx().strftime("%d/%m/%Y %H:%M")
+        semana_str = now_mx().strftime("Semana %W · %Y")
 
         ws.set_row(0, 28)
         ws.merge_range("A1:J1", f"Lista de Cobranza — {nombre_empresa}  |  {semana_str}", fmt_titulo)
@@ -1187,7 +1188,7 @@ def crear_reporte_pdf_ejecutivo(
             logger.warning(f"No se pudo cargar logo CIMA: {e}")
     
     # Encabezado
-    fecha_actual = datetime.now().strftime("%d de %B de %Y, %H:%M")
+    fecha_actual = now_mx().strftime("%d de %B de %Y, %H:%M")
     
     story.append(Paragraph(f"Reporte Ejecutivo - {empresa}", titulo_style))
     story.append(Paragraph(f"<i>{fecha_actual}</i>", styles['Normal']))

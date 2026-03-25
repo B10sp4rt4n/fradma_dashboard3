@@ -3,6 +3,7 @@ ROI Tracker - Sistema de seguimiento de retorno de inversión
 Calcula y rastrea el valor generado por cada acción en la plataforma
 """
 from datetime import datetime
+from utils.formatos import now_mx
 from typing import Dict, Optional
 
 
@@ -85,7 +86,7 @@ class ROITracker:
                 "total_hrs_saved": 0.0,
                 "total_value": 0.0,
                 "actions": [],
-                "session_start": datetime.now(),
+                "session_start": now_mx(),
                 "today": {
                     "hrs": 0.0,
                     "value": 0.0,
@@ -160,7 +161,7 @@ class ROITracker:
         
         # Guardar en session state
         action_record = {
-            "timestamp": datetime.now(),
+            "timestamp": now_mx(),
             "module": module,
             "action": action,
             "hrs_saved": hrs_saved,
@@ -213,7 +214,7 @@ class ROITracker:
             Dict con información del riesgo
         """
         risk_record = {
-            "timestamp": datetime.now(),
+            "timestamp": now_mx(),
             "module": module,
             "risk_type": risk_type,
             "value": value,

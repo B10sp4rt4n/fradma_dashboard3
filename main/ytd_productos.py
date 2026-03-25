@@ -16,6 +16,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime, date
+from utils.formatos import now_mx
 import io
 import os
 from utils.logger import configurar_logger
@@ -70,7 +71,7 @@ def calcular_ytd(df, año, fecha_corte=None):
         DataFrame filtrado con ventas YTD
     """
     if fecha_corte is None:
-        fecha_corte = datetime.now()
+        fecha_corte = now_mx()
     
     # Filtrar año y hasta fecha de corte
     df_año = df[df['fecha'].dt.year == año].copy()
@@ -102,8 +103,8 @@ def calcular_metricas_ytd(df_ytd):
         año_datos = df_ytd['fecha'].max().year
         inicio_año = datetime(año_datos, 1, 1)
         # Si es año actual, usar fecha actual; si es histórico, usar 31 dic
-        if año_datos == datetime.now().year:
-            fecha_fin = datetime.now()
+        if año_datos == now_mx().year:
+            fecha_fin = now_mx()
         else:
             fecha_fin = datetime(año_datos, 12, 31)
         dias_transcurridos = (fecha_fin - inicio_año).days + 1
@@ -470,7 +471,7 @@ def crear_grafico_barras_comparativo(df, año_actual, año_anterior, usar_año_c
     """
     
     # Calcular YTD para año actual
-    fecha_corte = datetime.now()
+    fecha_corte = now_mx()
     df_actual = calcular_ytd(df, año_actual, fecha_corte)
     
     # Para año anterior: usar año completo o YTD según parámetro
@@ -794,7 +795,7 @@ def exportar_excel_ytd(df_ytd, año, comparativo_df=None):
                 metricas['dias_transcurridos'],
                 f"${metricas['promedio_diario']:,.2f}",
                 f"${metricas['proyeccion_anual']:,.2f}",
-                datetime.now().strftime('%Y-%m-%d')
+                now_mx().strftime('%Y-%m-%d')
             ]
         }
         df_resumen = pd.DataFrame(resumen_data)
@@ -1211,7 +1212,7 @@ def run(df, habilitar_ia=False, openai_api_key=None):
     # Mostrar contexto de comparación de periodos
     if año_anterior:
         fecha_inicio_actual = datetime(año_actual, 1, 1)
-        fecha_fin_actual = df_ytd_actual['fecha'].max() if len(df_ytd_actual) > 0 else datetime.now()
+        fecha_fin_actual = df_ytd_actual['fecha'].max() if len(df_ytd_actual) > 0 else now_mx()
         dias_ytd_actual = (fecha_fin_actual - fecha_inicio_actual).days + 1
         
         with st.expander("ℹ️ Contexto de Comparación YTD", expanded=False):
@@ -1277,7 +1278,7 @@ def run(df, habilitar_ia=False, openai_api_key=None):
             label_comparacion = f"Año completo {año_anterior}"
         else:
             # Usar YTD equivalente (misma fecha del calendario)
-            fecha_corte = datetime.now()
+            fecha_corte = now_mx()
             mes_actual = fecha_corte.month
             dia_actual = fecha_corte.day
             try:
@@ -1654,7 +1655,7 @@ def run(df, habilitar_ia=False, openai_api_key=None):
             if modo_comparacion == "año_completo":
                 fecha_corte_anterior = datetime(año_anterior, 12, 31)
             else:
-                fecha_corte = datetime.now()
+                fecha_corte = now_mx()
                 try:
                     fecha_corte_anterior = datetime(año_anterior, fecha_corte.month, fecha_corte.day)
                 except ValueError:
@@ -1939,7 +1940,7 @@ def run(df, habilitar_ia=False, openai_api_key=None):
             st.download_button(
                 label="📥 Descargar Excel",
                 data=excel_buffer,
-                file_name=f"Reporte_YTD_{año_actual}_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                file_name=f"Reporte_YTD_{año_actual}_{now_mx().strftime('%Y%m%d')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
             st.caption(f"Incluye: Resumen ejecutivo, desglose mensual, top productos y clientes")
@@ -1952,7 +1953,7 @@ def run(df, habilitar_ia=False, openai_api_key=None):
             st.download_button(
                 label=f"📥 CSV - YTD {año_actual}",
                 data=csv_buffer,
-                file_name=f"Datos_YTD_{año_actual}_{datetime.now().strftime('%Y%m%d')}.csv",
+                file_name=f"Datos_YTD_{año_actual}_{now_mx().strftime('%Y%m%d')}.csv",
                 mime="text/csv",
                 key="csv_ytd_actual"
             )
@@ -1963,10 +1964,10 @@ def run(df, habilitar_ia=False, openai_api_key=None):
                 csv_periodo = df_analisis_clientes.to_csv(index=False).encode('utf-8')
                 if periodo_treemap == "historico_completo":
                     label_csv = "📥 CSV - Histórico Completo"
-                    fname_csv = f"Datos_Historico_{producto_seleccionado}_{datetime.now().strftime('%Y%m%d')}.csv"
+                    fname_csv = f"Datos_Historico_{producto_seleccionado}_{now_mx().strftime('%Y%m%d')}.csv"
                 else:
                     label_csv = f"📥 CSV - Año {año_treemap}"
-                    fname_csv = f"Datos_{año_treemap}_{producto_seleccionado}_{datetime.now().strftime('%Y%m%d')}.csv"
+                    fname_csv = f"Datos_{año_treemap}_{producto_seleccionado}_{now_mx().strftime('%Y%m%d')}.csv"
                 
                 st.download_button(
                     label=label_csv,
@@ -1984,7 +1985,7 @@ def run(df, habilitar_ia=False, openai_api_key=None):
     st.markdown("---")
     # Footer: mostrar periodo real analizado
     if periodo_treemap == "ytd_actual":
-        periodo_footer = f"YTD {año_actual} (01/01/{año_actual} - {datetime.now().strftime('%d/%m/%Y')})"
+        periodo_footer = f"YTD {año_actual} (01/01/{año_actual} - {now_mx().strftime('%d/%m/%Y')})"
     elif periodo_treemap == "historico_completo":
         fecha_min_hist = df['fecha'].min()
         fecha_max_hist = df['fecha'].max()
@@ -1993,7 +1994,7 @@ def run(df, habilitar_ia=False, openai_api_key=None):
         periodo_footer = f"Año {año_treemap}"
     
     st.caption(
-        f"📅 Reporte generado: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | "
+        f"📅 Reporte generado: {now_mx().strftime('%Y-%m-%d %H:%M:%S')} | "
         f"Producto: {producto_seleccionado} | "
         f"Periodo principal: YTD {año_actual} | "
         f"Periodo treemap/clientes: {periodo_footer}"
