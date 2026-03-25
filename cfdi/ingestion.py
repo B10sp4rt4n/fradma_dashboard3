@@ -175,7 +175,9 @@ class NeonIngestion:
             descuento = venta_data.get('descuento', Decimal('0'))
             total = venta_data.get('total', Decimal('0'))
             # impuestos = total - subtotal + descuento (si no viene directo)
-            impuestos = venta_data.get('impuestos') or (total - subtotal + descuento)
+            impuestos     = venta_data.get('impuestos') or (total - subtotal + descuento)
+            iva_retenido  = venta_data.get('iva_retenido',  Decimal('0'))
+            isr_retenido  = venta_data.get('isr_retenido',  Decimal('0'))
 
             emisor_rfc = emisor.get('rfc') or venta_data.get('emisor_rfc', '')
             emisor_nombre = emisor.get('nombre') or venta_data.get('emisor_nombre', '')
@@ -200,11 +202,12 @@ class NeonIngestion:
                     subtotal, descuento, impuestos, total,
                     moneda, tipo_cambio, tipo_comprobante,
                     metodo_pago, forma_pago, lugar_expedicion,
-                    es_exportacion, xml_original
+                    es_exportacion, xml_original,
+                    iva_retenido, isr_retenido
                 ) VALUES (
                     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s, %s, %s, %s
                 ) RETURNING id
             """
             
@@ -234,7 +237,9 @@ class NeonIngestion:
                 venta_data.get('forma_pago', ''),
                 venta_data.get('lugar_expedicion', ''),
                 es_exportacion,
-                venta_data.get('xml_original')
+                venta_data.get('xml_original'),
+                iva_retenido,
+                isr_retenido,
             ))
             
             cfdi_id = cursor.fetchone()[0]

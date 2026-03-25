@@ -66,7 +66,10 @@ class CFDIParser:
             
             # Extraer timbre fiscal digital (UUID del SAT)
             timbre = self._extract_timbre(root)
-            
+
+            # Extraer impuestos del comprobante (traslados + retenciones)
+            impuestos_data = self._extract_impuestos(root)
+
             # Consolidar datos
             result = {
                 **comprobante,
@@ -74,6 +77,9 @@ class CFDIParser:
                 'receptor': receptor,
                 'conceptos': conceptos,
                 'timbre': timbre,
+                'iva_trasladado': impuestos_data['iva_trasladado'],
+                'iva_retenido':   impuestos_data['iva_retenido'],
+                'isr_retenido':   impuestos_data['isr_retenido'],
                 'xml_original': ET.tostring(root, encoding='unicode')
             }
             
@@ -154,6 +160,37 @@ class CFDIParser:
         
         return conceptos
     
+    def _extract_impuestos(self, root: ET.Element) -> Dict:
+        """Extrae traslados y retenciones del nodo cfdi:Impuestos del comprobante."""
+        result = {
+            'iva_trasladado': Decimal('0'),
+            'isr_retenido':   Decimal('0'),
+            'iva_retenido':   Decimal('0'),
+        }
+        impuestos_node = root.find('cfdi:Impuestos', self.namespaces)
+        if impuestos_node is None:
+            return result
+
+        # Traslados
+        traslados = impuestos_node.find('cfdi:Traslados', self.namespaces)
+        if traslados is not None:
+            for t in traslados.findall('cfdi:Traslado', self.namespaces):
+                if t.get('Impuesto') == '002':  # IVA
+                    result['iva_trasladado'] += Decimal(t.get('Importe', '0'))
+
+        # Retenciones
+        retenciones = impuestos_node.find('cfdi:Retenciones', self.namespaces)
+        if retenciones is not None:
+            for r in retenciones.findall('cfdi:Retencion', self.namespaces):
+                impuesto = r.get('Impuesto', '')
+                importe  = Decimal(r.get('Importe', '0'))
+                if impuesto == '001':   # ISR
+                    result['isr_retenido'] += importe
+                elif impuesto == '002': # IVA retenido
+                    result['iva_retenido'] += importe
+
+        return result
+
     def _extract_timbre(self, root: ET.Element) -> Dict:
         """Extrae datos del Timbre Fiscal Digital"""
         complemento = root.find('cfdi:Complemento', self.namespaces)

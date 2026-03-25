@@ -100,6 +100,47 @@ def _cargar_tendencia_fiscal(empresa_id: str, neon_url: str) -> pd.DataFrame:
             conn.close()
 
 
+def _cargar_retenciones(empresa_id: str, neon_url: str) -> pd.DataFrame:
+    """Carga facturas con retenciones (IVA retenido, ISR retenido)."""
+    query = """
+        SELECT
+            uuid_sat,
+            fecha_emision::date                                      AS fecha,
+            receptor_rfc,
+            receptor_nombre,
+            linea_negocio,
+            metodo_pago,
+            ROUND(subtotal   * COALESCE(tipo_cambio,1), 2)         AS subtotal_mxn,
+            ROUND(impuestos  * COALESCE(tipo_cambio,1), 2)         AS iva_trasladado_mxn,
+            ROUND(iva_retenido * COALESCE(tipo_cambio,1), 2)       AS iva_retenido_mxn,
+            ROUND(isr_retenido * COALESCE(tipo_cambio,1), 2)       AS isr_retenido_mxn,
+            ROUND(
+                (iva_retenido + isr_retenido) * COALESCE(tipo_cambio,1), 2
+            )                                                        AS total_retenido_mxn,
+            ROUND(total      * COALESCE(tipo_cambio,1), 2)         AS total_mxn
+        FROM cfdi_ventas
+        WHERE empresa_id = %s
+          AND tipo_comprobante = 'I'
+          AND estatus = 'vigente'
+          AND (iva_retenido > 0 OR isr_retenido > 0)
+        ORDER BY fecha_emision DESC
+    """
+    conn = None
+    try:
+        conn = psycopg2.connect(neon_url)
+        cur = conn.cursor()
+        cur.execute(query, (empresa_id,))
+        rows = cur.fetchall()
+        cols = [d[0] for d in cur.description]
+        return pd.DataFrame(rows, columns=cols)
+    except Exception as e:
+        logger.error(f"Error cargando retenciones: {e}")
+        return pd.DataFrame()
+    finally:
+        if conn:
+            conn.close()
+
+
 def run():
     st.title("🧾 Desglose Fiscal")
     st.caption("Base gravable, IVA trasladado y total — solo facturas de Ingreso vigentes")
@@ -113,8 +154,9 @@ def run():
         return
 
     with st.spinner("Consultando base de datos..."):
-        df          = _cargar_fiscal(empresa_id, neon_url)
+        df           = _cargar_fiscal(empresa_id, neon_url)
         df_tendencia = _cargar_tendencia_fiscal(empresa_id, neon_url)
+        df_ret       = _cargar_retenciones(empresa_id, neon_url)
 
     if df.empty:
         st.info("📭 No hay facturas de ingreso registradas para esta empresa.")
@@ -149,8 +191,8 @@ def run():
 
     st.markdown("---")
 
-    tab1, tab2, tab3, tab4 = st.tabs(
-        ["📅 Tendencia mensual", "👥 Por Cliente", "📦 Por Línea de Negocio", "📄 Detalle"]
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(
+        ["📅 Tendencia mensual", "👥 Por Cliente", "📦 Por Línea de Negocio", "📄 Detalle", "🏦 Retenciones"]
     )
 
     # ── Tab 1: Tendencia mensual ─────────────────────────────────────────────
@@ -379,3 +421,120 @@ def run():
             file_name="desglose_fiscal.csv",
             mime="text/csv",
         )
+
+    # ── Tab 5: Retenciones ───────────────────────────────────────────────────
+    with tab5:
+        st.subheader("Retenciones fiscales — IVA retenido e ISR retenido")
+
+        # KPIs de retenciones globales (todos los registros, no solo los que tienen)
+        conn_r = None
+        try:
+            conn_r = psycopg2.connect(neon_url)
+            cur_r = conn_r.cursor()
+            cur_r.execute("""
+                SELECT
+                    COUNT(*) FILTER (WHERE iva_retenido > 0 OR isr_retenido > 0) AS facturas_con_ret,
+                    ROUND(SUM(iva_retenido  * COALESCE(tipo_cambio,1)), 2)        AS total_iva_ret,
+                    ROUND(SUM(isr_retenido  * COALESCE(tipo_cambio,1)), 2)        AS total_isr_ret,
+                    ROUND(SUM((iva_retenido + isr_retenido) * COALESCE(tipo_cambio,1)), 2) AS total_ret,
+                    ROUND(SUM(impuestos * COALESCE(tipo_cambio,1)), 2)            AS total_iva_tras
+                FROM cfdi_ventas
+                WHERE empresa_id = %s
+                  AND tipo_comprobante = 'I'
+                  AND estatus = 'vigente'
+            """, (empresa_id,))
+            kpi = cur_r.fetchone()
+        except Exception:
+            kpi = None
+        finally:
+            if conn_r:
+                conn_r.close()
+
+        if kpi:
+            n_ret, iva_ret, isr_ret, tot_ret, iva_tras = kpi
+            iva_ret   = float(iva_ret   or 0)
+            isr_ret   = float(isr_ret   or 0)
+            tot_ret   = float(tot_ret   or 0)
+            iva_tras  = float(iva_tras  or 0)
+            pct_ret   = (tot_ret / iva_tras * 100) if iva_tras else 0
+
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Facturas con retención",  f"{int(n_ret or 0):,}")
+            c2.metric("IVA retenido (MXN)",       f"${iva_ret:,.2f}",
+                      help="IVA que el receptor retiene al emisor (Art. 1-A LIVA)")
+            c3.metric("ISR retenido (MXN)",       f"${isr_ret:,.2f}",
+                      help="ISR que el receptor retiene al emisor (Art. 106/127 LISR)")
+            c4.metric("Total retenido (MXN)",     f"${tot_ret:,.2f}",
+                      delta=f"{pct_ret:.1f}% del IVA trasladado" if iva_tras else None,
+                      delta_color="off")
+
+        st.markdown("---")
+
+        if df_ret.empty:
+            st.info(
+                "📭 No hay facturas con retenciones registradas para esta empresa.\n\n"
+                "Las retenciones aplican principalmente a:\n"
+                "- **Personas Físicas** con actividad empresarial o servicios profesionales\n"
+                "- **Plataformas tecnológicas** (retención especial)\n"
+                "- **Arrendamiento**\n\n"
+                "Si subiste XMLs con retenciones y no aparecen, verifica que el campo "
+                "`<cfdi:Retencion>` esté presente en el XML original."
+            )
+        else:
+            for col in ["subtotal_mxn", "iva_trasladado_mxn", "iva_retenido_mxn",
+                        "isr_retenido_mxn", "total_retenido_mxn", "total_mxn"]:
+                df_ret[col] = pd.to_numeric(df_ret[col], errors="coerce").fillna(0)
+
+            # Gráfica por tipo de retención
+            tipos = {
+                "IVA retenido":  float(df_ret["iva_retenido_mxn"].sum()),
+                "ISR retenido":  float(df_ret["isr_retenido_mxn"].sum()),
+            }
+            fig_tipos = go.Figure(go.Bar(
+                x=list(tipos.keys()),
+                y=list(tipos.values()),
+                marker_color=["#FF9800", "#9C27B0"],
+                text=[f"${v:,.2f}" for v in tipos.values()],
+                textposition="outside",
+            ))
+            fig_tipos.update_layout(
+                title="IVA retenido vs ISR retenido (MXN)",
+                height=320, yaxis_title="MXN", showlegend=False
+            )
+            st.plotly_chart(fig_tipos, use_container_width=True)
+
+            # Tabla detallada
+            st.caption(f"**{len(df_ret):,}** facturas con retenciones")
+            disp_ret = df_ret[[
+                "fecha", "receptor_nombre", "receptor_rfc",
+                "subtotal_mxn", "iva_trasladado_mxn",
+                "iva_retenido_mxn", "isr_retenido_mxn",
+                "total_retenido_mxn", "total_mxn", "uuid_sat"
+            ]].copy()
+            disp_ret.columns = [
+                "Fecha", "Receptor", "RFC",
+                "Subtotal", "IVA trasladado",
+                "IVA retenido", "ISR retenido",
+                "Total retenido", "Total c/IVA", "UUID SAT"
+            ]
+            st.dataframe(
+                disp_ret.style.format({
+                    "Subtotal":        "${:,.2f}",
+                    "IVA trasladado":  "${:,.2f}",
+                    "IVA retenido":    "${:,.2f}",
+                    "ISR retenido":    "${:,.2f}",
+                    "Total retenido":  "${:,.2f}",
+                    "Total c/IVA":     "${:,.2f}",
+                }),
+                use_container_width=True,
+                hide_index=True,
+                height=420,
+            )
+
+            csv_ret = df_ret.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                "⬇️ Descargar CSV retenciones",
+                data=csv_ret,
+                file_name="retenciones.csv",
+                mime="text/csv",
+            )
