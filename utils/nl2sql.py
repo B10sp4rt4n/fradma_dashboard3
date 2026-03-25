@@ -548,6 +548,8 @@ REGLAS ESTRICTAS:
 16. Redondea resultados estadísticos con ROUND(valor, 2).
 **CRÍTICO PERCENTILE_CONT**: NUNCA uses PERCENTILE_CONT() o MODE() con OVER(). Son "ordered-set aggregates" y PostgreSQL NO soporta OVER() con ellos. Si necesitas percentiles junto con window functions, usa una CTE: primero calcula el percentil global con GROUP BY, luego haz JOIN o usa la CTE en el SELECT principal. Ejemplo correcto: WITH stats AS (SELECT ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY total)::numeric, 2) AS mediana FROM cfdi_ventas) SELECT v.*, s.mediana FROM cfdi_ventas v CROSS JOIN stats s;
 
+**CRÍTICO CROSS JOIN CON AGREGADOS**: Cuando hagas CROSS JOIN (o FROM a, b) entre una CTE de detalle y una CTE de total, NUNCA uses la columna del total directamente junto con un agregado. Usa MAX() o MIN() para "aplanar" el escalar. INCORRECTO: `SELECT SUM(a.val) / b.total FROM a, b` → ERROR PostgreSQL. CORRECTO: `SELECT SUM(a.val) / MAX(b.total) FROM a, b`. Alternativa aún mejor: usa subquery escalar: `SELECT SUM(a.val) / (SELECT total FROM totales) FROM detalle_cte a`.
+
 REGLAS AVANZADAS DE ANALYTICS:
 17. TIME INTELLIGENCE: Para comparaciones periodo a periodo usa LAG() OVER (ORDER BY periodo). Para crecimiento: ROUND((actual - anterior) * 100.0 / NULLIF(anterior, 0), 2) AS crecimiento_pct. Para acumulados usa SUM() OVER (ORDER BY mes ROWS UNBOUNDED PRECEDING). Para promedios móviles usa AVG() OVER (ORDER BY mes ROWS BETWEEN 2 PRECEDING AND CURRENT ROW).
 18. WINDOW FUNCTIONS: Usa ROW_NUMBER(), RANK(), DENSE_RANK() para rankings. Usa LAG()/LEAD() para comparar con periodo anterior/siguiente. Usa NTILE(4) para cuartiles de clientes. Usa SUM() OVER (PARTITION BY ... ORDER BY ...) para running totals por grupo.
@@ -1096,6 +1098,28 @@ SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quart
                     return False, f"Tabla no permitida: {table}"
 
         return True, "OK"
+
+    # -----------------------------------------------------------------
+    # 2b. Auto-corrección de patrones SQL problemáticos
+    # -----------------------------------------------------------------
+    def _fix_sql(self, sql: str) -> str:
+        """
+        Aplica correcciones automáticas a patrones SQL que causan errores
+        comunes en PostgreSQL, especialmente el patrón de CROSS JOIN con
+        un agregado y una columna escalar sin MAX/MIN.
+
+        Patrón corregido:
+            SUM(x) * something / cte_escalar.col  →  SUM(x) * something / MAX(cte_escalar.col)
+        """
+        import re
+        # Patrón: división de un agregado entre columna de CTE escalar sin envolver en MAX
+        # Ej: SUM(tc.total_mxn) * 100.0 / tv.total_mxn  →  SUM(tc.total_mxn) * 100.0 / MAX(tv.total_mxn)
+        # Solo aplica cuando hay un SUM/COUNT/AVG antes del operador de división y la col no está ya en MAX/MIN
+        pattern = r'(SUM|COUNT|AVG|MIN|MAX)\s*\([^)]+\)\s*[\+\-\*\/]\s*(?!MAX\(|MIN\(|SUM\(|COUNT\(|AVG\()(\w+\.\w+)'
+        def wrap_scalar(m):
+            return f'{m.group(0).rsplit(m.group(2), 1)[0]}MAX({m.group(2)})'
+        fixed = re.sub(pattern, wrap_scalar, sql)
+        return fixed
 
     # -----------------------------------------------------------------
     # 3. Ejecución de query
@@ -1725,8 +1749,22 @@ Si el usuario pidió explícitamente una orientación (ej: "vertical", "horizont
                 self.history.append(result)
                 return result
 
-            # Paso 3: Ejecutar query
-            df = self.execute_query(sql)
+            # Paso 3: Ejecutar query (con retry auto-fix si falla GROUP BY)
+            try:
+                df = self.execute_query(sql)
+            except RuntimeError as exec_err:
+                err_str = str(exec_err)
+                if "GROUP BY" in err_str or "aggregate function" in err_str:
+                    logger.warning(f"Error GROUP BY detectado, intentando auto-fix: {err_str[:120]}")
+                    fixed_sql = self._fix_sql(sql)
+                    if fixed_sql != sql:
+                        result.sql = fixed_sql
+                        sql = fixed_sql
+                        df = self.execute_query(sql)  # si falla de nuevo, propaga
+                    else:
+                        raise
+                else:
+                    raise
 
             # Post-procesar columnas de fecha truncadas a mes (DATE_TRUNC)
             # para mostrar etiquetas legibles como "Ene 2026" en vez de timestamps
