@@ -1551,8 +1551,8 @@ opciones_menu = [
     "👥 Vendedores + CxC",
     "🧰 Herramientas Financieras",
     "📂 Cargar mis facturas",
-    "� Universo de CFDIs",
-    "�📚 Knowledge Base"
+    "📋 Universo de CFDIs",
+    "📚 Knowledge Base"
 ]
 
 # Si el usuario puede usar IA, agregar el asistente
