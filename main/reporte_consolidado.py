@@ -16,6 +16,8 @@ import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
+import os
+from utils.logger import configurar_logger
 from utils.formatos import now_mx
 from utils.ai_helper import validar_api_key, generar_analisis_consolidado_ia
 from utils.filters_helper import obtener_lineas_filtradas, generar_contexto_filtros
