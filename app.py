@@ -38,6 +38,7 @@ from utils.cache_helper import GestorCache, decorador_medicion_tiempo
 from utils.auth import AuthManager, UserRole, get_current_user
 from utils.admin_panel import mostrar_info_usuario, mostrar_panel_usuarios, mostrar_panel_configuracion
 from utils.roi_tracker import init_roi_tracker
+from utils.neon_loader import cargar_cfdi_como_df
 
 # Configurar logger de la aplicación
 logger = configurar_logger("dashboard_app", nivel="INFO")
@@ -963,6 +964,49 @@ modo_debug = st.sidebar.checkbox(
 )
 st.session_state["modo_debug"] = modo_debug
 
+# ── Auto-carga desde Neon (tenant isolation por empresa_id) ──────────────────
+_empresa_id_actual = st.session_state.get("empresa_id")
+_neon_url = os.environ.get("NEON_DATABASE_URL") or (
+    st.secrets.get("NEON_DATABASE_URL") if hasattr(st, "secrets") else None
+)
+
+if _empresa_id_actual and _neon_url:
+    # Carga automática la primera vez que hay empresa_id pero aún no hay df de CFDI
+    _df_fuente = st.session_state.get("_df_fuente")  # 'cfdi' | 'excel' | None
+    if _df_fuente != 'excel' and "df" not in st.session_state:
+        with st.spinner("⏳ Cargando tus CFDI desde la nube..."):
+            try:
+                _df_neon = cargar_cfdi_como_df(_empresa_id_actual, _neon_url)
+                if not _df_neon.empty:
+                    st.session_state["df"] = _df_neon
+                    st.session_state["_df_fuente"] = "cfdi"
+                    empresa_badge = st.session_state.get("empresa_nombre", "")
+                    st.sidebar.success(
+                        f"✅ {len(_df_neon):,} facturas CFDI cargadas"
+                        + (f" — {empresa_badge}" if empresa_badge else "")
+                    )
+            except Exception as _e:
+                st.sidebar.warning(f"⚠️ No se pudo cargar CFDI: {_e}")
+
+    # Botón para recargar manualmente los CFDI
+    if _empresa_id_actual and _neon_url:
+        if st.sidebar.button("🔄 Recargar mis CFDI", help="Vuelve a cargar facturas desde la base de datos"):
+            with st.spinner("⏳ Recargando CFDI..."):
+                try:
+                    _df_neon = cargar_cfdi_como_df(_empresa_id_actual, _neon_url)
+                    if not _df_neon.empty:
+                        st.session_state["df"] = _df_neon
+                        st.session_state["_df_fuente"] = "cfdi"
+                        st.session_state.pop("archivo_path", None)
+                        st.sidebar.success(f"✅ {len(_df_neon):,} facturas actualizadas")
+                        st.rerun()
+                    else:
+                        st.sidebar.warning("⚠️ No hay facturas CFDI para esta empresa")
+                except Exception as _e:
+                    st.sidebar.error(f"❌ Error al recargar: {_e}")
+
+st.sidebar.markdown("**— o sube un archivo —**")
+
 archivo = st.sidebar.file_uploader(
     "Sube archivo de ventas",
     type=["csv", "xlsx"],
@@ -1054,8 +1098,9 @@ if archivo:
                     st.sidebar.info("💡 Edita config/aliases.json para unificar")
 
         st.session_state["df"] = df
+        st.session_state["_df_fuente"] = "excel"  # marcar fuente para no sobreescribir con CFDI auto
         st.session_state["archivo_path"] = archivo
-        
+
         # ================================================================
         # CHECKLIST DE VALIDACIÓN DE COLUMNAS
         # ================================================================
