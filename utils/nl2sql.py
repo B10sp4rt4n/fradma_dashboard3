@@ -1147,6 +1147,34 @@ SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quart
         return fixed2
 
     # -----------------------------------------------------------------
+    # 2c. Detección de uso incorrecto de tabla `empresas`
+    # -----------------------------------------------------------------
+    def _uses_empresas_for_clients(self, sql: str) -> bool:
+        """
+        Detecta si el SQL generado usa la tabla `empresas` para analizar
+        clientes de negocio (use-case incorrecto). La tabla `empresas` es
+        un catálogo de tenants, no de clientes comerciales.
+
+        Señales de uso incorrecto:
+        - FROM empresas con columnas propias de análisis de clientes
+          (fecha_registro, nuevos_clientes, empresa_id [como filtro de tenant],
+           COUNT(DISTINCT id) sin join a cfdi_ventas, etc.)
+        """
+        import re
+        sql_lower = sql.lower()
+        if 'from empresas' not in sql_lower:
+            return False
+        # Si también usa cfdi_ventas, probablemente es un JOIN legítimo de permisos
+        if 'cfdi_ventas' in sql_lower:
+            return False
+        # Señales de análisis de clientes sobre la tabla empresas
+        client_signals = [
+            'nuevos_clientes', 'fecha_registro', 'count(distinct id)',
+            'clientes_nuevos', 'nuevo_cliente',
+        ]
+        return any(sig in sql_lower for sig in client_signals)
+
+    # -----------------------------------------------------------------
     # 3. Ejecución de query
     # -----------------------------------------------------------------
     def execute_query(self, sql: str) -> pd.DataFrame:
@@ -1748,6 +1776,19 @@ Si el usuario pidió explícitamente una orientación (ej: "vertical", "horizont
         try:
             # Paso 1: Generar SQL
             sql = self.generate_sql(question, empresa_id)
+
+            # Paso 1b: Detectar uso incorrecto de tabla `empresas` para clientes
+            # Si se detecta, regenerar con instrucción explícita de corrección
+            if self._uses_empresas_for_clients(sql):
+                logger.warning("SQL usa 'empresas' para análisis de clientes — regenerando con corrección explícita")
+                corrected_question = (
+                    "CORRECCIÓN CRÍTICA: El SQL anterior usó la tabla `empresas` incorrectamente. "
+                    "La tabla `empresas` es un catálogo interno de tenants, NUNCA úsala para análisis de clientes. "
+                    "Para cualquier análisis de clientes, usa EXCLUSIVAMENTE `cfdi_ventas.receptor_rfc` y "
+                    "`cfdi_ventas.receptor_nombre`. "
+                    f"Pregunta original: {question}"
+                )
+                sql = self.generate_sql(corrected_question, empresa_id)
 
             # Interceptar fallback inútil: si GPT generó el mensaje de "no compatible",
             # reemplazar con un resumen estadístico real
