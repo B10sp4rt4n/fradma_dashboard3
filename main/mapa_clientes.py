@@ -258,7 +258,7 @@ def run():
         df_map["cliente_hover"] = df_map["cliente_principal"].fillna("Mostrador")
         df_map["clientes_lista_hover"] = df_map["clientes_lista"].fillna("")
 
-        fig_map = px.scatter_mapbox(
+        fig_map = px.scatter_map(
             df_map,
             lat="lat",
             lon="lon",
@@ -268,7 +268,7 @@ def run():
             size_max=55,
             zoom=4.2,
             center={"lat": 22.5, "lon": -100.5},
-            mapbox_style="open-street-map",
+            map_style="open-street-map",
             custom_data=["cp", "estado", "clientes", "facturas", "total_mxn_fmt", "cliente_hover"],
             height=540,
         )
