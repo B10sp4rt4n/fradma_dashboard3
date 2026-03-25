@@ -1429,8 +1429,15 @@ def crear_reporte_pdf_ejecutivo(
             with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_file:
                 tmp_path = tmp_file.name
             
-            # Convertir figura a PNG
-            fig.write_image(tmp_path, width=800, height=500, scale=2)
+            # Convertir figura a PNG (kaleido 0.2.1 sin Chrome)
+            try:
+                fig.write_image(tmp_path, width=800, height=500, scale=2)
+            except Exception:
+                # Fallback: usar engine='orca' o workaround con bytes
+                import plotly.io as pio
+                img_bytes = pio.to_image(fig, format='png', width=800, height=500, scale=2)
+                with open(tmp_path, 'wb') as f:
+                    f.write(img_bytes)
             
             # Agregar imagen al PDF (NO borrar aún - ReportLab la lee en doc.build())
             img = Image(tmp_path, width=6.5*inch, height=4*inch)
