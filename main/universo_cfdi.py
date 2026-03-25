@@ -160,6 +160,68 @@ def _cargar_tendencia(empresa_id: str, neon_url: str) -> pd.DataFrame:
             conn.close()
 
 
+def _cargar_pue_ppd(empresa_id: str, neon_url: str) -> pd.DataFrame:
+    """Carga análisis PUE/PPD con estado de complementos de pago."""
+    query = """
+        SELECT
+            cv.uuid_sat,
+            cv.serie,
+            cv.folio,
+            cv.fecha_emision::date                                    AS fecha,
+            cv.receptor_rfc,
+            cv.receptor_nombre,
+            cv.metodo_pago,
+            cv.estatus,
+            cv.moneda,
+            ROUND(cv.total * COALESCE(cv.tipo_cambio, 1), 2)         AS total_mxn,
+            COUNT(cp.id)                                              AS num_complementos,
+            COALESCE(SUM(cp.monto_pagado), 0)                        AS monto_pagado,
+            COALESCE(
+                MAX(cp.saldo_insoluto),
+                CASE WHEN cv.metodo_pago = 'PPD'
+                     THEN ROUND(cv.total * COALESCE(cv.tipo_cambio, 1), 2)
+                     ELSE 0 END
+            )                                                         AS saldo_insoluto,
+            MAX(cp.fecha_pago)                                        AS ultima_fecha_pago
+        FROM cfdi_ventas cv
+        LEFT JOIN cfdi_pagos cp ON cp.cfdi_venta_uuid = cv.uuid_sat
+        WHERE cv.empresa_id = %s
+          AND cv.tipo_comprobante = 'I'
+        GROUP BY cv.uuid_sat, cv.serie, cv.folio, cv.fecha_emision,
+                 cv.receptor_rfc, cv.receptor_nombre, cv.metodo_pago,
+                 cv.estatus, cv.moneda, cv.total, cv.tipo_cambio
+        ORDER BY cv.fecha_emision DESC
+    """
+    conn = None
+    try:
+        conn = psycopg2.connect(neon_url)
+        cur = conn.cursor()
+        cur.execute(query, (empresa_id,))
+        rows = cur.fetchall()
+        cols = [d[0] for d in cur.description]
+        return pd.DataFrame(rows, columns=cols)
+    except Exception as e:
+        logger.error(f"Error cargando PUE/PPD: {e}")
+        st.error(f"❌ Error al consultar PUE/PPD: {e}")
+        return pd.DataFrame()
+    finally:
+        if conn:
+            conn.close()
+
+
+def _clasificar_ppd(row) -> str:
+    """Clasifica una factura según método de pago y estado de sus complementos."""
+    if row["metodo_pago"] == "PUE":
+        return "PUE – Contado"
+    nc = int(row["num_complementos"])
+    si = float(row["saldo_insoluto"])
+    if nc == 0:
+        return "PPD – Sin complemento"
+    if si <= 0:
+        return "PPD – Liquidado"
+    return "PPD – Parcialmente pagado"
+
+
 def run():
     st.title("📋 Universo de CFDIs")
     st.caption("Composición completa del portafolio: tipo de comprobante y estatus")
@@ -174,8 +236,9 @@ def run():
 
     # ─── Carga ───────────────────────────────────────────────────────────────
     with st.spinner("Consultando base de datos..."):
-        df_resumen = _cargar_datos(empresa_id, neon_url)
+        df_resumen   = _cargar_datos(empresa_id, neon_url)
         df_tendencia = _cargar_tendencia(empresa_id, neon_url)
+        df_ppd       = _cargar_pue_ppd(empresa_id, neon_url)
 
     if df_resumen.empty:
         st.info("📭 No hay CFDIs registrados para esta empresa.")
@@ -210,8 +273,8 @@ def run():
     st.markdown("---")
 
     # ─── Gráficas principales ─────────────────────────────────────────────────
-    tab1, tab2, tab3, tab4 = st.tabs(
-        ["🥧 Por Tipo", "🔴 Por Estatus", "📅 Tendencia mensual", "🔍 Detalle"]
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(
+        ["🥧 Por Tipo", "🔴 Por Estatus", "📅 Tendencia mensual", "🔍 Detalle", "💳 PUE / PPD"]
     )
 
     # ── Tab 1: Por tipo ──────────────────────────────────────────────────────
@@ -430,3 +493,183 @@ def run():
                 file_name="universo_cfdi.csv",
                 mime="text/csv",
             )
+
+    # ── Tab 5: PUE / PPD / Complementos de pago ─────────────────────────────
+    with tab5:
+        if df_ppd.empty:
+            st.info("📭 No hay datos de facturas de ingreso para analizar.")
+        else:
+            # ── Clasificación ─────────────────────────────────────────────────
+            df_ppd["num_complementos"] = pd.to_numeric(df_ppd["num_complementos"], errors="coerce").fillna(0).astype(int)
+            df_ppd["total_mxn"]        = pd.to_numeric(df_ppd["total_mxn"],        errors="coerce").fillna(0)
+            df_ppd["monto_pagado"]     = pd.to_numeric(df_ppd["monto_pagado"],     errors="coerce").fillna(0)
+            df_ppd["saldo_insoluto"]   = pd.to_numeric(df_ppd["saldo_insoluto"],   errors="coerce").fillna(0)
+            df_ppd["clasificacion"]    = df_ppd.apply(_clasificar_ppd, axis=1)
+
+            CLASIF_COLOR = {
+                "PUE – Contado":               "#2196F3",
+                "PPD – Liquidado":             "#4CAF50",
+                "PPD – Parcialmente pagado":   "#FF9800",
+                "PPD – Sin complemento":       "#F44336",
+            }
+
+            # ── KPIs principales ──────────────────────────────────────────────
+            pue_mask = df_ppd["metodo_pago"] == "PUE"
+            ppd_mask = df_ppd["metodo_pago"] == "PPD"
+
+            n_pue      = int(pue_mask.sum())
+            n_ppd      = int(ppd_mask.sum())
+            mto_pue    = float(df_ppd.loc[pue_mask, "total_mxn"].sum())
+            mto_ppd    = float(df_ppd.loc[ppd_mask, "total_mxn"].sum())
+
+            ppd_df     = df_ppd[ppd_mask]
+            n_liq      = int((ppd_df["clasificacion"] == "PPD – Liquidado").sum())
+            n_parcial  = int((ppd_df["clasificacion"] == "PPD – Parcialmente pagado").sum())
+            n_sin_comp = int((ppd_df["clasificacion"] == "PPD – Sin complemento").sum())
+            saldo_pend = float(df_ppd.loc[ppd_mask, "saldo_insoluto"].sum())
+
+            st.subheader("Resumen de método de pago")
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("PUE — Contado",   f"{n_pue:,}",  f"${mto_pue:,.0f} MXN",  delta_color="off")
+            c2.metric("PPD — Crédito",   f"{n_ppd:,}",  f"${mto_ppd:,.0f} MXN",  delta_color="off")
+            c3.metric("Saldo pendiente PPD", f"${saldo_pend:,.0f}",
+                      help="Suma de saldo insoluto de todas las facturas PPD")
+            pct_cobrado = ((mto_ppd - saldo_pend) / mto_ppd * 100) if mto_ppd else 0
+            c4.metric("% cobrado de PPD", f"{pct_cobrado:.1f}%",
+                      delta=f"${mto_ppd - saldo_pend:,.0f} pagado" if mto_ppd else None,
+                      delta_color="off")
+
+            st.markdown("---")
+
+            # ── Desglose PPD ──────────────────────────────────────────────────
+            st.subheader("Estado de cobro — PPD")
+            c5, c6, c7 = st.columns(3)
+            c5.metric("✅ Liquidado",            f"{n_liq:,} facturas",
+                      f"${float(ppd_df.loc[ppd_df['clasificacion']=='PPD – Liquidado','total_mxn'].sum()):,.0f}")
+            c6.metric("🟠 Parcialmente pagado",  f"{n_parcial:,} facturas",
+                      f"${float(ppd_df.loc[ppd_df['clasificacion']=='PPD – Parcialmente pagado','saldo_insoluto'].sum()):,.0f} pendiente")
+            c7.metric("🔴 Sin complemento",      f"{n_sin_comp:,} facturas",
+                      f"${float(ppd_df.loc[ppd_df['clasificacion']=='PPD – Sin complemento','total_mxn'].sum()):,.0f} pendiente")
+
+            st.markdown("---")
+
+            # ── Gráficas ──────────────────────────────────────────────────────
+            df_clasif = (
+                df_ppd.groupby("clasificacion", as_index=False)
+                .agg(cantidad=("uuid_sat", "count"), total_mxn=("total_mxn", "sum"),
+                     saldo_insoluto=("saldo_insoluto", "sum"))
+            )
+
+            col_g1, col_g2 = st.columns(2)
+            with col_g1:
+                fig_pie = px.pie(
+                    df_clasif,
+                    names="clasificacion",
+                    values="cantidad",
+                    title="Distribución por clasificación (cantidad)",
+                    color="clasificacion",
+                    color_discrete_map=CLASIF_COLOR,
+                    hole=0.45,
+                )
+                fig_pie.update_traces(textinfo="percent+label+value")
+                fig_pie.update_layout(showlegend=False, height=380)
+                st.plotly_chart(fig_pie, use_container_width=True)
+
+            with col_g2:
+                fig_bar = px.bar(
+                    df_clasif.sort_values("total_mxn", ascending=True),
+                    x="total_mxn",
+                    y="clasificacion",
+                    orientation="h",
+                    title="Monto facturado por clasificación (MXN)",
+                    color="clasificacion",
+                    color_discrete_map=CLASIF_COLOR,
+                    text=df_clasif.sort_values("total_mxn", ascending=True)["total_mxn"]
+                         .apply(lambda x: f"${x:,.0f}"),
+                )
+                fig_bar.update_traces(textposition="outside")
+                fig_bar.update_layout(showlegend=False, height=380,
+                                      xaxis_title="MXN", yaxis_title="")
+                st.plotly_chart(fig_bar, use_container_width=True)
+
+            # Saldo pendiente vs cobrado para PPD
+            if n_ppd > 0:
+                fig_stack = go.Figure()
+                cobrado   = mto_ppd - saldo_pend
+                fig_stack.add_trace(go.Bar(name="Cobrado",  x=["PPD"], y=[cobrado],
+                                           marker_color="#4CAF50",
+                                           text=[f"${cobrado:,.0f}"], textposition="inside"))
+                fig_stack.add_trace(go.Bar(name="Pendiente", x=["PPD"], y=[saldo_pend],
+                                           marker_color="#F44336",
+                                           text=[f"${saldo_pend:,.0f}"], textposition="inside"))
+                fig_stack.update_layout(
+                    barmode="stack",
+                    title="Cobrado vs Pendiente — PPD (MXN)",
+                    height=320,
+                    yaxis_title="MXN",
+                )
+                st.plotly_chart(fig_stack, use_container_width=True)
+
+            st.markdown("---")
+
+            # ── Tabla detallada PPD ───────────────────────────────────────────
+            st.subheader("📄 Facturas PPD — detalle")
+
+            sel_clasif = st.multiselect(
+                "Filtrar por estado",
+                options=["PPD – Sin complemento", "PPD – Parcialmente pagado", "PPD – Liquidado"],
+                default=["PPD – Sin complemento", "PPD – Parcialmente pagado"],
+            )
+
+            df_ppd_view = df_ppd[
+                df_ppd["clasificacion"].isin(sel_clasif)
+            ].copy() if sel_clasif else df_ppd[ppd_mask].copy()
+
+            if df_ppd_view.empty:
+                st.info("No hay facturas con esa clasificación.")
+            else:
+                df_ppd_view["ultima_fecha_pago"] = pd.to_datetime(
+                    df_ppd_view["ultima_fecha_pago"], errors="coerce"
+                ).dt.date
+
+                disp_ppd = df_ppd_view[[
+                    "fecha", "receptor_nombre", "receptor_rfc",
+                    "total_mxn", "monto_pagado", "saldo_insoluto",
+                    "num_complementos", "ultima_fecha_pago", "clasificacion", "uuid_sat"
+                ]].copy()
+                disp_ppd.columns = [
+                    "Fecha", "Receptor", "RFC",
+                    "Total MXN", "Pagado MXN", "Saldo pendiente",
+                    "Num complementos", "Último pago", "Estado", "UUID SAT"
+                ]
+
+                def _color_clasif(val):
+                    colores = {
+                        "PPD – Sin complemento":     "background-color:#ffebee; color:#c62828",
+                        "PPD – Parcialmente pagado": "background-color:#fff3e0; color:#e65100",
+                        "PPD – Liquidado":           "background-color:#e8f5e9; color:#1b5e20",
+                        "PUE – Contado":             "background-color:#e3f2fd; color:#0d47a1",
+                    }
+                    return colores.get(val, "")
+
+                st.caption(f"**{len(disp_ppd):,}** facturas PPD")
+                st.dataframe(
+                    disp_ppd.style
+                        .applymap(_color_clasif, subset=["Estado"])
+                        .format({
+                            "Total MXN":      "${:,.2f}",
+                            "Pagado MXN":     "${:,.2f}",
+                            "Saldo pendiente":"${:,.2f}",
+                        }),
+                    use_container_width=True,
+                    hide_index=True,
+                    height=460,
+                )
+
+                csv_ppd = df_ppd_view.to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    "⬇️ Descargar CSV PPD",
+                    data=csv_ppd,
+                    file_name="facturas_ppd.csv",
+                    mime="text/csv",
+                )
