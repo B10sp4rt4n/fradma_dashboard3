@@ -1104,24 +1104,47 @@ SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quart
     # -----------------------------------------------------------------
     # 2b. Auto-corrección de patrones SQL problemáticos
     # -----------------------------------------------------------------
-    def _fix_sql(self, sql: str) -> str:
+    def _fix_sql(self, sql: str, error_msg: str = "") -> str:
         """
         Aplica correcciones automáticas a patrones SQL que causan errores
-        comunes en PostgreSQL, especialmente el patrón de CROSS JOIN con
-        un agregado y una columna escalar sin MAX/MIN.
+        comunes en PostgreSQL (GROUP BY / aggregate function).
 
-        Patrón corregido:
-            SUM(x) * something / cte_escalar.col  →  SUM(x) * something / MAX(cte_escalar.col)
+        Estrategia 1: si viene el mensaje de error, extrae la columna problemática
+        directamente (ej: column "tv.total_mxn" must appear in GROUP BY...)
+        y la envuelve en MAX() en todo el SQL.
+
+        Estrategia 2: regex genérico que busca divisiones de la forma
+        `/ alias.col` no protegidas por una función de agregado.
         """
         import re
-        # Patrón: división de un agregado entre columna de CTE escalar sin envolver en MAX
-        # Ej: SUM(tc.total_mxn) * 100.0 / tv.total_mxn  →  SUM(tc.total_mxn) * 100.0 / MAX(tv.total_mxn)
-        # Solo aplica cuando hay un SUM/COUNT/AVG antes del operador de división y la col no está ya en MAX/MIN
-        pattern = r'(SUM|COUNT|AVG|MIN|MAX)\s*\([^)]+\)\s*[\+\-\*\/]\s*(?!MAX\(|MIN\(|SUM\(|COUNT\(|AVG\()(\w+\.\w+)'
-        def wrap_scalar(m):
-            return f'{m.group(0).rsplit(m.group(2), 1)[0]}MAX({m.group(2)})'
-        fixed = re.sub(pattern, wrap_scalar, sql)
-        return fixed
+        fixed = sql
+
+        # Estrategia 1: extraer columna del mensaje de error
+        if error_msg:
+            # PostgreSQL reporta: column "tv.total_mxn" must appear in the GROUP BY...
+            m = re.search(r'column "([\w\.]+)" must appear in the GROUP BY', error_msg)
+            if m:
+                bad_col = m.group(1)  # ej: "tv.total_mxn"
+                # Reemplazar todas las ocurrencias no dentro de una función de agregado
+                # Patrón: bad_col que NO esté precedido por MAX(, MIN(, SUM(, COUNT(, AVG(
+                escaped = re.escape(bad_col)
+                fixed = re.sub(
+                    r'(?<!MAX\()(?<!MIN\()(?<!SUM\()(?<!AVG\()(?<!COUNT\()\b' + escaped + r'\b',
+                    f'MAX({bad_col})',
+                    fixed
+                )
+                if fixed != sql:
+                    logger.info(f"_fix_sql: envolví '{bad_col}' en MAX() basado en error")
+                    return fixed
+
+        # Estrategia 2: regex — busca `/ alias.col` sin protección de agregado
+        pattern = r'(?<![\w])(/\s*)(?!MAX\(|MIN\(|SUM\(|COUNT\(|AVG\()([a-zA-Z_]\w*\.[a-zA-Z_]\w*)'
+        def wrap_div(m):
+            return f'{m.group(1)}MAX({m.group(2)})'
+        fixed2 = re.sub(pattern, wrap_div, fixed)
+        if fixed2 != fixed:
+            logger.info("_fix_sql: envolví columnas escalares en divisiones con MAX()")
+        return fixed2
 
     # -----------------------------------------------------------------
     # 3. Ejecución de query
@@ -1758,7 +1781,7 @@ Si el usuario pidió explícitamente una orientación (ej: "vertical", "horizont
                 err_str = str(exec_err)
                 if "GROUP BY" in err_str or "aggregate function" in err_str:
                     logger.warning(f"Error GROUP BY detectado, intentando auto-fix: {err_str[:120]}")
-                    fixed_sql = self._fix_sql(sql)
+                    fixed_sql = self._fix_sql(sql, error_msg=err_str)
                     if fixed_sql != sql:
                         result.sql = fixed_sql
                         sql = fixed_sql
