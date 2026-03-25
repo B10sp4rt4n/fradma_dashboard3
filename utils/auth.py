@@ -79,6 +79,7 @@ class AuthManager:
         # db_path ignorado (compatibilidad); siempre usa Neon
         self._ensure_schema()
         self._ensure_admin()
+        self._ensure_default_empresa()
 
     # ------------------------------------------------------------------
     # Internals
@@ -144,6 +145,56 @@ class AuthManager:
             conn.close()
         except Exception as e:
             logger.warning(f"_ensure_schema: {e}")
+
+    def _ensure_default_empresa(self):
+        """Siembra la empresa por defecto desde env vars EMPRESA_RFC y EMPRESA_RAZON_SOCIAL.
+        Útil para Streamlit Cloud donde la BD puede estar vacía.
+        """
+        rfc = os.getenv("EMPRESA_RFC", "").strip().upper()
+        razon = os.getenv("EMPRESA_RAZON_SOCIAL", "Mi Empresa").strip()
+        if not rfc:
+            return
+        try:
+            conn = _get_conn()
+            cur = conn.cursor()
+            # Insertar empresa si no existe
+            cur.execute(
+                """
+                INSERT INTO empresas (razon_social, rfc, status, plan)
+                VALUES (%s, %s, 'activo', 'essential')
+                ON CONFLICT (rfc) DO NOTHING
+                """,
+                (razon, rfc),
+            )
+            conn.commit()
+            # Vincular admin a esa empresa
+            cur.execute(
+                "SELECT id FROM empresas WHERE UPPER(rfc) = UPPER(%s)", (rfc,)
+            )
+            row = cur.fetchone()
+            if row:
+                empresa_id = str(row[0])
+                cur.execute(
+                    """
+                    INSERT INTO user_empresas (username, empresa_id, role, granted_by)
+                    VALUES ('admin', %s::uuid, 'admin', 'system')
+                    ON CONFLICT (username, empresa_id) DO NOTHING
+                    """,
+                    (empresa_id,),
+                )
+                cur.execute(
+                    """
+                    UPDATE users SET empresa_id = %s::uuid, rfc_empresa = %s
+                    WHERE username = 'admin' AND empresa_id IS NULL
+                    """,
+                    (empresa_id, rfc),
+                )
+                conn.commit()
+            cur.close()
+            conn.close()
+            logger.info(f"Empresa por defecto asegurada: RFC={rfc}")
+        except Exception as e:
+            logger.warning(f"_ensure_default_empresa: {e}")
 
     def _hash_password(self, password: str) -> str:
         return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
