@@ -77,11 +77,73 @@ class AuthManager:
 
     def __init__(self, db_path: str = None):
         # db_path ignorado (compatibilidad); siempre usa Neon
+        self._ensure_schema()
         self._ensure_admin()
 
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+
+    def _ensure_schema(self):
+        """Crea las tablas necesarias si no existen (idempotente)."""
+        ddl = """
+        CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+        CREATE TABLE IF NOT EXISTS empresas (
+            id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            razon_social  VARCHAR(255) NOT NULL,
+            rfc           VARCHAR(13) UNIQUE NOT NULL,
+            email         VARCHAR(255),
+            telefono      VARCHAR(20),
+            plan          VARCHAR(50) DEFAULT 'essential',
+            fecha_registro TIMESTAMP DEFAULT NOW(),
+            status        VARCHAR(20) DEFAULT 'activo',
+            industria     VARCHAR(100),
+            tamaño_empresa VARCHAR(20),
+            created_at    TIMESTAMP DEFAULT NOW(),
+            updated_at    TIMESTAMP DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS users (
+            username      VARCHAR(50) PRIMARY KEY,
+            email         VARCHAR(255) UNIQUE NOT NULL,
+            name          VARCHAR(255) NOT NULL,
+            password_hash VARCHAR(255) NOT NULL,
+            role          VARCHAR(20) NOT NULL DEFAULT 'viewer',
+            is_active     BOOLEAN DEFAULT TRUE,
+            empresa_id    UUID REFERENCES empresas(id),
+            rfc_empresa   VARCHAR(13),
+            notes         TEXT,
+            created_by    VARCHAR(50),
+            created_at    TIMESTAMP DEFAULT NOW(),
+            last_login    TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS user_empresas (
+            username    VARCHAR(50) NOT NULL REFERENCES users(username) ON DELETE CASCADE,
+            empresa_id  UUID        NOT NULL REFERENCES empresas(id)    ON DELETE CASCADE,
+            role        VARCHAR(20) NOT NULL DEFAULT 'viewer',
+            granted_by  VARCHAR(50),
+            granted_at  TIMESTAMP DEFAULT NOW(),
+            PRIMARY KEY (username, empresa_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS login_history (
+            id          SERIAL PRIMARY KEY,
+            username    VARCHAR(50),
+            success     BOOLEAN,
+            created_at  TIMESTAMP DEFAULT NOW()
+        );
+        """
+        try:
+            conn = _get_conn()
+            cur = conn.cursor()
+            cur.execute(ddl)
+            conn.commit()
+            cur.close()
+            conn.close()
+        except Exception as e:
+            logger.warning(f"_ensure_schema: {e}")
 
     def _hash_password(self, password: str) -> str:
         return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")

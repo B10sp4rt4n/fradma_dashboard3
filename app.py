@@ -180,8 +180,6 @@ if st.session_state["user"] is None:
                                 st.error(
                                     f"❌ El usuario '{username}' no tiene acceso a la empresa con RFC `{rfc_val}`."
                                 )
-                            elif rfc_val and not rfcs_del_usuario and not user.is_superadmin:
-                                st.error("❌ Este usuario no tiene empresas asignadas.")
                             else:
                                 st.session_state["user"] = user
                                 st.session_state["_login_empresa"] = None
