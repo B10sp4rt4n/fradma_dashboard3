@@ -1865,7 +1865,7 @@ elif menu == "📂 Cargar mis facturas":
 elif menu == "📋 Universo de CFDIs":
     universo_cfdi.run()
 
-elif menu == "� Desglose Fiscal":
+elif menu == "🧾 Desglose Fiscal":
     fiscal.run()
 
 elif menu == "�🤖 Asistente de Datos":
