@@ -29,23 +29,35 @@ def mostrar_panel_usuarios():
         return
     
     auth_manager = AuthManager()
-    
+
+    # Superadmin (admin sin empresa) ve todos los tenants.
+    # Admin de empresa usa la empresa ACTIVA en sesión (puede tener múltiples).
+    empresa_id_filter = (
+        None
+        if current_user.is_superadmin
+        else st.session_state.get("empresa_id") or current_user.empresa_id
+    )
+
     st.markdown("### 👥 Gestión de Usuarios")
-    
+    if not current_user.is_superadmin and current_user.empresa_nombre:
+        st.caption(f"🏢 Tenant: **{current_user.empresa_nombre}** · RFC: `{current_user.rfc_empresa}`")
+
     # Tabs principales
-    tab_list, tab_create, tab_history = st.tabs([
+    tab_list, tab_create, tab_history, tab_pending, tab_empresas = st.tabs([
         "👥 Usuarios",
         "➕ Crear Usuario",
-        "📜 Historial"
+        "📜 Historial",
+        "🔔 Solicitudes",
+        "🏢 Pertenencias",
     ])
-    
+
     # ================================================================
     # TAB 1: LISTA DE USUARIOS
     # ================================================================
-    
+
     with tab_list:
-        users = auth_manager.list_users()
-        
+        users = auth_manager.list_users(empresa_id=empresa_id_filter)
+
         if not users:
             st.info("No hay usuarios en el sistema")
             return
@@ -228,21 +240,30 @@ def mostrar_panel_usuarios():
                     }[x]
                 )
 
-                # Selector de empresa (Neon)
-                empresas = auth_manager.list_empresas()
-                empresa_opts = [("", "— Sin empresa (superadmin) —")] + [
-                    (e["id"], f"{e['razon_social']}  •  {e['rfc']}") for e in empresas
-                ]
-                empresa_sel = st.selectbox(
-                    "Empresa",
-                    options=[o[0] for o in empresa_opts],
-                    format_func=lambda eid: next(o[1] for o in empresa_opts if o[0] == eid),
-                    help="Sin empresa = ve datos de todas las empresas (superadmin)"
-                )
-                new_empresa_id = empresa_sel if empresa_sel else None
-                new_rfc_empresa = next(
-                    (e["rfc"] for e in empresas if e["id"] == empresa_sel), None
-                )
+                # Selector de empresa — superadmin elige cualquiera; admin de tenant queda fijo
+                if current_user.is_superadmin:
+                    empresas = auth_manager.list_empresas()
+                    empresa_opts = [("", "— Sin empresa (superadmin) —")] + [
+                        (e["id"], f"{e['razon_social']}  •  {e['rfc']}") for e in empresas
+                    ]
+                    empresa_sel = st.selectbox(
+                        "Empresa",
+                        options=[o[0] for o in empresa_opts],
+                        format_func=lambda eid: next(o[1] for o in empresa_opts if o[0] == eid),
+                        help="Sin empresa = ve datos de todas las empresas (superadmin)"
+                    )
+                    new_empresa_id = empresa_sel if empresa_sel else None
+                    new_rfc_empresa = next(
+                        (e["rfc"] for e in empresas if e["id"] == empresa_sel), None
+                    )
+                else:
+                    # Admin normal: hereda su propio tenant obligatoriamente
+                    new_empresa_id = current_user.empresa_id
+                    new_rfc_empresa = current_user.rfc_empresa
+                    st.info(
+                        f"🏢 Los nuevos usuarios se crearán en tu empresa: "
+                        f"**{current_user.empresa_nombre}** (`{current_user.rfc_empresa}`)"
+                    )
 
                 new_notes = st.text_area(
                     "Notas (opcional)",
@@ -306,7 +327,7 @@ def mostrar_panel_usuarios():
         with col_filter1:
             filter_user = st.selectbox(
                 "Filtrar por usuario",
-                ['Todos'] + [u['username'] for u in users],
+                ["Todos"] + [u["username"] for u in auth_manager.list_users(empresa_id=empresa_id_filter)],
                 key="history_filter_user"
             )
         
@@ -366,6 +387,181 @@ def mostrar_panel_usuarios():
             col_stat1.metric("Total Intentos", total_logins)
             col_stat2.metric("Exitosos", successful)
             col_stat3.metric("Fallidos", failed, delta=f"{success_rate:.1f}% éxito")
+
+    # ================================================================
+    # TAB 4: SOLICITUDES DE ACCESO PENDIENTES
+    # ================================================================
+
+    with tab_pending:
+        st.markdown("#### 🔔 Solicitudes de Acceso Pendientes")
+
+        pending = auth_manager.list_pending_registrations(empresa_id=empresa_id_filter)
+
+        if not pending:
+            st.success("✅ No hay solicitudes pendientes de aprobación")
+        else:
+            st.info(f"**{len(pending)}** solicitud(es) esperando aprobación")
+
+            role_labels = {
+                UserRole.ADMIN: "👑 Administrador",
+                UserRole.ANALYST: "📊 Analista",
+                UserRole.VIEWER: "👁️ Visualizador",
+            }
+
+            for req in pending:
+                empresa_label = req.get("empresa_nombre") or req.get("rfc_empresa") or "—"
+                with st.expander(
+                    f"👤 {req['name']} (`{req['username']}`) — {empresa_label}",
+                    expanded=True,
+                ):
+                    col_info, col_actions = st.columns([2, 1])
+
+                    with col_info:
+                        st.markdown(
+                            f"**Email:** {req['email']}  \n"
+                            f"**Empresa:** {empresa_label}  (`{req.get('rfc_empresa', '—')}`)  \n"
+                            f"**Solicitado:** {req['created_at'].strftime('%Y-%m-%d %H:%M') if req.get('created_at') else '—'}"
+                        )
+
+                    with col_actions:
+                        # Selector de rol para aprobación
+                        role_sel = st.selectbox(
+                            "Rol a asignar",
+                            [UserRole.VIEWER, UserRole.ANALYST, UserRole.ADMIN],
+                            format_func=lambda r: role_labels[r],
+                            key=f"role_sel_{req['username']}",
+                        )
+
+                        col_apr, col_rej = st.columns(2)
+
+                        with col_apr:
+                            if st.button("✅ Aprobar", key=f"approve_{req['username']}", type="primary"):
+                                ok, msg = auth_manager.approve_registration(
+                                    req["username"],
+                                    current_user.username,
+                                    role=role_sel,
+                                )
+                                if ok:
+                                    st.success(f"✅ {msg}")
+                                    st.rerun()
+                                else:
+                                    st.error(f"❌ {msg}")
+
+                        with col_rej:
+                            if st.button("🗑️ Rechazar", key=f"reject_{req['username']}"):
+                                ok, msg = auth_manager.reject_registration(
+                                    req["username"],
+                                    current_user.username,
+                                )
+                                if ok:
+                                    st.warning(f"🗑️ {msg}")
+                                    st.rerun()
+                                else:
+                                    st.error(f"❌ {msg}")
+
+    # ================================================================
+    # TAB 5: PERTENENCIAS USUARIO-EMPRESA
+    # ================================================================
+
+    with tab_empresas:
+        st.markdown("#### 🏢 Gestionar Acceso a Empresas por Usuario")
+        st.caption(
+            "Asigna o revoca el acceso de un usuario a una o varias empresas. "
+            "Un usuario puede pertenecer a múltiples tenants con roles distintos."
+        )
+
+        all_users_list = auth_manager.list_users(empresa_id=empresa_id_filter)
+        if not all_users_list:
+            st.info("No hay usuarios en este tenant")
+        else:
+            target_username = st.selectbox(
+                "Usuario",
+                [u["username"] for u in all_users_list],
+                key="emp_tab_user_sel",
+            )
+
+            if target_username:
+                st.markdown(f"**Empresas actuales de `{target_username}`:**")
+
+                user_emps = auth_manager.get_user_empresas(target_username)
+
+                if not user_emps:
+                    st.info("Sin empresas asignadas (superadmin o sin configurar)")
+                else:
+                    for emp in user_emps:
+                        col_e, col_rol, col_rm = st.columns([3, 2, 1])
+                        col_e.markdown(f"`{emp['rfc']}` &nbsp; {emp['razon_social']}")
+                        col_rol.markdown(
+                            f"<span style='color:#6b7280;font-size:13px;'>{emp.get('role_en_empresa','?')}</span>",
+                            unsafe_allow_html=True,
+                        )
+                        with col_rm:
+                            if st.button(
+                                "❌",
+                                key=f"rm_ue_{target_username}_{emp['id']}",
+                                help=f"Revocar acceso a {emp['razon_social']}",
+                            ):
+                                ok, msg = auth_manager.remove_user_empresa(
+                                    target_username, emp["id"]
+                                )
+                                if ok:
+                                    st.success(f"✅ {msg}")
+                                    st.rerun()
+                                else:
+                                    st.error(f"❌ {msg}")
+
+                st.markdown("---")
+                st.markdown("**Agregar acceso a empresa:**")
+
+                all_emps = auth_manager.list_empresas()
+                assigned_ids = {e["id"] for e in user_emps}
+                available = [e for e in all_emps if e["id"] not in assigned_ids]
+
+                if not available:
+                    st.info("✅ El usuario ya tiene acceso a todas las empresas")
+                else:
+                    col_add1, col_add2, col_add3 = st.columns([3, 2, 1])
+                    with col_add1:
+                        emp_to_add = st.selectbox(
+                            "Empresa",
+                            [e["id"] for e in available],
+                            format_func=lambda eid: next(
+                                f"{e['razon_social']}  ({e['rfc']})"
+                                for e in available
+                                if e["id"] == eid
+                            ),
+                            key="emp_add_sel",
+                        )
+                    with col_add2:
+                        role_add = st.selectbox(
+                            "Rol",
+                            [UserRole.VIEWER, UserRole.ANALYST, UserRole.ADMIN],
+                            format_func=lambda r: {
+                                UserRole.ADMIN: "👑 Admin",
+                                UserRole.ANALYST: "📊 Analista",
+                                UserRole.VIEWER: "👁️ Visualizador",
+                            }[r],
+                            key="emp_add_role",
+                        )
+                    with col_add3:
+                        st.write("")
+                        if st.button(
+                            "Asignar",
+                            key="btn_add_ue",
+                            type="primary",
+                            use_container_width=True,
+                        ):
+                            ok, msg = auth_manager.add_user_empresa(
+                                target_username,
+                                emp_to_add,
+                                role_add,
+                                current_user.username,
+                            )
+                            if ok:
+                                st.success(f"✅ {msg}")
+                                st.rerun()
+                            else:
+                                st.error(f"❌ {msg}")
 
 
 def mostrar_panel_configuracion():
@@ -487,7 +683,39 @@ def mostrar_info_usuario():
     }
     
     st.sidebar.markdown("---")
-    
+
+    # Switcher de empresa activa (solo si tiene más de una)
+    if user.tiene_multiples_empresas:
+        opciones_ids = [e["id"] for e in user.empresas]
+        opciones_labels = {
+            e["id"]: f"🏢 {e['razon_social']} ({e['rfc']})"
+            for e in user.empresas
+        }
+        empresa_actual = st.session_state.get("empresa_id") or opciones_ids[0]
+        idx_actual = opciones_ids.index(empresa_actual) if empresa_actual in opciones_ids else 0
+
+        sel_empresa = st.sidebar.selectbox(
+            "Empresa activa",
+            opciones_ids,
+            index=idx_actual,
+            format_func=lambda eid: opciones_labels.get(eid, eid),
+            key="switcher_empresa_activa",
+            help="Cambia el tenant activo sin cerrar sesión",
+        )
+        if sel_empresa != empresa_actual:
+            emp_data = next(e for e in user.empresas if e["id"] == sel_empresa)
+            st.session_state["empresa_id"] = emp_data["id"]
+            st.session_state["rfc_empresa"] = emp_data["rfc"]
+            st.session_state["empresa_nombre"] = emp_data["razon_social"]
+            user.empresa_id = emp_data["id"]
+            user.rfc_empresa = emp_data["rfc"]
+            user.empresa_nombre = emp_data["razon_social"]
+            st.session_state["user"] = user
+            logger.info(
+                f"{user.username} cambió a empresa activa {emp_data['rfc']}"
+            )
+            st.rerun()
+
     # Header de usuario
     col_user_info, col_logout = st.sidebar.columns([3, 1])
     

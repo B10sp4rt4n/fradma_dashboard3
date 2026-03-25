@@ -41,11 +41,13 @@ class User:
     email: str
     name: str
     role: str
-    empresa_id: Optional[str] = None   # UUID de empresas en Neon (None = superadmin)
-    rfc_empresa: Optional[str] = None  # RFC para display/validación
-    empresa_nombre: Optional[str] = None  # Nombre legible de la empresa
+    empresa_id: Optional[str] = None   # UUID empresa activa/principal (None = superadmin)
+    rfc_empresa: Optional[str] = None  # RFC empresa activa
+    empresa_nombre: Optional[str] = None  # Nombre empresa activa
     created_at: Optional[datetime] = None
     last_login: Optional[datetime] = None
+    # Lista de todas las empresas a las que tiene acceso: [{id, rfc, razon_social, role}]
+    empresas: list = field(default_factory=list)
 
     def can_export(self) -> bool:
         return self.role in [UserRole.ADMIN, UserRole.ANALYST]
@@ -63,6 +65,11 @@ class User:
     def is_superadmin(self) -> bool:
         """Superadmin = admin sin empresa asignada → ve todos los datos."""
         return self.role == UserRole.ADMIN and self.empresa_id is None
+
+    @property
+    def tiene_multiples_empresas(self) -> bool:
+        """True si el usuario tiene acceso a más de una empresa."""
+        return len(self.empresas) > 1
 
 
 class AuthManager:
@@ -182,16 +189,30 @@ class AuthManager:
         self._log_login(username, success=True)
         logger.info(f"Login exitoso: {username} ({row['role']})")
 
+        # Cargar todas las empresas del usuario desde user_empresas
+        empresas = self.get_user_empresas(username)
+
+        # empresa_id principal: usar user_empresas si existe, sino el de users
+        empresa_id = row["empresa_id"]
+        rfc_empresa = row["rfc_empresa"]
+        empresa_nombre = row.get("empresa_nombre")
+        if empresas and not empresa_id:
+            # Sin empresa primaria pero tiene en user_empresas → tomar la primera
+            empresa_id = empresas[0]["id"]
+            rfc_empresa = empresas[0]["rfc"]
+            empresa_nombre = empresas[0]["razon_social"]
+
         return User(
             username=username,
             email=row["email"],
             name=row["name"],
             role=row["role"],
-            empresa_id=row["empresa_id"],
-            rfc_empresa=row["rfc_empresa"],
-            empresa_nombre=row.get("empresa_nombre"),
+            empresa_id=empresa_id,
+            rfc_empresa=rfc_empresa,
+            empresa_nombre=empresa_nombre,
             created_at=row["created_at"],
             last_login=datetime.now(),
+            empresas=empresas,
         )
 
     # ------------------------------------------------------------------
@@ -238,6 +259,27 @@ class AuthManager:
             cur.close()
             conn.close()
             logger.info(f"Usuario creado: {username} ({role}) por {created_by}")
+            cur.close()
+            conn.close()
+            # Insertar en user_empresas si viene con empresa asignada
+            if empresa_id:
+                try:
+                    cur2 = conn2 = None
+                    conn2 = _get_conn()
+                    cur2 = conn2.cursor()
+                    cur2.execute(
+                        """
+                        INSERT INTO user_empresas (username, empresa_id, role, granted_by)
+                        VALUES (%s, %s::uuid, %s, %s)
+                        ON CONFLICT (username, empresa_id) DO NOTHING
+                        """,
+                        (username, empresa_id, role, created_by),
+                    )
+                    conn2.commit()
+                    cur2.close(); conn2.close()
+                except Exception as e2:
+                    logger.warning(f"user_empresas insert error (no crítico): {e2}")
+
             return True, f"Usuario '{username}' creado exitosamente"
         except psycopg2.errors.UniqueViolation as e:
             msg = str(e)
@@ -250,22 +292,43 @@ class AuthManager:
             logger.error(f"Error creando usuario: {e}")
             return False, f"Error al crear usuario: {e}"
 
-    def list_users(self) -> list[dict]:
+    def list_users(self, empresa_id: str = None) -> list[dict]:
+        """Lista usuarios. Si empresa_id, filtra los que pertenecen a ese tenant
+        (vía user_empresas o users.empresa_id como fallback)."""
         try:
             conn = _get_conn()
             cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            cur.execute(
-                """
-                SELECT u.username, u.email, u.name, u.role,
-                       u.created_at, u.last_login, u.is_active,
-                       u.created_by, u.notes,
-                       u.empresa_id::text, u.rfc_empresa,
-                       e.razon_social AS empresa_nombre
-                FROM users u
-                LEFT JOIN empresas e ON e.id = u.empresa_id
-                ORDER BY u.created_at DESC
-                """
-            )
+            if empresa_id:
+                cur.execute(
+                    """
+                    SELECT DISTINCT ON (u.username)
+                           u.username, u.email, u.name, u.role,
+                           u.created_at, u.last_login, u.is_active,
+                           u.created_by, u.notes,
+                           u.empresa_id::text, u.rfc_empresa,
+                           e.razon_social AS empresa_nombre
+                    FROM users u
+                    LEFT JOIN empresas e ON e.id = u.empresa_id
+                    LEFT JOIN user_empresas ue ON ue.username = u.username
+                    WHERE ue.empresa_id = %s::uuid
+                       OR u.empresa_id  = %s::uuid
+                    ORDER BY u.username, u.created_at DESC
+                    """,
+                    (empresa_id, empresa_id),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT u.username, u.email, u.name, u.role,
+                           u.created_at, u.last_login, u.is_active,
+                           u.created_by, u.notes,
+                           u.empresa_id::text, u.rfc_empresa,
+                           e.razon_social AS empresa_nombre
+                    FROM users u
+                    LEFT JOIN empresas e ON e.id = u.empresa_id
+                    ORDER BY u.created_at DESC
+                    """
+                )
             rows = cur.fetchall()
             cur.close()
             conn.close()
@@ -397,6 +460,87 @@ class AuthManager:
     # Helpers de empresas
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # user_empresas: acceso multi-tenant
+    # ------------------------------------------------------------------
+
+    def get_user_empresas(self, username: str) -> list[dict]:
+        """Retorna todas las empresas a las que tiene acceso un usuario.
+        [{id, rfc, razon_social, plan, status, role_en_empresa}]
+        """
+        try:
+            conn = _get_conn()
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute(
+                """
+                SELECT e.id::text, e.rfc, e.razon_social, e.plan, e.status,
+                       ue.role AS role_en_empresa
+                FROM user_empresas ue
+                JOIN empresas e ON e.id = ue.empresa_id
+                WHERE ue.username = %s
+                ORDER BY e.razon_social
+                """,
+                (username,),
+            )
+            rows = cur.fetchall()
+            cur.close(); conn.close()
+            return [dict(r) for r in rows]
+        except Exception as e:
+            # Tabla puede no existir aún (antes de la migración)
+            logger.warning(f"get_user_empresas fallback (¿falta migración?): {e}")
+            return []
+
+    def add_user_empresa(
+        self,
+        username: str,
+        empresa_id: str,
+        role: str,
+        granted_by: str,
+    ) -> tuple[bool, str]:
+        """Agrega acceso de un usuario a una empresa con el rol indicado."""
+        if role not in [UserRole.ADMIN, UserRole.ANALYST, UserRole.VIEWER]:
+            return False, f"Rol inválido: {role}"
+        try:
+            conn = _get_conn()
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO user_empresas (username, empresa_id, role, granted_by)
+                VALUES (%s, %s::uuid, %s, %s)
+                ON CONFLICT (username, empresa_id) DO UPDATE SET role = EXCLUDED.role
+                """,
+                (username, empresa_id, role, granted_by),
+            )
+            conn.commit(); cur.close(); conn.close()
+            logger.info(f"Acceso empresa agregado: {username} → {empresa_id} ({role}) por {granted_by}")
+            return True, f"Acceso a empresa asignado con rol {role}"
+        except Exception as e:
+            logger.error(f"Error en add_user_empresa: {e}")
+            return False, f"Error: {e}"
+
+    def remove_user_empresa(
+        self,
+        username: str,
+        empresa_id: str,
+    ) -> tuple[bool, str]:
+        """Revoca el acceso de un usuario a una empresa."""
+        try:
+            conn = _get_conn()
+            cur = conn.cursor()
+            cur.execute(
+                "DELETE FROM user_empresas WHERE username = %s AND empresa_id = %s::uuid",
+                (username, empresa_id),
+            )
+            if cur.rowcount == 0:
+                cur.close(); conn.close()
+                return False, "Relación usuario-empresa no encontrada"
+            conn.commit(); cur.close(); conn.close()
+            logger.info(f"Acceso empresa revocado: {username} → {empresa_id}")
+            return True, "Acceso revocado"
+        except Exception as e:
+            logger.error(f"Error en remove_user_empresa: {e}")
+            return False, f"Error: {e}"
+
     def list_empresas(self) -> list[dict]:
         """Lista empresas disponibles para asignar a usuarios."""
         try:
@@ -411,6 +555,195 @@ class AuthManager:
         except Exception as e:
             logger.error(f"Error listando empresas: {e}")
             return []
+
+    def get_empresa_by_rfc(self, rfc: str) -> Optional[dict]:
+        """Busca una empresa por su RFC. Retorna dict con id, razon_social, rfc, plan, status o None."""
+        if not rfc:
+            return None
+        try:
+            conn = _get_conn()
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute(
+                "SELECT id::text, razon_social, rfc, plan, status FROM empresas WHERE UPPER(rfc) = UPPER(%s)",
+                (rfc.strip(),),
+            )
+            row = cur.fetchone()
+            cur.close(); conn.close()
+            return dict(row) if row else None
+        except Exception as e:
+            logger.error(f"Error buscando empresa por RFC: {e}")
+            return None
+
+    # ------------------------------------------------------------------
+    # Auto-registro y aprobación
+    # ------------------------------------------------------------------
+
+    def register_user_request(
+        self,
+        username: str,
+        email: str,
+        name: str,
+        password: str,
+        rfc_empresa: str,
+    ) -> tuple[bool, str]:
+        """
+        Auto-registro: crea usuario INACTIVO vinculado al tenant (empresa por RFC).
+        Pendiente de aprobación por el ADMIN de ese tenant.
+        """
+        if not username or len(username) < 3:
+            return False, "Username debe tener al menos 3 caracteres"
+        if not email or "@" not in email:
+            return False, "Email inválido"
+        if not name:
+            return False, "Nombre es requerido"
+        if len(password) < 6:
+            return False, "Password debe tener al menos 6 caracteres"
+        if not rfc_empresa:
+            return False, "RFC de empresa es requerido"
+
+        empresa = self.get_empresa_by_rfc(rfc_empresa)
+        if not empresa:
+            return False, f"No existe ninguna empresa registrada con RFC '{rfc_empresa}'"
+        if empresa.get("status") != "activo":
+            return False, f"La empresa con RFC '{rfc_empresa}' no está activa en el sistema"
+
+        try:
+            conn = _get_conn()
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO users
+                    (username, email, name, password_hash, role,
+                     empresa_id, rfc_empresa, created_by, notes, is_active)
+                VALUES (%s, %s, %s, %s, %s, %s::uuid, %s, %s, %s, FALSE)
+                """,
+                (
+                    username, email, name,
+                    self._hash_password(password),
+                    UserRole.VIEWER,
+                    empresa["id"],
+                    empresa["rfc"].upper(),
+                    "self_registration",
+                    "PENDIENTE_APROBACION",
+                ),
+            )
+            conn.commit()
+            cur.close(); conn.close()
+            logger.info(f"Solicitud de registro: {username} para empresa {empresa['rfc']}")
+            return True, f"Solicitud enviada. El administrador de {empresa['razon_social']} debe aprobar tu acceso."
+        except psycopg2.errors.UniqueViolation as e:
+            conn.rollback() if conn else None
+            msg = str(e)
+            if "username" in msg:
+                return False, f"Username '{username}' ya está en uso"
+            if "email" in msg:
+                return False, f"Email '{email}' ya está registrado"
+            return False, f"Error de unicidad: {e}"
+        except Exception as e:
+            logger.error(f"Error en auto-registro: {e}")
+            return False, f"Error al crear solicitud: {e}"
+
+    def list_pending_registrations(self, empresa_id: str = None) -> list[dict]:
+        """Lista usuarios inactivos con notas='PENDIENTE_APROBACION', filtrado por empresa."""
+        try:
+            conn = _get_conn()
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            if empresa_id:
+                cur.execute(
+                    """
+                    SELECT u.username, u.email, u.name, u.created_at,
+                           u.empresa_id::text, u.rfc_empresa,
+                           e.razon_social AS empresa_nombre
+                    FROM users u
+                    LEFT JOIN empresas e ON e.id = u.empresa_id
+                    WHERE u.is_active = FALSE AND u.notes = 'PENDIENTE_APROBACION'
+                      AND u.empresa_id = %s::uuid
+                    ORDER BY u.created_at DESC
+                    """,
+                    (empresa_id,),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT u.username, u.email, u.name, u.created_at,
+                           u.empresa_id::text, u.rfc_empresa,
+                           e.razon_social AS empresa_nombre
+                    FROM users u
+                    LEFT JOIN empresas e ON e.id = u.empresa_id
+                    WHERE u.is_active = FALSE AND u.notes = 'PENDIENTE_APROBACION'
+                    ORDER BY u.created_at DESC
+                    """
+                )
+            rows = cur.fetchall()
+            cur.close(); conn.close()
+            return [dict(r) for r in rows]
+        except Exception as e:
+            logger.error(f"Error listando solicitudes pendientes: {e}")
+            return []
+
+    def approve_registration(
+        self, username: str, admin_username: str, role: str = UserRole.VIEWER
+    ) -> tuple[bool, str]:
+        """Aprueba solicitud de registro: activa usuario y asigna rol definitivo,
+        y sincroniza user_empresas."""
+        if role not in [UserRole.ADMIN, UserRole.ANALYST, UserRole.VIEWER]:
+            return False, f"Rol inválido: {role}"
+        try:
+            conn = _get_conn()
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            # Obtener empresa_id antes de activar
+            cur.execute(
+                "SELECT empresa_id::text FROM users WHERE username = %s AND notes = 'PENDIENTE_APROBACION'",
+                (username,),
+            )
+            row = cur.fetchone()
+            if not row:
+                cur.close(); conn.close()
+                return False, f"Solicitud de '{username}' no encontrada o ya procesada"
+            empresa_id = row["empresa_id"]
+
+            cur2 = conn.cursor()
+            cur2.execute(
+                """
+                UPDATE users
+                SET is_active = TRUE, role = %s,
+                    notes = 'Aprobado por ' || %s || ' el ' || NOW()::date::text
+                WHERE username = %s AND notes = 'PENDIENTE_APROBACION'
+                """,
+                (role, admin_username, username),
+            )
+            conn.commit()
+            cur.close(); cur2.close(); conn.close()
+
+            # Sincronizar user_empresas
+            if empresa_id:
+                self.add_user_empresa(username, empresa_id, role, admin_username)
+
+            logger.info(f"Solicitud aprobada: {username} ({role}) por {admin_username}")
+            return True, f"Usuario '{username}' aprobado con rol {role}"
+        except Exception as e:
+            logger.error(f"Error aprobando solicitud: {e}")
+            return False, f"Error al aprobar: {e}"
+
+    def reject_registration(self, username: str, admin_username: str) -> tuple[bool, str]:
+        """Rechaza y elimina una solicitud de registro pendiente."""
+        try:
+            conn = _get_conn()
+            cur = conn.cursor()
+            cur.execute(
+                "DELETE FROM users WHERE username = %s AND notes = 'PENDIENTE_APROBACION'",
+                (username,),
+            )
+            if cur.rowcount == 0:
+                cur.close(); conn.close()
+                return False, f"Solicitud de '{username}' no encontrada o ya procesada"
+            conn.commit()
+            cur.close(); conn.close()
+            logger.info(f"Solicitud rechazada/eliminada: {username} por {admin_username}")
+            return True, f"Solicitud de '{username}' rechazada"
+        except Exception as e:
+            logger.error(f"Error rechazando solicitud: {e}")
+            return False, f"Error al rechazar: {e}"
 
 
 

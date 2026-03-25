@@ -62,6 +62,17 @@ st.set_page_config(
 
 if "user" not in st.session_state:
     st.session_state["user"] = None
+if "empresa_id" not in st.session_state:
+    st.session_state["empresa_id"] = None
+if "rfc_empresa" not in st.session_state:
+    st.session_state["rfc_empresa"] = None
+if "empresa_nombre" not in st.session_state:
+    st.session_state["empresa_nombre"] = None
+# Estado auxiliar de login (RFC lookup)
+if "_login_empresa" not in st.session_state:
+    st.session_state["_login_empresa"] = None
+if "_login_view" not in st.session_state:
+    st.session_state["_login_view"] = "login"  # "login" | "register"
 
 if st.session_state["user"] is None:
     # Ocultar sidebar y menús en pantalla de login
@@ -76,20 +87,20 @@ if st.session_state["user"] is None:
 
     st.markdown("<br><br>", unsafe_allow_html=True)
     col_l, col_c, col_r = st.columns([1, 1.2, 1])
-    
+
     with col_c:
         # Logo
         if _DEFAULT_LOGO:
             import base64
             b64 = base64.b64encode(_DEFAULT_LOGO).decode()
             st.markdown(
-                f'<div style="display:flex;justify-content:center;">' 
+                f'<div style="display:flex;justify-content:center;">'
                 f'<img src="data:image/png;base64,{b64}" width="300"></div>',
                 unsafe_allow_html=True
             )
         else:
             st.markdown("<div style='text-align:center;font-size:56px;'>📈</div>", unsafe_allow_html=True)
-        
+
         st.markdown(
             """
             <div style='text-align:center; margin:20px 0;'>
@@ -99,56 +110,260 @@ if st.session_state["user"] is None:
             """,
             unsafe_allow_html=True
         )
-        
-        # Formulario de login
-        with st.form("login_form", clear_on_submit=False):
-            username = st.text_input(
-                "Usuario",
-                placeholder="Tu usuario",
-                label_visibility="collapsed",
-                key="login_username"
+
+        # ----------------------------------------------------------------
+        # Vista: LOGIN
+        # ----------------------------------------------------------------
+        if st.session_state["_login_view"] == "login":
+
+            # RFC lookup (identifica el tenant antes de iniciar sesión)
+            rfc_input = st.text_input(
+                "RFC de tu empresa",
+                placeholder="Ej. XAXX010101000",
+                key="login_rfc",
+                help="Ingresa el RFC de la empresa para identificar tu cuenta. Déjalo vacío si eres superadministrador.",
             )
-            
-            password = st.text_input(
-                "Contraseña",
-                type="password",
-                placeholder="Tu contraseña",
-                label_visibility="collapsed",
-                key="login_password"
-            )
-            
-            submitted = st.form_submit_button(
-                "Ingresar →",
-                use_container_width=True,
-                type="primary"
-            )
-            
-            if submitted:
-                if not username or not password:
-                    st.error("❌ Ingresa usuario y contraseña")
+
+            # Mostrar nombre de empresa al escribir el RFC
+            empresa_encontrada = None
+            if rfc_input and len(rfc_input) >= 3:
+                empresa_encontrada = auth_manager.get_empresa_by_rfc(rfc_input)
+                if empresa_encontrada:
+                    st.success(
+                        f"🏢 **{empresa_encontrada['razon_social']}** "
+                        f"· Plan: {empresa_encontrada.get('plan', '—').capitalize()}"
+                    )
                 else:
-                    user = auth_manager.authenticate(username, password)
-                    
-                    if user:
-                        st.session_state["user"] = user
-                        st.session_state["empresa_id"] = user.empresa_id  # None = superadmin
-                        st.session_state["rfc_empresa"] = user.rfc_empresa
-                        st.session_state["empresa_nombre"] = user.empresa_nombre
-                        logger.info(f"Login exitoso: {user.username} ({user.role}) empresa={user.empresa_id}")
-                        st.success(f"¡Bienvenido, {user.name}! 👋")
+                    st.warning("⚠️ RFC no encontrado. Verifica o contacta al administrador.")
+
+            st.markdown("---")
+
+            # Formulario de credenciales
+            with st.form("login_form", clear_on_submit=False):
+                username = st.text_input(
+                    "Usuario",
+                    placeholder="Tu usuario",
+                    label_visibility="collapsed",
+                    key="login_username",
+                )
+                password = st.text_input(
+                    "Contraseña",
+                    type="password",
+                    placeholder="Tu contraseña",
+                    label_visibility="collapsed",
+                    key="login_password",
+                )
+                submitted = st.form_submit_button(
+                    "Ingresar →",
+                    use_container_width=True,
+                    type="primary",
+                )
+
+                if submitted:
+                    if not username or not password:
+                        st.error("❌ Ingresa usuario y contraseña")
+                    else:
+                        user = auth_manager.authenticate(username, password)
+
+                        if user:
+                            # Validar que el RFC indicado pertenece a alguna empresa del usuario
+                            rfc_val = rfc_input.strip().upper() if rfc_input else None
+                            rfcs_del_usuario = {e["rfc"].upper() for e in user.empresas}
+                            if (
+                                rfc_val
+                                and rfcs_del_usuario
+                                and rfc_val not in rfcs_del_usuario
+                            ):
+                                logger.warning(
+                                    f"Login rechazado: {username} no pertenece a RFC {rfc_val}"
+                                )
+                                st.error(
+                                    f"❌ El usuario '{username}' no tiene acceso a la empresa con RFC `{rfc_val}`."
+                                )
+                            elif rfc_val and not rfcs_del_usuario and not user.is_superadmin:
+                                st.error("❌ Este usuario no tiene empresas asignadas.")
+                            else:
+                                st.session_state["user"] = user
+                                st.session_state["_login_empresa"] = None
+                                # Auto-seleccionar empresa si solo tiene una (o es superadmin)
+                                if user.is_superadmin or len(user.empresas) <= 1:
+                                    st.session_state["empresa_id"] = user.empresa_id
+                                    st.session_state["rfc_empresa"] = user.rfc_empresa
+                                    st.session_state["empresa_nombre"] = user.empresa_nombre
+                                else:
+                                    # Múltiples empresas → pantalla de selección
+                                    st.session_state["empresa_id"] = None
+                                    st.session_state["rfc_empresa"] = None
+                                    st.session_state["empresa_nombre"] = None
+                                logger.info(
+                                    f"Login exitoso: {user.username} ({user.role}) "
+                                    f"empresas={len(user.empresas)}"
+                                )
+                                st.success(f"¡Bienvenido, {user.name}! 👋")
+                                st.rerun()
+                        else:
+                            logger.warning(f"Login fallido para: {username}")
+                            st.error("❌ Usuario o contraseña incorrectos")
+
+            # Enlace a solicitar acceso
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button(
+                "¿No tienes cuenta? Solicitar acceso →",
+                use_container_width=True,
+                key="btn_go_register",
+            ):
+                st.session_state["_login_view"] = "register"
+                st.rerun()
+
+            # Ayuda
+            st.markdown(
+                """
+                <div style='text-align:center; margin-top:16px; font-size:12px; color:#999;'>
+                    💡 Primer acceso: usuario <code>admin</code>, password por defecto<br>
+                    ¿Problemas? Contacta al administrador
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        # ----------------------------------------------------------------
+        # Vista: SOLICITAR ACCESO (auto-registro)
+        # ----------------------------------------------------------------
+        else:
+            st.markdown("#### 📝 Solicitar Acceso")
+            st.info(
+                "Completa el formulario. Tu cuenta quedará **pendiente de aprobación** "
+                "por el administrador de tu empresa."
+            )
+
+            with st.form("register_form", clear_on_submit=True):
+                reg_rfc = st.text_input(
+                    "RFC de tu empresa *",
+                    placeholder="Ej. XAXX010101000",
+                    help="RFC del emisor CFDI de tu empresa (12 o 13 caracteres)",
+                )
+
+                # Mostrar nombre de empresa en tiempo real (al hacer submit ya se valida)
+                reg_name = st.text_input("Nombre completo *", placeholder="Juan Pérez López")
+                reg_email = st.text_input("Email *", placeholder="juan@empresa.com")
+
+                col_u, col_p = st.columns(2)
+                with col_u:
+                    reg_username = st.text_input(
+                        "Usuario *",
+                        placeholder="juanperez",
+                        help="Mínimo 3 caracteres. Se usará para iniciar sesión.",
+                    )
+                with col_p:
+                    reg_password = st.text_input(
+                        "Contraseña *",
+                        type="password",
+                        help="Mínimo 6 caracteres",
+                    )
+
+                reg_submitted = st.form_submit_button(
+                    "Enviar solicitud →",
+                    use_container_width=True,
+                    type="primary",
+                )
+
+                if reg_submitted:
+                    ok, msg = auth_manager.register_user_request(
+                        username=reg_username,
+                        email=reg_email,
+                        name=reg_name,
+                        password=reg_password,
+                        rfc_empresa=reg_rfc,
+                    )
+                    if ok:
+                        st.success(f"✅ {msg}")
+                        st.session_state["_login_view"] = "login"
                         st.rerun()
                     else:
-                        logger.warning(f"Login fallido para: {username}")
-                        st.error("❌ Usuario o contraseña incorrectos")
-        
-        # Ayuda
-        st.markdown("""
-        <div style='text-align:center; margin-top:30px; font-size:12px; color:#999;'>
-            💡 Primer acceso: usuario <code>admin</code>, password por defecto<br>
-            ¿Problemas? Contacta al administrador
-        </div>
-        """, unsafe_allow_html=True)
-    
+                        st.error(f"❌ {msg}")
+
+            if st.button("← Volver al login", key="btn_back_login"):
+                st.session_state["_login_view"] = "login"
+                st.rerun()
+
+    st.stop()
+
+# =====================================================================
+# SELECTOR DE EMPRESA — si el usuario tiene acceso a múltiples tenants
+# =====================================================================
+_user_sel = st.session_state.get("user")
+if (
+    _user_sel
+    and not _user_sel.is_superadmin
+    and _user_sel.tiene_multiples_empresas
+    and not st.session_state.get("empresa_id")
+):
+    st.markdown("""
+    <style>
+        [data-testid="stSidebar"] { display: none !important; }
+        #MainMenu { visibility: hidden; }
+        footer { visibility: hidden; }
+        header { visibility: hidden; }
+    </style>
+    """, unsafe_allow_html=True)
+
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    col_l, col_c, col_r = st.columns([1, 1.6, 1])
+    with col_c:
+        if _DEFAULT_LOGO:
+            import base64 as _b64
+            _b64_logo = _b64.b64encode(_DEFAULT_LOGO).decode()
+            st.markdown(
+                f'<div style="display:flex;justify-content:center;">'
+                f'<img src="data:image/png;base64,{_b64_logo}" width="240"></div>',
+                unsafe_allow_html=True,
+            )
+
+        st.markdown(
+            f"""
+            <div style='text-align:center; margin:20px 0;'>
+                <h3>Selecciona tu empresa</h3>
+                <p style='color:#6b7280;'>Hola <strong>{_user_sel.name}</strong>, tienes acceso a
+                {len(_user_sel.empresas)} empresas. ¿Con cuál deseas continuar?</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        for emp in _user_sel.empresas:
+            with st.container(border=True):
+                col_info, col_btn = st.columns([3, 1])
+                with col_info:
+                    plan_label = emp.get("plan", "essential").capitalize()
+                    st.markdown(
+                        f"**{emp['razon_social']}**  \n"
+                        f"`{emp['rfc']}` &nbsp;·&nbsp; Plan: {plan_label}"
+                    )
+                with col_btn:
+                    if st.button(
+                        "Entrar →",
+                        key=f"sel_emp_{emp['id']}",
+                        use_container_width=True,
+                        type="primary",
+                    ):
+                        st.session_state["empresa_id"] = emp["id"]
+                        st.session_state["rfc_empresa"] = emp["rfc"]
+                        st.session_state["empresa_nombre"] = emp["razon_social"]
+                        # Actualizar campos activos en el objeto User
+                        _user_sel.empresa_id = emp["id"]
+                        _user_sel.rfc_empresa = emp["rfc"]
+                        _user_sel.empresa_nombre = emp["razon_social"]
+                        st.session_state["user"] = _user_sel
+                        logger.info(
+                            f"{_user_sel.username} seleccionó empresa {emp['rfc']}"
+                        )
+                        st.rerun()
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("🚪 Cerrar sesión", key="btn_logout_selector", use_container_width=True):
+            st.session_state.clear()
+            st.rerun()
+
     st.stop()
 
 # =====================================================================
