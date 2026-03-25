@@ -5,12 +5,15 @@ Proporciona funciones para generar reportes profesionales con formato
 que pueden compartirse con stakeholders.
 """
 
+import logging
 import pandas as pd
 import io
 import re
 from typing import Dict, Optional, List
 from datetime import datetime
 from utils.formatos import formato_moneda, formato_porcentaje
+
+logger = logging.getLogger(__name__)
 
 
 def crear_excel_metricas_cxc(
