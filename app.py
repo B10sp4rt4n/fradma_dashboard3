@@ -23,6 +23,7 @@ from main import kpi_cpc, reporte_ejecutivo, ytd_lineas, ytd_productos, reporte_
 from main import vendedores_cxc, herramientas_financieras, ingesta_cfdi
 from main import universo_cfdi
 from main import fiscal
+from main import mapa_clientes
 from main import knowledge_base
 from main import data_assistant
 from utils.data_cleaner import limpiar_columnas_texto, detectar_duplicados_similares
@@ -1554,6 +1555,7 @@ opciones_menu = [
     "📂 Cargar mis facturas",
     "📋 Universo de CFDIs",
     "🧾 Desglose Fiscal",
+    "📍 Mapa de Clientes",
     "📚 Knowledge Base"
 ]
 
@@ -1867,6 +1869,9 @@ elif menu == "📋 Universo de CFDIs":
 
 elif menu == "🧾 Desglose Fiscal":
     fiscal.run()
+
+elif menu == "📍 Mapa de Clientes":
+    mapa_clientes.run()
 
 elif menu == "�🤖 Asistente de Datos":
     # Asistente de consultas en lenguaje natural sobre DB CFDI
