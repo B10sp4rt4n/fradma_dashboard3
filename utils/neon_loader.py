@@ -82,7 +82,8 @@ def cargar_cfdi_como_df(empresa_id: str, neon_url: str | None = None) -> pd.Data
             cv.emisor_rfc,
             cv.emisor_nombre,
             cv.subtotal,
-            cv.impuestos
+            cv.impuestos,
+            cv.estatus
         FROM cfdi_ventas cv
         WHERE cv.empresa_id = %s
           AND cv.tipo_comprobante = 'I'

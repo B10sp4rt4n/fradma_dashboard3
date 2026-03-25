@@ -21,6 +21,7 @@ _DEFAULT_LOGO = open(_LOGO_PATH, "rb").read() if os.path.exists(_LOGO_PATH) else
 from main import main_kpi, main_comparativo, heatmap_ventas
 from main import kpi_cpc, reporte_ejecutivo, ytd_lineas, ytd_productos, reporte_consolidado
 from main import vendedores_cxc, herramientas_financieras, ingesta_cfdi
+from main import universo_cfdi
 from main import knowledge_base
 from main import data_assistant
 from utils.data_cleaner import limpiar_columnas_texto, detectar_duplicados_similares
@@ -1550,7 +1551,8 @@ opciones_menu = [
     "👥 Vendedores + CxC",
     "🧰 Herramientas Financieras",
     "📂 Cargar mis facturas",
-    "📚 Knowledge Base"
+    "� Universo de CFDIs",
+    "�📚 Knowledge Base"
 ]
 
 # Si el usuario puede usar IA, agregar el asistente
@@ -1857,6 +1859,9 @@ elif menu == "🧰 Herramientas Financieras":
 elif menu == "📂 Cargar mis facturas":
     # La ingesta de CFDIs no requiere datos cargados previamente
     ingesta_cfdi.main()
+
+elif menu == "📋 Universo de CFDIs":
+    universo_cfdi.run()
 
 elif menu == "🤖 Asistente de Datos":
     # Asistente de consultas en lenguaje natural sobre DB CFDI

@@ -89,7 +89,10 @@ CREATE TABLE cfdi_ventas (
     
     -- Almacenamiento XML completo para auditoría
     xml_original TEXT,
-    
+
+    -- Estatus fiscal del CFDI
+    estatus VARCHAR(20) DEFAULT 'vigente' CHECK (estatus IN ('vigente', 'cancelado')),
+
     -- Metadata
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
