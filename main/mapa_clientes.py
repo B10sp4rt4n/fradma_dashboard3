@@ -256,34 +256,47 @@ def run():
     else:
         df_map["total_mxn_fmt"] = df_map["total_mxn"].apply(lambda x: f"${x:,.2f}")
         df_map["cliente_hover"] = df_map["cliente_principal"].fillna("Mostrador")
-        df_map["clientes_lista_hover"] = df_map["clientes_lista"].fillna("")
 
-        fig_map = px.scatter_map(
-            df_map,
-            lat="lat",
-            lon="lon",
-            size=metrica,
-            color="total_mxn",
-            color_continuous_scale=px.colors.sequential.Plasma,
-            size_max=55,
-            zoom=4.2,
-            center={"lat": 22.5, "lon": -100.5},
-            map_style="open-street-map",
-            custom_data=["cp", "estado", "clientes", "facturas", "total_mxn_fmt", "cliente_hover"],
-            height=540,
-        )
-        fig_map.update_traces(
-            hovertemplate=(
-                "<b>CP %{customdata[0]}</b> · %{customdata[1]}<br>"
-                "Cliente principal: %{customdata[5]}<br>"
-                "Clientes: %{customdata[2]} · Facturas: %{customdata[3]}<br>"
-                "Total facturado: %{customdata[4]}"
-                "<extra></extra>"
-            )
-        )
+        # Tamaño de burbuja normalizado (mínimo 8, máximo 55 px)
+        valores = df_map[metrica].astype(float)
+        v_min, v_max = valores.min(), valores.max()
+        if v_max > v_min:
+            sizes = 8 + (valores - v_min) / (v_max - v_min) * 47
+        else:
+            sizes = valores * 0 + 20
+
+        hover_text = [
+            f"<b>CP {row['cp']}</b> · {row['estado']}<br>"
+            f"Cliente principal: {row['cliente_hover']}<br>"
+            f"Clientes: {int(row['clientes'])} · Facturas: {int(row['facturas'])}<br>"
+            f"Total: {row['total_mxn_fmt']}"
+            for _, row in df_map.iterrows()
+        ]
+
+        fig_map = go.Figure(go.Scattermap(
+            lat=df_map["lat"],
+            lon=df_map["lon"],
+            mode="markers",
+            marker=go.scattermap.Marker(
+                size=sizes,
+                color=df_map["total_mxn"].astype(float),
+                colorscale="Plasma",
+                showscale=True,
+                colorbar=dict(title="MXN", tickformat="$,.0f"),
+                sizemode="diameter",
+                opacity=0.8,
+            ),
+            text=hover_text,
+            hoverinfo="text",
+        ))
         fig_map.update_layout(
+            map=dict(
+                style="open-street-map",
+                center=dict(lat=22.5, lon=-100.5),
+                zoom=4.2,
+            ),
             margin={"r": 0, "t": 0, "l": 0, "b": 0},
-            coloraxis_colorbar=dict(title="MXN", tickformat="$,.0f"),
+            height=540,
         )
         st.plotly_chart(fig_map, use_container_width=True)
 
