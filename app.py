@@ -1873,7 +1873,7 @@ elif menu == "🧾 Desglose Fiscal":
 elif menu == "📍 Mapa de Clientes":
     mapa_clientes.run()
 
-elif menu == "�🤖 Asistente de Datos":
+elif menu == "🤖 Asistente de Datos":
     # Asistente de consultas en lenguaje natural sobre DB CFDI
     data_assistant.run()
 
