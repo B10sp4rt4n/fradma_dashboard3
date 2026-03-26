@@ -73,6 +73,10 @@ def calcular_ytd(df, año, fecha_corte=None):
     if fecha_corte is None:
         fecha_corte = now_mx()
     
+    # Normalizar fecha_corte a naive para comparar con df['fecha'] (timezone-naive)
+    if hasattr(fecha_corte, 'tzinfo') and fecha_corte.tzinfo is not None:
+        fecha_corte = fecha_corte.replace(tzinfo=None)
+    
     # Filtrar año y hasta fecha de corte
     df_año = df[df['fecha'].dt.year == año].copy()
     df_ytd = df_año[df_año['fecha'] <= fecha_corte].copy()
@@ -104,7 +108,7 @@ def calcular_metricas_ytd(df_ytd):
         inicio_año = datetime(año_datos, 1, 1)
         # Si es año actual, usar fecha actual; si es histórico, usar 31 dic
         if año_datos == now_mx().year:
-            fecha_fin = now_mx()
+            fecha_fin = now_mx().replace(tzinfo=None)
         else:
             fecha_fin = datetime(año_datos, 12, 31)
         dias_transcurridos = (fecha_fin - inicio_año).days + 1
