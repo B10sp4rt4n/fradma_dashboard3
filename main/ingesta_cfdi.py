@@ -987,67 +987,86 @@ def main():
                         st.error("URL inválida. Debe comenzar con postgresql://")
                         neon_url = None
             
+            # Empresa del usuario logueado (desde session_state)
+            _session_empresa_id = st.session_state.get("empresa_id")
+            _session_empresa_nombre = st.session_state.get("empresa_nombre", "")
+            _user = st.session_state.get("user")
+            _is_admin = bool(_user and hasattr(_user, "can_manage_users") and _user.can_manage_users())
+
             empresa_id = None
-            
-            # Obtener empresas existentes de Neon
-            empresas_opciones = {}
-            if neon_url:
-                try:
-                    import psycopg2 as _pg
-                    _conn = _pg.connect(neon_url)
-                    _cur = _conn.cursor()
-                    _cur.execute("SELECT id, rfc, razon_social FROM empresas ORDER BY razon_social;")
-                    for row in _cur.fetchall():
-                        label = f"{row[2]} ({row[1]})" if row[2] else str(row[1])
-                        empresas_opciones[label] = str(row[0])
-                    _cur.close()
-                    _conn.close()
-                except Exception:
-                    pass
-            
-            if empresas_opciones:
-                opciones = list(empresas_opciones.keys()) + ["➕ Crear nueva empresa..."]
-                seleccion = st.selectbox(
-                    "Empresa",
-                    opciones,
-                    help="Selecciona la empresa a la que pertenecen estos CFDIs"
-                )
-                
-                if seleccion == "➕ Crear nueva empresa...":
+
+            if _session_empresa_id and not _is_admin:
+                # Usuario normal: fija automáticamente su empresa, sin selector
+                empresa_id = str(_session_empresa_id)
+                st.info(f"📁 Empresa: **{_session_empresa_nombre}**")
+            else:
+                # Admin: muestra selector con todas las empresas
+                empresas_opciones = {}
+                if neon_url:
+                    try:
+                        import psycopg2 as _pg
+                        _conn = _pg.connect(neon_url)
+                        _cur = _conn.cursor()
+                        _cur.execute("SELECT id, rfc, razon_social FROM empresas ORDER BY razon_social;")
+                        for row in _cur.fetchall():
+                            label = f"{row[2]} ({row[1]})" if row[2] else str(row[1])
+                            empresas_opciones[label] = str(row[0])
+                        _cur.close()
+                        _conn.close()
+                    except Exception:
+                        pass
+
+                if empresas_opciones:
+                    opciones = list(empresas_opciones.keys()) + ["➕ Crear nueva empresa..."]
+                    # Pre-seleccionar la empresa del admin si existe
+                    idx_default = 0
+                    if _session_empresa_nombre:
+                        for i, op in enumerate(opciones):
+                            if _session_empresa_nombre in op:
+                                idx_default = i
+                                break
+                    seleccion = st.selectbox(
+                        "Empresa",
+                        opciones,
+                        index=idx_default,
+                        help="Selecciona la empresa a la que pertenecen estos CFDIs"
+                    )
+
+                    if seleccion == "➕ Crear nueva empresa...":
+                        col_rfc, col_razon = st.columns(2)
+                        with col_rfc:
+                            nuevo_rfc = st.text_input("RFC de la empresa", max_chars=13)
+                        with col_razon:
+                            nueva_razon = st.text_input("Razón social")
+
+                        if nuevo_rfc and nueva_razon:
+                            if st.button("➕ Crear empresa"):
+                                try:
+                                    import psycopg2 as _pg2
+                                    _conn2 = _pg2.connect(neon_url)
+                                    _cur2 = _conn2.cursor()
+                                    _cur2.execute(
+                                        "INSERT INTO empresas (rfc, razon_social) VALUES (%s, %s) RETURNING id;",
+                                        (nuevo_rfc.upper().strip(), nueva_razon.strip())
+                                    )
+                                    new_id = _cur2.fetchone()[0]
+                                    _conn2.commit()
+                                    _cur2.close()
+                                    _conn2.close()
+                                    empresa_id = str(new_id)
+                                    st.success(f"✅ Empresa creada con ID: {empresa_id}")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error creando empresa: {e}")
+                    else:
+                        empresa_id = empresas_opciones[seleccion]
+                else:
+                    st.warning("No hay empresas registradas en Neon. Se creará automáticamente al ingestar.")
                     col_rfc, col_razon = st.columns(2)
                     with col_rfc:
-                        nuevo_rfc = st.text_input("RFC de la empresa", max_chars=13)
+                        nuevo_rfc = st.text_input("RFC de la empresa", max_chars=13, key="rfc_new")
                     with col_razon:
-                        nueva_razon = st.text_input("Razón social")
-                    
-                    if nuevo_rfc and nueva_razon:
-                        if st.button("➕ Crear empresa"):
-                            try:
-                                import psycopg2 as _pg2
-                                _conn2 = _pg2.connect(neon_url)
-                                _cur2 = _conn2.cursor()
-                                _cur2.execute(
-                                    "INSERT INTO empresas (rfc, razon_social) VALUES (%s, %s) RETURNING id;",
-                                    (nuevo_rfc.upper().strip(), nueva_razon.strip())
-                                )
-                                new_id = _cur2.fetchone()[0]
-                                _conn2.commit()
-                                _cur2.close()
-                                _conn2.close()
-                                empresa_id = str(new_id)
-                                st.success(f"✅ Empresa creada con ID: {empresa_id}")
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Error creando empresa: {e}")
-                else:
-                    empresa_id = empresas_opciones[seleccion]
-            else:
-                st.warning("No hay empresas registradas en Neon. Se creará automáticamente al ingestar.")
-                col_rfc, col_razon = st.columns(2)
-                with col_rfc:
-                    nuevo_rfc = st.text_input("RFC de la empresa", max_chars=13, key="rfc_new")
-                with col_razon:
-                    nueva_razon = st.text_input("Razón social", key="razon_new")
+                        nueva_razon = st.text_input("Razón social", key="razon_new")
             
             if neon_url and st.button("🔌 Probar conexión"):
                 with st.spinner("Probando conexión a Neon..."):
