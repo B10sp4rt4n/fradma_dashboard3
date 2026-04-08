@@ -183,16 +183,23 @@ def run():
 
     # ── Cargar CxC ────────────────────────────────────────────────────────────
     df_cxc_raw = None
-    try:
-        archivo_excel = st.session_state["archivo_excel"]
-        hojas = pd.ExcelFile(archivo_excel).sheet_names
-        hoja_cxc = next(
-            (h for h in hojas if "cxc" in h.lower() or "cuenta" in h.lower()), None
-        )
-        if hoja_cxc:
-            df_cxc_raw = normalizar_columnas(pd.read_excel(archivo_excel, sheet_name=hoja_cxc))
-    except Exception as e:
-        logger.exception(f"Error leyendo hoja CxC: {e}")
+
+    # Prioridad 1: CxC pre-cargado por app.py (soporta múltiples hojas combinadas)
+    if "df_cxc" in st.session_state:
+        df_cxc_raw = st.session_state["df_cxc"].copy()
+        logger.info(f"CxC cargado desde session_state ({len(df_cxc_raw)} registros)")
+    else:
+        # Prioridad 2: leer desde el archivo Excel original (comportamiento anterior)
+        try:
+            archivo_excel = st.session_state["archivo_excel"]
+            hojas = pd.ExcelFile(archivo_excel).sheet_names
+            hoja_cxc = next(
+                (h for h in hojas if "cxc" in h.lower() or "cuenta" in h.lower()), None
+            )
+            if hoja_cxc:
+                df_cxc_raw = normalizar_columnas(pd.read_excel(archivo_excel, sheet_name=hoja_cxc))
+        except Exception as e:
+            logger.exception(f"Error leyendo hoja CxC: {e}")
 
     if df_cxc_raw is None or df_cxc_raw.empty:
         st.error(

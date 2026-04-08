@@ -558,6 +558,10 @@ def cargar_excel_puro(archivo_bytes, archivo_nombre, hoja_seleccionada=None):
         elif "X AGENTE" in hojas:
             hoja = "X AGENTE"
             metadata["es_x_agente"] = True
+        elif any(h.lower() in ("vtas sae", "ventas sae", "ventas", "vtas") for h in hojas):
+            # Formato CIMA/SAE: hoja de ventas con nombre conocido
+            hoja = next(h for h in hojas if h.lower() in ("vtas sae", "ventas sae", "ventas", "vtas"))
+            metadata["es_vtas_sae"] = True
         else:
             # Si no se especificó hoja y no existe X AGENTE, usar la primera
             hoja = hojas[0]
@@ -632,6 +636,8 @@ def detectar_y_cargar_archivo(archivo_bytes, archivo_nombre, hoja_seleccionada=N
             st.error("❌ No existe columna 'fecha' en X AGENTE para poder generar 'año' y 'mes'.")
         elif metadata.get("fecha_error"):
             st.error(f"❌ Error al procesar la columna 'fecha' en X AGENTE: {metadata['fecha_error']}")
+    elif metadata.get("es_vtas_sae"):
+        st.info(f"📌 Hoja de ventas **'{metadata['hoja_leida']}'** detectada automáticamente (formato SAE/CIMA).")
     elif metadata.get("unica_hoja"):
         st.info(f"✅ Solo una hoja encontrada: **{metadata['hoja_leida']}**. Procediendo con detección CONTPAQi.")
         if metadata.get("es_contpaqi"):
@@ -1034,14 +1040,40 @@ if archivo:
             # Obtener hojas disponibles (sin caché)
             hojas = obtener_hojas_excel(archivo_bytes)
             
-            # Si hay múltiples hojas y no existe X AGENTE, permitir selección
+            # Si hay múltiples hojas y no existe X AGENTE ni hoja de ventas conocida, permitir selección
+            _HOJAS_VENTAS_CONOCIDAS = {"vtas sae", "ventas sae", "ventas", "vtas", "x agente"}
             hoja_seleccionada = None
-            if len(hojas) > 1 and "X AGENTE" not in hojas:
+            if len(hojas) > 1 and not any(h.lower() in _HOJAS_VENTAS_CONOCIDAS for h in hojas):
                 st.warning("⚠️ Múltiples hojas detectadas. Selecciona la hoja a leer:")
                 hoja_seleccionada = st.sidebar.selectbox("📄 Selecciona la hoja a leer", hojas)
             
             df = detectar_y_cargar_archivo(archivo_bytes, archivo.name, hoja_seleccionada)
             logger.info(f"Excel cargado en {(pd.Timestamp.now() - inicio_carga).total_seconds():.2f}s")
+
+            # ── Pre-cargar hojas CxC para módulos KPI CxC y Vendedores+CxC ──
+            _hojas_cxc = [h for h in hojas if "cxc" in h.lower() or "cuenta" in h.lower() or "cobrar" in h.lower()]
+            if _hojas_cxc:
+                _dfs_cxc = []
+                for _h in _hojas_cxc:
+                    try:
+                        _df_h = normalizar_columnas(pd.read_excel(archivo_bytes, sheet_name=_h))
+                        _df_h["_hoja_origen"] = _h
+                        _dfs_cxc.append(_df_h)
+                    except Exception as _e:
+                        logger.warning(f"No se pudo leer hoja CxC '{_h}': {_e}")
+                if _dfs_cxc:
+                    st.session_state["df_cxc"] = pd.concat(_dfs_cxc, ignore_index=True)
+                    logger.info(f"Hojas CxC pre-cargadas en session_state: {_hojas_cxc}")
+
+            # ── Pre-cargar hoja CXPG (Cuentas por Pagar) si existe ───────────
+            _hojas_cxp = [h for h in hojas if h.upper().startswith("CXPG") or "pagar" in h.lower() or h.upper() in ("CXP", "CX PAG")]
+            if _hojas_cxp:
+                try:
+                    _df_cxp = normalizar_columnas(pd.read_excel(archivo_bytes, sheet_name=_hojas_cxp[0]))
+                    st.session_state["df_cxp"] = _df_cxp
+                    logger.info(f"Hoja CxP pre-cargada: {_hojas_cxp[0]}")
+                except Exception as _e:
+                    logger.warning(f"No se pudo leer hoja CxP '{_hojas_cxp[0]}': {_e}")
 
         # Guardar archivo original para KPI CxC
         st.session_state["archivo_excel"] = archivo

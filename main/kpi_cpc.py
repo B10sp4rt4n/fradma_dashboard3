@@ -81,18 +81,45 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
         xls = pd.ExcelFile(archivo)
         hojas = xls.sheet_names
         
-        if "CXC VIGENTES" not in hojas or "CXC VENCIDAS" not in hojas:
-            st.error("❌ No se encontraron las hojas requeridas: 'CXC VIGENTES' y 'CXC VENCIDAS'.")
-            return
+        if "CXC VIGENTES" in hojas and "CXC VENCIDAS" in hojas:
+            st.info("✅ Fuente: Hojas 'CXC VIGENTES' y 'CXC VENCIDAS'")
 
-        st.info("✅ Fuente: Hojas 'CXC VIGENTES' y 'CXC VENCIDAS'")
+            # Leer y normalizar datos
+            df_vigentes = pd.read_excel(xls, sheet_name='CXC VIGENTES')
+            df_vencidas = pd.read_excel(xls, sheet_name='CXC VENCIDAS')
+            
+            df_vigentes = normalizar_columnas(df_vigentes)
+            df_vencidas = normalizar_columnas(df_vencidas)
 
-        # Leer y normalizar datos
-        df_vigentes = pd.read_excel(xls, sheet_name='CXC VIGENTES')
-        df_vencidas = pd.read_excel(xls, sheet_name='CXC VENCIDAS')
-        
-        df_vigentes = normalizar_columnas(df_vigentes)
-        df_vencidas = normalizar_columnas(df_vencidas)
+        else:
+            # Fallback: buscar cualquier hoja con "cxc" en el nombre (ej. CXC VG, CXC VCD)
+            _hojas_cxc_alt = [h for h in hojas if "cxc" in h.lower()]
+            if not _hojas_cxc_alt:
+                st.error(
+                    "❌ No se encontraron hojas de CxC. "
+                    "Se requieren hojas 'CXC VIGENTES' + 'CXC VENCIDAS', "
+                    "o cualquier hoja con 'CXC' en el nombre."
+                )
+                return
+
+            _df_all = pd.concat(
+                [normalizar_columnas(pd.read_excel(xls, sheet_name=h)) for h in _hojas_cxc_alt],
+                ignore_index=True, sort=False
+            )
+            st.info(f"✅ Fuente: Hojas CxC alternativas ({', '.join(_hojas_cxc_alt)})")
+
+            # Usar dias_vencido para separar vigentes / vencidas
+            _col_dias = next(
+                (c for c in ("dias_vencido", "dias_vencidos") if c in _df_all.columns), None
+            )
+            if _col_dias:
+                _df_all[_col_dias] = pd.to_numeric(_df_all[_col_dias], errors="coerce").fillna(0)
+                df_vigentes = _df_all[_df_all[_col_dias] <= 0].copy()
+                df_vencidas = _df_all[_df_all[_col_dias] > 0].copy()
+            else:
+                # Sin columna de días → toda la cartera como vigente
+                df_vigentes = _df_all.copy()
+                df_vencidas = pd.DataFrame(columns=_df_all.columns)
         
         # Renombrar columnas clave - PRIORIZAR COLUMNA F (CLIENTE)
         for df in [df_vigentes, df_vencidas]:
