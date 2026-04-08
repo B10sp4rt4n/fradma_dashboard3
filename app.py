@@ -570,20 +570,23 @@ def cargar_excel_puro(archivo_bytes, archivo_nombre, hoja_seleccionada=None):
         df = pd.read_excel(xls, sheet_name=hoja)
         df = normalizar_columnas(df)
 
-        # Generación virtual de columnas año y mes para X AGENTE
-        if hoja == "X AGENTE":
-            metadata["es_x_agente"] = True
+        # Generación virtual de columnas año y mes desde columna fecha
+        if hoja == "X AGENTE" or metadata.get("es_vtas_sae"):
+            if hoja == "X AGENTE":
+                metadata["es_x_agente"] = True
             if "fecha" in df.columns:
                 try:
                     df["fecha"] = pd.to_datetime(df["fecha"], errors="coerce")
-                    df["año"] = df["fecha"].dt.year
-                    df["mes"] = df["fecha"].dt.month
+                    if "año" not in df.columns:
+                        df["año"] = df["fecha"].dt.year
+                    if "mes" not in df.columns:
+                        df["mes"] = df["fecha"].dt.month
                     metadata["fecha_procesada"] = True
                 except Exception as e:
                     logger.exception(f"Error al procesar fecha: {e}")
                     metadata["fecha_error"] = str(e)
             else:
-                logger.warning("Columna 'fecha' no encontrada en X AGENTE")
+                logger.warning(f"Columna 'fecha' no encontrada en hoja '{hoja}'")
                 metadata["fecha_no_encontrada"] = True
 
     else:
