@@ -137,6 +137,26 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
             _empty_cols = _dfs_vig[0].columns if _dfs_vig else (_dfs_vec[0].columns if _dfs_vec else [])
             df_vigentes = pd.concat(_dfs_vig, ignore_index=True) if _dfs_vig else pd.DataFrame(columns=_empty_cols)
             df_vencidas = pd.concat(_dfs_vec, ignore_index=True) if _dfs_vec else pd.DataFrame(columns=_empty_cols)
+
+            # ── Fijar dias_vencido para que calcular_dias_overdue no recalcule ──
+            # calcular_dias_overdue usa fecha_pago como fallback, lo que reclasifica
+            # facturas con fecha_pago pasada (aunque sean vigentes) como vencidas.
+            # Al forzar el valor aquí (solo en este path), el Método 1 de la función
+            # lo usa directamente sin caer en los fallbacks de fecha.
+            if not df_vigentes.empty:
+                if 'dias_vencido' not in df_vigentes.columns:
+                    df_vigentes['dias_vencido'] = -1
+                else:
+                    _dv = pd.to_numeric(df_vigentes['dias_vencido'], errors='coerce')
+                    df_vigentes['dias_vencido'] = _dv.fillna(-1)
+
+            if not df_vencidas.empty:
+                if 'dias_vencido' not in df_vencidas.columns:
+                    df_vencidas['dias_vencido'] = 1
+                else:
+                    _dv = pd.to_numeric(df_vencidas['dias_vencido'], errors='coerce')
+                    # Si el valor es null o <= 0, poner 1 (mínimo 1 día vencido)
+                    df_vencidas['dias_vencido'] = _dv.where(_dv > 0, 1)
         
         # Renombrar columnas clave - PRIORIZAR COLUMNA F (CLIENTE)
         for df in [df_vigentes, df_vencidas]:
