@@ -1952,24 +1952,35 @@ elif menu == "📊 Reporte Consolidado":
                     # Combinar ambas hojas
                     df_cxc = pd.concat([df_vigentes, df_vencidas], ignore_index=True, sort=False)
                     
-                # Prioridad 2: Buscar hoja genérica de CxC
+                # Prioridad 2: Combinar todas las hojas CxC respetando VG=vigente / VCD=vencida
                 else:
-                    hoja_cxc = None
-                    for nombre_hoja in hojas:
-                        if "cxc" in nombre_hoja.lower() or "cuenta" in nombre_hoja.lower() or "cobrar" in nombre_hoja.lower():
-                            hoja_cxc = nombre_hoja
-                            break
-                    
-                    if hoja_cxc:
-                        df_cxc_raw = pd.read_excel(xls, sheet_name=hoja_cxc)
-                        # Normalizar columnas
-                        df_cxc = df_cxc_raw.copy()
-                        nuevas_columnas = []
-                        for col in df_cxc.columns:
-                            col_str = str(col).lower().strip().replace(" ", "_")
-                            col_str = unidecode(col_str)
-                            nuevas_columnas.append(col_str)
-                        df_cxc.columns = nuevas_columnas
+                    _hojas_cxc_rc = [
+                        h for h in hojas
+                        if "cxc" in h.lower() or "cuenta" in h.lower() or "cobrar" in h.lower()
+                    ]
+                    if _hojas_cxc_rc:
+                        _dfs_rc = []
+                        for _h in _hojas_cxc_rc:
+                            _df_h = normalizar_columnas(pd.read_excel(xls, sheet_name=_h))
+                            _n = _h.upper()
+                            if any(k in _n for k in ("VG", "VIGENTE")):
+                                # Forzar dias_vencido negativo para que preparar_datos_cxc lo marque como vigente
+                                for _c in ("dias_vencido", "dias_vencidos"):
+                                    if _c in _df_h.columns:
+                                        _df_h[_c] = -pd.to_numeric(_df_h[_c], errors="coerce").abs()
+                                        break
+                            elif any(k in _n for k in ("VCD", "VENCID")):
+                                # Forzar dias_vencido positivo si está vacío
+                                for _c in ("dias_vencido", "dias_vencidos"):
+                                    if _c in _df_h.columns:
+                                        _vals = pd.to_numeric(_df_h[_c], errors="coerce")
+                                        _df_h[_c] = _vals.where(_vals.notna() & (_vals > 0), 1)
+                                        break
+                                    else:
+                                        _df_h["dias_vencido"] = 1
+                                        break
+                            _dfs_rc.append(_df_h)
+                        df_cxc = pd.concat(_dfs_rc, ignore_index=True, sort=False) if _dfs_rc else pd.DataFrame()
                     else:
                         df_cxc = pd.DataFrame()
                 

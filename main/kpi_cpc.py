@@ -102,24 +102,41 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                 )
                 return
 
-            _df_all = pd.concat(
-                [normalizar_columnas(pd.read_excel(xls, sheet_name=h)) for h in _hojas_cxc_alt],
-                ignore_index=True, sort=False
-            )
             st.info(f"✅ Fuente: Hojas CxC alternativas ({', '.join(_hojas_cxc_alt)})")
 
-            # Usar dias_vencido para separar vigentes / vencidas
-            _col_dias = next(
-                (c for c in ("dias_vencido", "dias_vencidos") if c in _df_all.columns), None
-            )
-            if _col_dias:
-                _df_all[_col_dias] = pd.to_numeric(_df_all[_col_dias], errors="coerce").fillna(0)
-                df_vigentes = _df_all[_df_all[_col_dias] <= 0].copy()
-                df_vencidas = _df_all[_df_all[_col_dias] > 0].copy()
-            else:
-                # Sin columna de días → toda la cartera como vigente
-                df_vigentes = _df_all.copy()
-                df_vencidas = pd.DataFrame(columns=_df_all.columns)
+            # Clasificar por nombre de hoja:
+            # VG / VIGENTE / VIGENTES  →  vigente
+            # VCD / VENCIDA / VENCIDAS →  vencida
+            def _es_vigente(nombre_hoja: str) -> bool:
+                n = nombre_hoja.upper()
+                return any(k in n for k in ("VG", "VIGENTE"))
+
+            def _es_vencida(nombre_hoja: str) -> bool:
+                n = nombre_hoja.upper()
+                return any(k in n for k in ("VCD", "VENCID"))
+
+            _dfs_vig, _dfs_vec = [], []
+            for _h in _hojas_cxc_alt:
+                _df_h = normalizar_columnas(pd.read_excel(xls, sheet_name=_h))
+                if _es_vigente(_h):
+                    _dfs_vig.append(_df_h)
+                elif _es_vencida(_h):
+                    _dfs_vec.append(_df_h)
+                else:
+                    # Si no se puede determinar por nombre usar dias_vencido
+                    _col_dias = next(
+                        (c for c in ("dias_vencido", "dias_vencidos") if c in _df_h.columns), None
+                    )
+                    if _col_dias:
+                        _df_h[_col_dias] = pd.to_numeric(_df_h[_col_dias], errors="coerce").fillna(0)
+                        _dfs_vig.append(_df_h[_df_h[_col_dias] <= 0].copy())
+                        _dfs_vec.append(_df_h[_df_h[_col_dias] > 0].copy())
+                    else:
+                        _dfs_vig.append(_df_h)
+
+            _empty_cols = _dfs_vig[0].columns if _dfs_vig else (_dfs_vec[0].columns if _dfs_vec else [])
+            df_vigentes = pd.concat(_dfs_vig, ignore_index=True) if _dfs_vig else pd.DataFrame(columns=_empty_cols)
+            df_vencidas = pd.concat(_dfs_vec, ignore_index=True) if _dfs_vec else pd.DataFrame(columns=_empty_cols)
         
         # Renombrar columnas clave - PRIORIZAR COLUMNA F (CLIENTE)
         for df in [df_vigentes, df_vencidas]:
