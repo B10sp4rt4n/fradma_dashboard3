@@ -1063,31 +1063,33 @@ if archivo:
                         _df_h["_hoja_origen"] = _h
 
                         # ── Preservar clasificación vigente/vencida del Excel ──────────
-                        # Problema original: si solo existe 'fecha_pago' como columna,
-                        # calcular_dias_overdue la usa como fallback → facturas de hace
-                        # meses aparecen vencidas aunque estén en hoja de vigentes.
-                        # Solución: solo forzar la clasificación cuando el Excel NO tiene
-                        # columnas propias de días/vencimiento; si las tiene, confiar en ellas.
+                        # Problema: si dias_vencido existe pero está vacío (todo NaN),
+                        # calcular_dias_overdue cae al fallback fecha_pago y clasifica
+                        # mal (todo vigente o todo vencido según la fecha tentativa).
+                        # Solución: verificar que la columna exista Y tenga valores reales.
                         _nh = _h.upper()
                         _es_vigente_hoja = any(k in _nh for k in ("VG", "VIGENTE", "VIGENTES"))
                         _es_vencida_hoja = any(k in _nh for k in ("VCD", "VENCID"))
 
-                        # ¿El Excel ya tiene columnas de días o fechas de vencimiento propias?
-                        _cols_dias_propias = [c for c in (
-                            "dias_vencido", "dias_restante", "dias_restantes",
-                            "vencimiento", "fecha_vencimiento"
-                        ) if c in _df_h.columns]
+                        def _col_tiene_valores(df, col):
+                            if col not in df.columns:
+                                return False
+                            return pd.to_numeric(df[col], errors="coerce").notna().any()
 
-                        if not _cols_dias_propias:
-                            # Sin columnas de días: usar el nombre de la hoja para clasificar
+                        # ¿El Excel tiene columnas con valores reales para calcular vencimiento?
+                        _tiene_dias_validos = any(
+                            _col_tiene_valores(_df_h, c)
+                            for c in ("dias_vencido", "dias_restante", "dias_restantes",
+                                      "vencimiento", "fecha_vencimiento")
+                        )
+
+                        if not _tiene_dias_validos:
+                            # Sin datos propios: clasificar por nombre de hoja
                             if _es_vigente_hoja:
-                                # Forzar vigente para evitar fallback de fecha_pago
                                 _df_h["dias_vencido"] = -1
                             elif _es_vencida_hoja:
-                                # Forzar vencida mínima para que se cuente como overdue
                                 _df_h["dias_vencido"] = 1
-                        # Si hay columnas propias → no tocar nada, calcular_dias_overdue
-                        # las usará por prioridad (Métodos 1-3) sin caer en el fallback
+                        # Si hay columnas con valores reales → no tocar nada
 
                         _dfs_cxc.append(_df_h)
                     except Exception as _e:

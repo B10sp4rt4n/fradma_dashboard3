@@ -227,7 +227,15 @@ def run():
             _dv_sample = pd.to_numeric(df_cxc_raw["dias_vencido"], errors="coerce")
             _pos = (_dv_sample > 0).sum()
             _neg = (_dv_sample <= 0).sum()
-            st.write(f"**`dias_vencido` en datos:** {_pos} vencidas (> 0) · {_neg} vigentes (≤ 0)")
+            _nan = _dv_sample.isna().sum()
+            if _nan == len(df_cxc_raw):
+                st.error(
+                    f"⚠️ La columna `dias_vencido` existe pero tiene **todos los valores vacíos** ({_nan} NaN). "
+                    "El sistema clasificará por nombre de hoja (CXC VG → vigente, CXC VCD → vencida). "
+                    "Recarga el archivo para que el fix tome efecto."
+                )
+            else:
+                st.write(f"**`dias_vencido` en datos:** {_pos} vencidas (> 0) · {_neg} vigentes (≤ 0) · {_nan} sin valor")
         elif "dias_restante" in df_cxc_raw.columns or "dias_restantes" in df_cxc_raw.columns:
             _cr = "dias_restante" if "dias_restante" in df_cxc_raw.columns else "dias_restantes"
             _dr_sample = pd.to_numeric(df_cxc_raw[_cr], errors="coerce")
