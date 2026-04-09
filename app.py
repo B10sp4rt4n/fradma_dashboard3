@@ -1063,26 +1063,31 @@ if archivo:
                         _df_h["_hoja_origen"] = _h
 
                         # ── Preservar clasificación vigente/vencida del Excel ──────────
-                        # Si no se hace esto, preparar_datos_cxc recalcula dias_overdue
-                        # desde la fecha de emisión y convierte vigentes en vencidas.
-                        # Se replica la misma lógica que usa kpi_cpc.py.
+                        # Problema original: si solo existe 'fecha_pago' como columna,
+                        # calcular_dias_overdue la usa como fallback → facturas de hace
+                        # meses aparecen vencidas aunque estén en hoja de vigentes.
+                        # Solución: solo forzar la clasificación cuando el Excel NO tiene
+                        # columnas propias de días/vencimiento; si las tiene, confiar en ellas.
                         _nh = _h.upper()
                         _es_vigente_hoja = any(k in _nh for k in ("VG", "VIGENTE", "VIGENTES"))
                         _es_vencida_hoja = any(k in _nh for k in ("VCD", "VENCID"))
 
-                        if _es_vigente_hoja:
-                            # Forzar negativo para que calcular_dias_overdue use este valor
-                            # sin caer en los fallbacks de fecha (Método 1 en la función)
-                            if "dias_vencido" not in _df_h.columns:
+                        # ¿El Excel ya tiene columnas de días o fechas de vencimiento propias?
+                        _cols_dias_propias = [c for c in (
+                            "dias_vencido", "dias_restante", "dias_restantes",
+                            "vencimiento", "fecha_vencimiento"
+                        ) if c in _df_h.columns]
+
+                        if not _cols_dias_propias:
+                            # Sin columnas de días: usar el nombre de la hoja para clasificar
+                            if _es_vigente_hoja:
+                                # Forzar vigente para evitar fallback de fecha_pago
                                 _df_h["dias_vencido"] = -1
-                            else:
-                                _dv = pd.to_numeric(_df_h["dias_vencido"], errors="coerce")
-                                _df_h["dias_vencido"] = _dv.where(_dv < 0, -1)
-                        elif _es_vencida_hoja:
-                            # Garantizar que dias_vencido sea positivo (ya vencida)
-                            if "dias_vencido" in _df_h.columns:
-                                _dv = pd.to_numeric(_df_h["dias_vencido"], errors="coerce").fillna(1)
-                                _df_h["dias_vencido"] = _dv.where(_dv > 0, 1)
+                            elif _es_vencida_hoja:
+                                # Forzar vencida mínima para que se cuente como overdue
+                                _df_h["dias_vencido"] = 1
+                        # Si hay columnas propias → no tocar nada, calcular_dias_overdue
+                        # las usará por prioridad (Métodos 1-3) sin caer en el fallback
 
                         _dfs_cxc.append(_df_h)
                     except Exception as _e:

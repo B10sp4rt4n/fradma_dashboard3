@@ -208,6 +208,39 @@ def run():
         )
         return
 
+    # ── Diagnóstico: mostrar columnas disponibles para cálculo de vencimiento ─
+    with st.expander("🔍 Diagnóstico de datos CxC (expandir si hay incongruencias)", expanded=False):
+        _cols_dias = [c for c in ("dias_vencido", "dias_restante", "dias_restantes",
+                                   "vencimiento", "fecha_vencimiento", "fecha_de_pago",
+                                   "fecha_pago", "dias_de_credito", "estatus", "_hoja_origen")
+                      if c in df_cxc_raw.columns]
+        st.write(f"**Registros CxC cargados:** {len(df_cxc_raw)}")
+        st.write(f"**Columnas de fechas/días encontradas:** {_cols_dias if _cols_dias else '⚠️ ninguna — se usará fallback de fecha emisión + 30 días'}")
+
+        if "_hoja_origen" in df_cxc_raw.columns:
+            _dist_hojas = df_cxc_raw["_hoja_origen"].value_counts().reset_index()
+            _dist_hojas.columns = ["Hoja", "Registros"]
+            st.write("**Hojas origen:**")
+            st.dataframe(_dist_hojas, hide_index=True, use_container_width=True)
+
+        if "dias_vencido" in df_cxc_raw.columns:
+            _dv_sample = pd.to_numeric(df_cxc_raw["dias_vencido"], errors="coerce")
+            _pos = (_dv_sample > 0).sum()
+            _neg = (_dv_sample <= 0).sum()
+            st.write(f"**`dias_vencido` en datos:** {_pos} vencidas (> 0) · {_neg} vigentes (≤ 0)")
+        elif "dias_restante" in df_cxc_raw.columns or "dias_restantes" in df_cxc_raw.columns:
+            _cr = "dias_restante" if "dias_restante" in df_cxc_raw.columns else "dias_restantes"
+            _dr_sample = pd.to_numeric(df_cxc_raw[_cr], errors="coerce")
+            _pos_r = (_dr_sample > 0).sum()
+            _neg_r = (_dr_sample <= 0).sum()
+            st.write(f"**`{_cr}` en datos:** {_pos_r} vigentes (> 0) · {_neg_r} vencidas (≤ 0)")
+        else:
+            st.warning(
+                "⚠️ No hay columna `dias_vencido` ni `dias_restante(s)` en el archivo CxC. "
+                "El sistema calculará el vencimiento desde la **fecha de emisión + crédito** — "
+                "si las hojas mezclan vigentes y vencidas sin marcar, el resultado puede ser incorrecto."
+            )
+
     # Normalizar saldo
     for candidato in ("saldo_adeudado", "saldo", "saldo_adeudo", "adeudo", "importe", "monto", "total"):
         if candidato in df_cxc_raw.columns:
