@@ -64,9 +64,24 @@ def excluir_pagados(df: pd.DataFrame, col_estatus: Optional[str] = None) -> pd.S
         col_estatus = detectar_columna(df, COLUMNAS_ESTATUS)
     
     if col_estatus:
-        estatus_norm = df[col_estatus].astype(str).str.strip().str.lower()
-        return estatus_norm.str.contains('pagado', na=False)
-    
+        col_valores = df[col_estatus].astype(str).str.strip().str.lower()
+
+        # Caso especial: columna LLAMADA 'pagado' usa valores si/no, 1/0, true/false, x
+        if str(col_estatus).lower() == 'pagado':
+            return col_valores.isin(['si', 'sí', '1', 'true', 'yes', 'x', 'pagado', 'pagada'])
+
+        # Patrón regex ampliado: cubre masculino/femenino y variantes de estatus liquidado
+        # pagad   → pagado / pagada
+        # liquid  → liquidado / liquidada
+        # cancel  → cancelado / cancelada
+        # cerrad  → cerrado / cerrada
+        # finiquit→ finiquitado / finiquitada
+        # cobrad  → cobrado / cobrada
+        # saldad  → saldado / saldada
+        # paid    → paid (inglés)
+        patron = r'pagad|liquid|cancel|cerrad|finiquit|paid|cobrad|saldad'
+        return col_valores.str.contains(patron, na=False, regex=True)
+
     return pd.Series(False, index=df.index)
 
 

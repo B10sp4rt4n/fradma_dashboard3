@@ -712,18 +712,74 @@ def run():
                 _venc = df_cxc_v[df_cxc_v["dias_overdue"] > 0].copy()
                 if not _venc.empty:
                     with st.expander(f"📋 Facturas vencidas ({len(_venc)})"):
-                        _cols_show = [c for c in ("deudor", "factura", "saldo_adeudado", "dias_overdue", "fecha")
-                                      if c in _venc.columns]
-                        st.dataframe(
-                            _venc[_cols_show]
-                            .sort_values("dias_overdue", ascending=False)
-                            .head(20)
-                            .style.format({
-                                "saldo_adeudado": "${:,.0f}",
-                                "dias_overdue": "{:.0f} días",
-                            }),
-                            hide_index=True, use_container_width=True,
+                        # ── Criterio de clasificación ──────────────────────────
+                        _col_origen = next(
+                            (c for c in ("vencimiento", "fecha_vencimiento", "dias_vencido",
+                                         "dias_restante", "dias_restantes", "fecha")
+                             if c in df_cxc_v.columns), None
                         )
+                        _origen_map = {
+                            "vencimiento":       "columna `vencimiento` (fecha de vencimiento del archivo)",
+                            "fecha_vencimiento": "columna `fecha_vencimiento` del archivo",
+                            "dias_vencido":      "columna `dias_vencido` del archivo fuente",
+                            "dias_restante":     "columna `dias_restante` invertida (negativo = vencido)",
+                            "dias_restantes":    "columna `dias_restantes` invertida (negativo = vencido)",
+                            "fecha":             "fecha de emisión + 30 días de crédito estándar (estimado, sin columna de vencimiento real)",
+                        }
+                        _origen_desc = _origen_map.get(_col_origen, "fecha estimada")
+                        _tiene_estatus = any(c in df_cxc_v.columns for c in ("estatus", "status", "pagado"))
+                        _col_estatus_real = next((c for c in ("estatus", "status", "pagado") if c in df_cxc_v.columns), None)
+
+                        if _tiene_estatus and _col_estatus_real:
+                            _vals_estatus = df_cxc_v[_col_estatus_real].astype(str).str.strip().str.lower().unique().tolist()
+                            _vals_str = ", ".join(f'`{v}`' for v in sorted(_vals_estatus)[:10])
+                            _criterio_pago = (
+                                "pagado/a, liquidado/a, cancelado/a, cerrado/a, "
+                                "finiquitado/a, cobrado/a, saldado/a, paid"
+                            )
+                            st.info(
+                                f"📌 **Criterio de vencimiento:** `días vencido > 0`, calculados desde {_origen_desc}.  \n"
+                                f"🔍 **Columna de estatus usada:** `{_col_estatus_real}` — "
+                                f"Valores encontrados en datos: {_vals_str}.  \n"
+                                f"✅ **Se consideran pagadas** las filas cuyo estatus contenga: {_criterio_pago}. "
+                                f"Las demás se incluyen como pendientes."
+                            )
+                        else:
+                            st.warning(
+                                f"📌 **Criterio de vencimiento:** `días vencido > 0`, calculados desde {_origen_desc}.  \n"
+                                "⚠️ **No se encontró columna `estatus`** en los datos CxC. "
+                                "Se asume que **todas las filas están pendientes de pago** — esto puede generar facturas vencidas incorrectas "
+                                "si el archivo mezcla pagadas y por cobrar sin columna de estatus."
+                            )
+
+                        # ── Columnas: días vencido primero, luego deudor/factura/saldo, luego fechas ──
+                        _cols_prioridad = [c for c in ("dias_overdue", "deudor", "factura", "saldo_adeudado")
+                                           if c in _venc.columns]
+                        _cols_fechas = [c for c in ("vencimiento", "fecha_vencimiento", "fecha",
+                                                     "dias_de_credito", "estatus")
+                                        if c in _venc.columns]
+                        _cols_show = _cols_prioridad + _cols_fechas
+
+                        _col_cfg = {
+                            "dias_overdue":      st.column_config.NumberColumn("Días Vencido 🔴", format="%.0f"),
+                            "saldo_adeudado":    st.column_config.NumberColumn("Saldo ($)", format="$%.0f"),
+                            "deudor":            st.column_config.TextColumn("Cliente"),
+                            "factura":           st.column_config.TextColumn("Factura"),
+                            "fecha":             st.column_config.TextColumn("Fecha Emisión"),
+                            "vencimiento":       st.column_config.TextColumn("Fecha Vence"),
+                            "fecha_vencimiento": st.column_config.TextColumn("Fecha Vence"),
+                            "dias_de_credito":   st.column_config.NumberColumn("Días Crédito", format="%.0f"),
+                            "estatus":           st.column_config.TextColumn("Estatus"),
+                        }
+
+                        st.dataframe(
+                            _venc[_cols_show].sort_values("dias_overdue", ascending=False).head(20),
+                            hide_index=True,
+                            use_container_width=True,
+                            column_config={k: v for k, v in _col_cfg.items() if k in _cols_show},
+                        )
+                        if len(_venc) > 20:
+                            st.caption(f"Mostrando 20 de {len(_venc)} facturas vencidas, ordenadas por mayor antigüedad.")
 
         if "fecha" in df_v.columns and not df_v.empty:
             df_v2 = df_v.copy()
