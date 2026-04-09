@@ -431,6 +431,181 @@ def generate_markdown(inventory: Dict) -> str:
 # CLI
 # =====================================================================
 
+def generate_html(markdown_text: str, title: str = "Wiki Activo — Cima Analytics") -> str:
+    """Convierte el Markdown del wiki a un HTML autocontenido con estilos."""
+    try:
+        import markdown as md_lib
+        body = md_lib.markdown(
+            markdown_text,
+            extensions=["tables", "fenced_code", "toc", "nl2br"],
+        )
+    except Exception:
+        # Fallback muy básico si la librería falla
+        import html as htmllib
+        body = "<pre>" + htmllib.escape(markdown_text) + "</pre>"
+
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    return f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{title}</title>
+  <style>
+    :root {{
+      --bg: #0f1117; --surface: #1a1a2e; --border: #2d2d44;
+      --text: #e8e8e8; --muted: #9ca3af; --accent: #4a90d9;
+      --green: #27ae60; --yellow: #f39c12; --red: #c0392b;
+    }}
+    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    body {{
+      background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 15px; line-height: 1.6;
+    }}
+    /* Layout */
+    nav {{
+      position: fixed; top: 0; left: 0; width: 260px; height: 100vh;
+      background: var(--surface); border-right: 1px solid var(--border);
+      overflow-y: auto; padding: 1.2rem;
+    }}
+    main {{
+      margin-left: 260px; padding: 2rem 3rem;
+      max-width: 960px;
+    }}
+    /* Nav */
+    nav h2 {{ font-size: .85rem; color: var(--accent); text-transform: uppercase;
+               letter-spacing: .08em; margin-bottom: .8rem; }}
+    nav a {{
+      display: block; padding: .28rem .5rem; color: var(--muted);
+      text-decoration: none; border-radius: 5px; font-size: .82rem;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }}
+    nav a:hover, nav a.active {{ background: rgba(74,144,217,.15); color: var(--accent); }}
+    /* Header */
+    header {{
+      background: linear-gradient(135deg, #0f3460, #1a1a2e);
+      border: 1px solid var(--border); border-radius: 12px;
+      padding: 1.5rem 2rem; margin-bottom: 2rem;
+    }}
+    header h1 {{ font-size: 1.7rem; color: #fff; margin-bottom: .3rem; }}
+    header p  {{ color: var(--muted); font-size: .85rem; }}
+    /* Typography */
+    h1, h2, h3, h4 {{ color: #fff; margin: 1.8rem 0 .6rem; line-height: 1.3; }}
+    h2 {{
+      font-size: 1.3rem; border-bottom: 2px solid var(--accent);
+      padding-bottom: .4rem;
+    }}
+    h3 {{ font-size: 1.05rem; color: var(--accent); }}
+    h4 {{ font-size: .95rem; color: var(--muted); }}
+    p  {{ margin: .6rem 0; }}
+    a  {{ color: var(--accent); text-decoration: none; }}
+    a:hover {{ text-decoration: underline; }}
+    /* Table */
+    table {{
+      border-collapse: collapse; width: 100%;
+      margin: 1rem 0; font-size: .88rem;
+    }}
+    th {{
+      background: var(--surface); color: var(--accent);
+      padding: .5rem .8rem; border: 1px solid var(--border);
+      text-align: left; font-weight: 600;
+    }}
+    td {{
+      padding: .45rem .8rem; border: 1px solid var(--border);
+      color: var(--text);
+    }}
+    tr:hover td {{ background: rgba(74,144,217,.06); }}
+    /* Code */
+    code {{
+      background: var(--surface); color: #e67e22;
+      padding: .15em .4em; border-radius: 4px;
+      font-family: "JetBrains Mono", "Fira Code", monospace; font-size: .87em;
+    }}
+    pre {{
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 1rem; overflow-x: auto; margin: .8rem 0;
+    }}
+    pre code {{ background: none; color: var(--text); padding: 0; }}
+    /* Blockquote */
+    blockquote {{
+      border-left: 4px solid var(--accent); margin: .8rem 0;
+      padding: .5rem 1rem; background: rgba(74,144,217,.07);
+      border-radius: 0 8px 8px 0; color: var(--muted);
+    }}
+    /* List */
+    ul, ol {{ padding-left: 1.4rem; margin: .5rem 0; }}
+    li {{ margin: .25rem 0; }}
+    hr {{ border: none; border-top: 1px solid var(--border); margin: 1.5rem 0; }}
+    /* Badges */
+    .badge {{
+      display: inline-block; padding: .2em .6em;
+      border-radius: 20px; font-size: .72rem; font-weight: 600;
+      background: rgba(74,144,217,.2); color: var(--accent);
+    }}
+    .timestamp {{ color: var(--muted); font-size: .8rem; }}
+    /* Scrollbar */
+    ::-webkit-scrollbar {{ width: 6px; height: 6px; }}
+    ::-webkit-scrollbar-track {{ background: var(--bg); }}
+    ::-webkit-scrollbar-thumb {{ background: var(--border); border-radius: 3px; }}
+    ::-webkit-scrollbar-thumb:hover {{ background: var(--accent); }}
+    @media (max-width: 768px) {{
+      nav {{ display: none; }} main {{ margin-left: 0; padding: 1rem; }}
+    }}
+  </style>
+</head>
+<body>
+
+<nav id="sidebar">
+  <h2>📚 Wiki Activo</h2>
+  <div id="toc-links"></div>
+</nav>
+
+<main>
+  <header>
+    <h1>📚 Wiki Activo — Cima Analytics</h1>
+    <p class="timestamp">Generado: {now} · <a href="#" onclick="window.print()">🖨️ Imprimir / Guardar PDF</a></p>
+  </header>
+
+  <div id="content">
+{body}
+  </div>
+</main>
+
+<script>
+  // Generar índice lateral desde los headings del contenido
+  const toc = document.getElementById('toc-links');
+  document.querySelectorAll('#content h2, #content h3').forEach((h, i) => {{
+    if (!h.id) h.id = 'sec-' + i;
+    const a = document.createElement('a');
+    a.href = '#' + h.id;
+    a.textContent = (h.tagName === 'H3' ? '  · ' : '') + h.textContent;
+    a.style.paddingLeft = h.tagName === 'H3' ? '1rem' : '.5rem';
+    a.addEventListener('click', () => {{
+      document.querySelectorAll('nav a').forEach(x => x.classList.remove('active'));
+      a.classList.add('active');
+    }});
+    toc.appendChild(a);
+  }});
+
+  // Resaltar sección activa al hacer scroll
+  const observer = new IntersectionObserver(entries => {{
+    entries.forEach(e => {{
+      if (e.isIntersecting) {{
+        const id = e.target.id;
+        document.querySelectorAll('nav a').forEach(a => {{
+          a.classList.toggle('active', a.getAttribute('href') === '#' + id);
+        }});
+      }}
+    }});
+  }}, {{ rootMargin: '-10% 0px -80% 0px' }});
+  document.querySelectorAll('#content h2, #content h3').forEach(h => observer.observe(h));
+</script>
+</body>
+</html>"""
+
+
 def main():
     import sys
 
@@ -438,11 +613,23 @@ def main():
 
     if "--json" in sys.argv:
         print(json.dumps(inventory, indent=2, ensure_ascii=False, default=str))
+    elif "--html" in sys.argv:
+        md_text = generate_markdown(inventory)
+        html = generate_html(md_text)
+        output_path = BASE_DIR / "docs" / "WIKI_ACTIVO.html"
+        output_path.write_text(html, encoding='utf-8')
+        print(f"✅ Wiki HTML generado: {output_path}")
     else:
-        markdown = generate_markdown(inventory)
+        md_text = generate_markdown(inventory)
         output_path = BASE_DIR / "docs" / "WIKI_ACTIVO.md"
-        output_path.write_text(markdown, encoding='utf-8')
-        print(f"✅ Wiki generado: {output_path}")
+        output_path.write_text(md_text, encoding='utf-8')
+        # También generar HTML automáticamente junto al MD
+        html = generate_html(md_text)
+        html_path = BASE_DIR / "docs" / "WIKI_ACTIVO.html"
+        html_path.write_text(html, encoding='utf-8')
+        print(f"✅ Wiki generado:")
+        print(f"   📄 {output_path}")
+        print(f"   🌐 {html_path}")
         print(f"   {inventory['project']['total_python_lines']:,} líneas · "
               f"{inventory['project']['total_modules']} módulos · "
               f"{inventory['tests']['total_tests']} tests · "

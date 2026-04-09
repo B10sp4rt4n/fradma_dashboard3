@@ -475,7 +475,7 @@ def _render_stats(engine):
         st.caption("Sin búsquedas registradas aún.")
 
     st.markdown("---")
-    col_reindex, col_wiki = st.columns(2)
+    col_reindex, col_wiki, col_html = st.columns(3)
     with col_reindex:
         if st.button("🔄 Re-indexar documentos", use_container_width=True):
             invalidate_cache()
@@ -483,15 +483,16 @@ def _render_stats(engine):
     with col_wiki:
         if st.button("📝 Regenerar Wiki Activo", use_container_width=True):
             try:
-                from scripts.generate_wiki import generate_inventory, generate_markdown
+                from scripts.generate_wiki import generate_inventory, generate_markdown, generate_html
                 inv = generate_inventory()
                 md = generate_markdown(inv)
-                wiki_path = os.path.join(
-                    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                    "docs", "WIKI_ACTIVO.md"
-                )
+                base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                wiki_path = os.path.join(base, "docs", "WIKI_ACTIVO.md")
+                html_path = os.path.join(base, "docs", "WIKI_ACTIVO.html")
                 with open(wiki_path, "w", encoding="utf-8") as f:
                     f.write(md)
+                with open(html_path, "w", encoding="utf-8") as f:
+                    f.write(generate_html(md))
                 invalidate_cache()
                 st.success(
                     f"✅ Wiki regenerado: {inv['project']['total_python_lines']:,} líneas · "
@@ -501,6 +502,30 @@ def _render_stats(engine):
                 st.rerun()
             except Exception as e:
                 st.error(f"Error regenerando wiki: {e}")
+
+    with col_html:
+        # Botón de descarga del HTML — siempre disponible si el archivo existe
+        try:
+            from scripts.generate_wiki import generate_inventory, generate_markdown, generate_html
+            _base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            _html_path = os.path.join(_base, "docs", "WIKI_ACTIVO.html")
+            if not os.path.exists(_html_path):
+                # Generarlo al vuelo si no existe
+                _inv = generate_inventory()
+                _md  = generate_markdown(_inv)
+                _html_bytes = generate_html(_md).encode("utf-8")
+            else:
+                with open(_html_path, "rb") as _f:
+                    _html_bytes = _f.read()
+            st.download_button(
+                label="🌐 Descargar Wiki HTML",
+                data=_html_bytes,
+                file_name="WIKI_ACTIVO.html",
+                mime="text/html",
+                use_container_width=True,
+            )
+        except Exception as _e:
+            st.caption(f"HTML no disponible: {_e}")
 
 
 # =====================================================================

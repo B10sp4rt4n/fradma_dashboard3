@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wiki Activo — Cima Analytics</title>
+  <style>
+    :root {
+      --bg: #0f1117; --surface: #1a1a2e; --border: #2d2d44;
+      --text: #e8e8e8; --muted: #9ca3af; --accent: #4a90d9;
+      --green: #27ae60; --yellow: #f39c12; --red: #c0392b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 15px; line-height: 1.6;
+    }
+    /* Layout */
+    nav {
+      position: fixed; top: 0; left: 0; width: 260px; height: 100vh;
+      background: var(--surface); border-right: 1px solid var(--border);
+      overflow-y: auto; padding: 1.2rem;
+    }
+    main {
+      margin-left: 260px; padding: 2rem 3rem;
+      max-width: 960px;
+    }
+    /* Nav */
+    nav h2 { font-size: .85rem; color: var(--accent); text-transform: uppercase;
+               letter-spacing: .08em; margin-bottom: .8rem; }
+    nav a {
+      display: block; padding: .28rem .5rem; color: var(--muted);
+      text-decoration: none; border-radius: 5px; font-size: .82rem;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    nav a:hover, nav a.active { background: rgba(74,144,217,.15); color: var(--accent); }
+    /* Header */
+    header {
+      background: linear-gradient(135deg, #0f3460, #1a1a2e);
+      border: 1px solid var(--border); border-radius: 12px;
+      padding: 1.5rem 2rem; margin-bottom: 2rem;
+    }
+    header h1 { font-size: 1.7rem; color: #fff; margin-bottom: .3rem; }
+    header p  { color: var(--muted); font-size: .85rem; }
+    /* Typography */
+    h1, h2, h3, h4 { color: #fff; margin: 1.8rem 0 .6rem; line-height: 1.3; }
+    h2 {
+      font-size: 1.3rem; border-bottom: 2px solid var(--accent);
+      padding-bottom: .4rem;
+    }
+    h3 { font-size: 1.05rem; color: var(--accent); }
+    h4 { font-size: .95rem; color: var(--muted); }
+    p  { margin: .6rem 0; }
+    a  { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    /* Table */
+    table {
+      border-collapse: collapse; width: 100%;
+      margin: 1rem 0; font-size: .88rem;
+    }
+    th {
+      background: var(--surface); color: var(--accent);
+      padding: .5rem .8rem; border: 1px solid var(--border);
+      text-align: left; font-weight: 600;
+    }
+    td {
+      padding: .45rem .8rem; border: 1px solid var(--border);
+      color: var(--text);
+    }
+    tr:hover td { background: rgba(74,144,217,.06); }
+    /* Code */
+    code {
+      background: var(--surface); color: #e67e22;
+      padding: .15em .4em; border-radius: 4px;
+      font-family: "JetBrains Mono", "Fira Code", monospace; font-size: .87em;
+    }
+    pre {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 1rem; overflow-x: auto; margin: .8rem 0;
+    }
+    pre code { background: none; color: var(--text); padding: 0; }
+    /* Blockquote */
+    blockquote {
+      border-left: 4px solid var(--accent); margin: .8rem 0;
+      padding: .5rem 1rem; background: rgba(74,144,217,.07);
+      border-radius: 0 8px 8px 0; color: var(--muted);
+    }
+    /* List */
+    ul, ol { padding-left: 1.4rem; margin: .5rem 0; }
+    li { margin: .25rem 0; }
+    hr { border: none; border-top: 1px solid var(--border); margin: 1.5rem 0; }
+    /* Badges */
+    .badge {
+      display: inline-block; padding: .2em .6em;
+      border-radius: 20px; font-size: .72rem; font-weight: 600;
+      background: rgba(74,144,217,.2); color: var(--accent);
+    }
+    .timestamp { color: var(--muted); font-size: .8rem; }
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+    @media (max-width: 768px) {
+      nav { display: none; } main { margin-left: 0; padding: 1rem; }
+    }
+  </style>
+</head>
+<body>
+
+<nav id="sidebar">
+  <h2>📚 Wiki Activo</h2>
+  <div id="toc-links"></div>
+</nav>
+
+<main>
+  <header>
+    <h1>📚 Wiki Activo — Cima Analytics</h1>
+    <p class="timestamp">Generado: 2026-04-09 04:57 · <a href="#" onclick="window.print()">🖨️ Imprimir / Guardar PDF</a></p>
+  </header>
+
+  <div id="content">
+<h1 id="wiki-activo-fradma-dashboard-cima-analytics">Wiki Activo — Fradma Dashboard (Cima Analytics)</h1>
+<blockquote>
+<p>Generado automáticamente: <strong>2026-04-09T04:57:16</strong><br />
+Este documento se regenera desde el código fuente real.</p>
+</blockquote>
+<hr />
+<h2 id="resumen-ejecutivo">Resumen Ejecutivo</h2>
+<table>
+<thead>
+<tr>
+<th>Métrica</th>
+<th>Valor</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Líneas de código Python</td>
+<td><strong>32,170</strong></td>
+</tr>
+<tr>
+<td>Módulos Python</td>
+<td><strong>41</strong></td>
+</tr>
+<tr>
+<td>Tests</td>
+<td><strong>538</strong> en 25 archivos</td>
+</tr>
+<tr>
+<td>Cobertura</td>
+<td><strong>10.5%</strong></td>
+</tr>
+<tr>
+<td>Commits</td>
+<td><strong>397</strong></td>
+</tr>
+<tr>
+<td>Último commit</td>
+<td>2026-04-09 04:43:28</td>
+</tr>
+<tr>
+<td>Inicio del proyecto</td>
+<td>2025-06-05</td>
+</tr>
+<tr>
+<td>Items del menú</td>
+<td><strong>17</strong> módulos</td>
+</tr>
+</tbody>
+</table>
+<h2 id="menu-de-la-aplicacion">Menú de la Aplicación</h2>
+<ol>
+<li>🎯 Reporte Ejecutivo</li>
+<li>📊 Reporte Consolidado</li>
+<li>📈 KPIs Generales</li>
+<li>📊 Comparativo Año vs Año</li>
+<li>📉 YTD por Línea de Negocio</li>
+<li>🔷 YTD por Producto</li>
+<li>🔥 Heatmap Ventas</li>
+<li>💳 KPI Cartera CxC</li>
+<li>👥 Vendedores + CxC</li>
+<li>🧰 Herramientas Financieras</li>
+<li>📂 Cargar mis facturas</li>
+<li>📋 Universo de CFDIs</li>
+<li>🧾 Desglose Fiscal</li>
+<li>📍 Mapa de Clientes</li>
+<li>📚 Knowledge Base</li>
+<li>⚙️ Gestión de Usuarios</li>
+<li>🔧 Configuración</li>
+</ol>
+<h2 id="modulos-principales-main">📊 Módulos Principales (main/)</h2>
+<p><strong>Total: 18,434 líneas en 18 módulos</strong></p>
+<h3 id="data_assistantpy-2611-lineas"><code>data_assistant.py</code> (2,611 líneas)</h3>
+<p><em>Módulo: Asistente de Datos — Consultas en lenguaje natural sobre CFDIs.</em></p>
+<ul>
+<li><strong>Funciones públicas (1):</strong></li>
+<li><code>run()</code> (L2532) — <em>Punto de entrada del módulo Asistente de Datos.</em></li>
+<li>Funciones privadas (36): <code>_get_engine</code>, <code>_invalidate_engine</code>, <code>_render_stats_kpi</code>, <code>_render_smart_table</code>, <code>_render_kpi_tab</code>, <code>_render_plotly_chart_and_save</code>, <code>_auto_chart</code>, <code>_render_stats_chart</code>, <code>_render_hero</code>, <code>_auto_connect_from_env</code> +26</li>
+</ul>
+<h3 id="fiscalpy-540-lineas"><code>fiscal.py</code> (540 líneas)</h3>
+<p><em>Módulo: Desglose Fiscal</em></p>
+<ul>
+<li><strong>Funciones públicas (1):</strong></li>
+<li><code>run()</code> (L144)</li>
+<li>Funciones privadas (4): <code>_get_neon_url</code>, <code>_cargar_fiscal</code>, <code>_cargar_tendencia_fiscal</code>, <code>_cargar_retenciones</code></li>
+</ul>
+<h3 id="heatmap_ventaspy-404-lineas"><code>heatmap_ventas.py</code> (404 líneas)</h3>
+<p><strong>Sin docstring</strong></p>
+<ul>
+<li><strong>Funciones públicas (5):</strong></li>
+<li><code>run()</code> (L11)</li>
+<li><code>clean_columns()</code> (L14)</li>
+<li><code>detectar_columna()</code> (L22)</li>
+<li><code>generar_periodo_id()</code> (L66) — <em>Genera el identificador del periodo de forma segura</em></li>
+<li><code>format_currency()</code> (L205)</li>
+</ul>
+<h3 id="herramientas_financieraspy-1690-lineas"><code>herramientas_financieras.py</code> (1,690 líneas)</h3>
+<p><em>Módulo: Herramientas Financieras</em></p>
+<ul>
+<li><strong>class <code>FakeFile</code></strong> (línea 1316): </li>
+<li>Métodos: <code>__init__</code>, <code>read</code></li>
+<li><strong>Funciones públicas (14):</strong></li>
+<li><code>obtener_tasas_cambio()</code> (L32) — <em>Obtiene tasas de cambio actualizadas desde API gratuita.</em></li>
+<li><code>get_tasas_fallback()</code> (L60) — <em>Tasas de respaldo en caso de fallo de API.</em></li>
+<li><code>get_nombres_monedas()</code> (L80) — <em>Retorna diccionario con nombres completos de monedas.</em></li>
+<li><code>mostrar_conversor_monedas()</code> (L118) — <em>Muestra interfaz del conversor de monedas.</em></li>
+<li><code>mostrar_calculadora_descuento_pronto_pago()</code> (L326) — <em>Calculadora para evaluar si conviene dar descuento por pronto pago.</em></li>
+<li><code>mostrar_calculadora_dso()</code> (L486) — <em>Calculadora de DSO - Días de ventas pendientes de cobro.</em></li>
+<li><code>mostrar_calculadora_interes_moratorio()</code> (L708) — <em>Calculadora de interés moratorio por pagos vencidos.</em></li>
+<li><code>obtener_indicadores_economicos()</code> (L954) — <em>Obtiene indicadores económicos básicos.</em></li>
+<li><code>mostrar_indicadores_economicos()</code> (L986) — <em>Muestra panel con indicadores económicos de referencia.</em></li>
+<li><code>parsear_xml_cfdi()</code> (L1114) — <em>Parsea un archivo XML de factura CFDI (México).</em></li>
+<li><code>mostrar_digestor_xml()</code> (L1236) — <em>Muestra interfaz para digerir facturas XML (CFDI).</em></li>
+<li><code>run()</code> (L1657) — <em>Función principal del módulo de herramientas financieras.</em></li>
+<li><code>format_moneda()</code> (L178)</li>
+<li><code>read()</code> (L1320)</li>
+<li>Funciones privadas (1): <code>__init__</code></li>
+</ul>
+<h3 id="ingesta_cfdipy-1418-lineas"><code>ingesta_cfdi.py</code> (1,418 líneas)</h3>
+<p><em>Módulo de ingesta de CFDIs desde ZIP.</em></p>
+<ul>
+<li><strong>Funciones públicas (8):</strong></li>
+<li><code>extract_zip_to_temp()</code> (L38) — <em>Extrae un ZIP subido a una carpeta temporal.</em></li>
+<li><code>read_xml_contents()</code> (L64) — <em>Lee el contenido de múltiples archivos XML.</em></li>
+<li><code>mostrar_estadisticas_procesamiento()</code> (L79) — <em>Muestra estadísticas generales del procesamiento.</em></li>
+<li><code>crear_dataframe_conceptos()</code> (L240) — <em>Crea un DataFrame completo con todos los conceptos de las facturas.</em></li>
+<li><code>mostrar_distribuciones()</code> (L298) — <em>Muestra distribuciones por empresa y producto.</em></li>
+<li><code>mostrar_analisis_avanzados()</code> (L456) — <em>Muestra análisis avanzados sin IA: Pareto, tickets promedio, frecuencia, etc.</em></li>
+<li><code>mostrar_analisis_precios()</code> (L752) — <em>Muestra análisis de precios y variaciones.</em></li>
+<li><code>main()</code> (L918) — <em>Función principal de la página.</em></li>
+<li>Funciones privadas (1): <code>_render_ingesta_summary</code></li>
+</ul>
+<h3 id="knowledge_basepy-769-lineas"><code>knowledge_base.py</code> (769 líneas)</h3>
+<p><em>Módulo: Knowledge Base / Wiki — Interfaz Streamlit</em></p>
+<ul>
+<li><strong>Funciones públicas (1):</strong></li>
+<li><code>run()</code> (L729) — <em>Punto de entrada del módulo Knowledge Base.</em></li>
+<li>Funciones privadas (15): <code>_badge_html</code>, <code>_short_path</code>, <code>_fmt_words</code>, <code>_clean_anchor_links</code>, <code>_render_explorer</code>, <code>_render_search</code>, <code>_render_document</code>, <code>_render_full_content</code>, <code>_render_stats</code>, <code>_render_history</code> +5</li>
+</ul>
+<h3 id="kpi_cpcpy-2391-lineas"><code>kpi_cpc.py</code> (2,391 líneas)</h3>
+<p><strong>Sin docstring</strong></p>
+<ul>
+<li><strong>Funciones públicas (2):</strong></li>
+<li><code>run()</code> (L61) — <em>Función principal del módulo KPI CxC (Cuentas por Cobrar).</em></li>
+<li><code>clasificar_riesgo()</code> (L1432)</li>
+<li>Funciones privadas (4): <code>_detectar_col_vendedor</code>, <code>_es_vigente</code>, <code>_es_vencida</code>, <code>_rango_evol</code></li>
+</ul>
+<h3 id="main_comparativopy-113-lineas"><code>main_comparativo.py</code> (113 líneas)</h3>
+<p><strong>Sin docstring</strong></p>
+<ul>
+<li><strong>Funciones públicas (1):</strong></li>
+<li><code>run()</code> (L7)</li>
+</ul>
+<h3 id="main_comparativo_funcional110625_no-configaniospy-61-lineas"><code>main_comparativo_funcional110625_no configAnios.py</code> (61 líneas)</h3>
+<p><strong>Sin docstring</strong></p>
+<ul>
+<li><strong>Funciones públicas (1):</strong></li>
+<li><code>run()</code> (L6)</li>
+</ul>
+<h3 id="main_kpipy-602-lineas"><code>main_kpi.py</code> (602 líneas)</h3>
+<p><strong>Sin docstring</strong></p>
+<ul>
+<li><strong>Funciones públicas (2):</strong></li>
+<li><code>run()</code> (L12)</li>
+<li><code>clasificar_vendedor()</code> (L148)</li>
+</ul>
+<h3 id="main_kpi_backpuppy-68-lineas"><code>main_kpi_backpup.py</code> (68 líneas)</h3>
+<p><strong>Sin docstring</strong></p>
+<ul>
+<li><strong>Funciones públicas (1):</strong></li>
+<li><code>run()</code> (L5)</li>
+</ul>
+<h3 id="mapa_clientespy-362-lineas"><code>mapa_clientes.py</code> (362 líneas)</h3>
+<p><em>Módulo: Mapa de Clientes</em></p>
+<ul>
+<li><strong>Funciones públicas (1):</strong></li>
+<li><code>run()</code> (L200)</li>
+<li>Funciones privadas (5): <code>_cp_a_estado</code>, <code>_get_neon_url</code>, <code>_cargar_datos</code>, <code>_geocodificar_cp_online</code>, <code>_cargar_coords</code></li>
+</ul>
+<h3 id="reporte_consolidadopy-669-lineas"><code>reporte_consolidado.py</code> (669 líneas)</h3>
+<p><em>Módulo: Reporte Consolidado - Dashboard Ejecutivo</em></p>
+<ul>
+<li><strong>Funciones públicas (4):</strong></li>
+<li><code>agrupar_por_periodo()</code> (L32) — <em>Agrupa un DataFrame de ventas por el período especificado.</em></li>
+<li><code>crear_grafico_ventas_periodo()</code> (L65) — <em>Crea un gráfico de barras/líneas de ventas por período.</em></li>
+<li><code>crear_pie_cxc()</code> (L116) — <em>Crea un gráfico de pie para distribución de CxC.</em></li>
+<li><code>run()</code> (L546) — <em>Función principal del Reporte Consolidado.</em></li>
+<li>Funciones privadas (8): <code>_preparar_datos_iniciales</code>, <code>_obtener_configuracion_ui</code>, <code>_calcular_metricas_ventas</code>, <code>_calcular_metricas_cxc</code>, <code>_renderizar_kpis</code>, <code>_renderizar_visualizaciones</code>, <code>_renderizar_analisis_ia</code>, <code>_renderizar_tabla_detalle</code></li>
+</ul>
+<h3 id="reporte_ejecutivopy-1148-lineas"><code>reporte_ejecutivo.py</code> (1,148 líneas)</h3>
+<p><em>Módulo de Reporte Ejecutivo para el Dashboard Fradma.</em></p>
+<ul>
+<li><strong>Funciones públicas (1):</strong></li>
+<li><code>mostrar_reporte_ejecutivo()</code> (L21) — <em>Muestra el reporte ejecutivo consolidado con métricas clave de negocio.</em></li>
+</ul>
+<h3 id="universo_cfdipy-675-lineas"><code>universo_cfdi.py</code> (675 líneas)</h3>
+<p><em>Módulo: Universo de CFDIs</em></p>
+<ul>
+<li><strong>Funciones públicas (1):</strong></li>
+<li><code>run()</code> (L225)</li>
+<li>Funciones privadas (8): <code>_get_neon_url</code>, <code>_cargar_datos</code>, <code>_cargar_detalle</code>, <code>_cargar_tendencia</code>, <code>_cargar_pue_ppd</code>, <code>_clasificar_ppd</code>, <code>_color_estatus</code>, <code>_color_clasif</code></li>
+</ul>
+<h3 id="vendedores_cxcpy-1360-lineas"><code>vendedores_cxc.py</code> (1,360 líneas)</h3>
+<p><em>Módulo: Vendedores + CxC</em></p>
+<ul>
+<li><strong>Funciones públicas (2):</strong></li>
+<li><code>run()</code> (L136)</li>
+<li><code>clasificar_antiguedad_detallado()</code> (L380)</li>
+<li>Funciones privadas (5): <code>_normalizar_nombre_cliente</code>, <code>_detectar_col_vendedor</code>, <code>_detectar_col_ventas</code>, <code>_detectar_col_cliente</code>, <code>_score_calidad</code></li>
+</ul>
+<h3 id="ytd_lineaspy-1548-lineas"><code>ytd_lineas.py</code> (1,548 líneas)</h3>
+<p><em>Módulo: Reporte YTD (Year-to-Date) por Línea de Negocio</em></p>
+<ul>
+<li><strong>Funciones públicas (13):</strong></li>
+<li><code>calcular_ytd()</code> (L61) — <em>Calcula ventas YTD hasta una fecha específica.</em></li>
+<li><code>calcular_metricas_ytd()</code> (L101) — <em>Calcula métricas agregadas YTD.</em></li>
+<li><code>crear_grafico_lineas_acumulado()</code> (L128) — <em>Crea gráfico de líneas con ventas acumuladas por mes.</em></li>
+<li><code>crear_grafico_barras_comparativo()</code> (L230) — <em>Crea gráfico de barras comparando año actual vs anterior por línea.</em></li>
+<li><code>crear_treemap_participacion()</code> (L378) — <em>Crea treemap mostrando participación de cada línea.</em></li>
+<li><code>crear_grafico_comparativo_anos_completos()</code> (L412) — <em>Crea gráfico de barras comparando ventas totales de años completos.</em></li>
+<li><code>crear_tabla_top_productos()</code> (L519) — <em>Crea tabla con top productos del período.</em></li>
+<li><code>crear_tabla_top_clientes()</code> (L532) — <em>Crea tabla con top clientes del período.</em></li>
+<li><code>exportar_excel_ytd()</code> (L545) — <em>Genera archivo Excel con reporte YTD completo.</em></li>
+<li><code>run()</code> (L610) — <em>Función principal del módulo YTD por Líneas.</em></li>
+<li><code>calcular_crecimiento_seguro()</code> (L279)</li>
+<li><code>aplicar_color_fondo()</code> (L1307)</li>
+<li><code>aplicar_color_fondo_local()</code> (L1371)</li>
+</ul>
+<h3 id="ytd_productospy-2005-lineas"><code>ytd_productos.py</code> (2,005 líneas)</h3>
+<p><em>Módulo: Reporte YTD (Year-to-Date) por Producto</em></p>
+<ul>
+<li><strong>Funciones públicas (15):</strong></li>
+<li><code>calcular_ytd()</code> (L61) — <em>Calcula ventas YTD hasta una fecha específica.</em></li>
+<li><code>calcular_metricas_ytd()</code> (L101) — <em>Calcula métricas agregadas YTD.</em></li>
+<li><code>crear_grafico_temporal_producto()</code> (L128) — <em>Crea gráfico de evolución temporal de un producto específico.</em></li>
+<li><code>crear_treemap_clientes_producto()</code> (L225) — <em>Crea treemap de clientes que compran un producto específico.</em></li>
+<li><code>crear_treemap_productos_top()</code> (L294) — <em>Crea treemap de productos top con resto agrupado como 'Otros'.</em></li>
+<li><code>crear_grafico_lineas_acumulado()</code> (L364) — <em>Crea gráfico de productos con ventas acumuladas por mes.</em></li>
+<li><code>crear_grafico_barras_comparativo()</code> (L466) — <em>Crea gráfico de barras comparando año actual vs anterior por producto.</em></li>
+<li><code>crear_treemap_participacion()</code> (L614) — <em>Crea treemap mostrando participación de cada línea.</em></li>
+<li><code>crear_grafico_comparativo_anos_completos()</code> (L648) — <em>Crea gráfico de barras comparando ventas totales de años completos.</em></li>
+<li><code>crear_tabla_top_productos()</code> (L755) — <em>Crea tabla con top productos del período.</em></li>
+<li><code>crear_tabla_top_clientes()</code> (L768) — <em>Crea tabla con top clientes del período.</em></li>
+<li><code>exportar_excel_ytd()</code> (L781) — <em>Genera archivo Excel con reporte YTD completo.</em></li>
+<li><code>run()</code> (L846) — <em>Función principal del módulo YTD por Líneas.</em></li>
+<li><code>calcular_crecimiento_seguro()</code> (L515)</li>
+<li><code>highlight_selected()</code> (L1413)</li>
+</ul>
+<h2 id="utilidades-utils">🔧 Utilidades (utils/)</h2>
+<p><strong>Total: 10,227 líneas en 19 módulos</strong></p>
+<h3 id="admin_panelpy-757-lineas"><code>admin_panel.py</code> (757 líneas)</h3>
+<p><em>Panel de administración de usuarios para FRADMA Dashboard.</em></p>
+<ul>
+<li><strong>Funciones públicas (3):</strong></li>
+<li><code>mostrar_panel_usuarios()</code> (L20) — <em>Panel completo de gestión de usuarios.</em></li>
+<li><code>mostrar_panel_configuracion()</code> (L567) — <em>Panel de configuración del sistema.</em></li>
+<li><code>mostrar_info_usuario()</code> (L656) — <em>Muestra información del usuario en el sidebar.</em></li>
+<li>Funciones privadas (1): <code>_fmt_dt</code></li>
+</ul>
+<h3 id="ai_helperpy-452-lineas"><code>ai_helper.py</code> (452 líneas)</h3>
+<p><em>Módulo: AI Helper - Integración con OpenAI GPT-4o-mini</em></p>
+<ul>
+<li><strong>Funciones públicas (4):</strong></li>
+<li><code>validar_api_key()</code> (L21) — <em>Valida que la API key de OpenAI sea válida.</em></li>
+<li><code>generar_resumen_ejecutivo_ytd()</code> (L43) — <em>Genera un análisis ejecutivo estructurado usando OpenAI GPT-4o-mini.</em></li>
+<li><code>generar_analisis_consolidado_ia()</code> (L178) — <em>Genera un análisis ejecutivo consolidado integrando ventas y CxC.</em></li>
+<li><code>generar_resumen_ejecutivo_cxc()</code> (L301) — <em>Genera un análisis ejecutivo estructurado de CxC usando OpenAI GPT-4o-mini.</em></li>
+</ul>
+<h3 id="ai_helper_premiumpy-257-lineas"><code>ai_helper_premium.py</code> (257 líneas)</h3>
+<p><em>Módulo: AI Helper Premium - Funciones avanzadas de IA para análisis ejecutivo</em></p>
+<ul>
+<li><strong>Funciones públicas (2):</strong></li>
+<li><code>generar_insights_kpi_vendedores()</code> (L19) — <em>Genera insights estratégicos sobre el desempeño del equipo de ventas.</em></li>
+<li><code>generar_insights_ejecutivo_consolidado()</code> (L148) — <em>Genera insights ejecutivos de alto nivel integrando ventas y CxC.</em></li>
+</ul>
+<h3 id="authpy-948-lineas"><code>auth.py</code> (948 líneas)</h3>
+<p><em>Sistema de autenticación multi-usuario para FRADMA Dashboard.</em></p>
+<ul>
+<li><strong>class <code>UserRole</code></strong> (línea 30): Roles disponibles en el sistema</li>
+<li><strong>class <code>User</code></strong> (línea 38): Representa un usuario del sistema</li>
+<li>Métodos: <code>can_export</code>, <code>can_use_ai</code>, <code>can_manage_users</code>, <code>can_edit_config</code>, <code>is_superadmin</code>, <code>tiene_multiples_empresas</code></li>
+<li><strong>class <code>AuthManager</code></strong> (línea 75): Gestor centralizado de autenticación y usuarios — Neon PostgreSQL.</li>
+<li>Métodos: <code>__init__</code>, <code>_ensure_schema</code>, <code>_ensure_default_empresa</code>, <code>_hash_password</code>, <code>_verify_password</code>, <code>_ensure_admin</code>, <code>_log_login</code>, <code>authenticate</code> +18 más</li>
+<li><strong>Funciones públicas (31):</strong></li>
+<li><code>get_current_user()</code> (L867) — <em>Obtiene usuario actual de la sesión</em></li>
+<li><code>require_auth()</code> (L872) — <em>Decorador para requerir autenticación.</em></li>
+<li><code>require_role()</code> (L890) — <em>Decorador para requerir rol específico.</em></li>
+<li><code>can_export()</code> (L52)</li>
+<li><code>can_use_ai()</code> (L55)</li>
+<li><code>can_manage_users()</code> (L58)</li>
+<li><code>can_edit_config()</code> (L61)</li>
+<li><code>is_superadmin()</code> (L65) — <em>Superadmin = admin sin empresa asignada → ve todos los datos.</em></li>
+<li><code>tiene_multiples_empresas()</code> (L70) — <em>True si el usuario tiene acceso a más de una empresa.</em></li>
+<li><code>authenticate()</code> (L251) — <em>Autentica usuario; retorna User si válido, None si falla.</em></li>
+<li><code>create_user()</code> (L335)</li>
+<li><code>list_users()</code> (L408) — <em>Lista usuarios. Si empresa_id, filtra los que pertenecen a ese tenant</em></li>
+<li><code>get_user()</code> (L453)</li>
+<li><code>update_user()</code> (L457)</li>
+<li><code>change_password()</code> (L481)</li>
+<li>Funciones privadas (8): <code>_get_conn</code>, <code>__init__</code>, <code>_ensure_schema</code>, <code>_ensure_default_empresa</code>, <code>_hash_password</code>, <code>_verify_password</code>, <code>_ensure_admin</code>, <code>_log_login</code></li>
+</ul>
+<h3 id="cache_helperpy-292-lineas"><code>cache_helper.py</code> (292 líneas)</h3>
+<p><em>Utilidades de caché para optimización de performance en Streamlit.</em></p>
+<ul>
+<li><strong>class <code>GestorCache</code></strong> (línea 153): Gestor centralizado de caché con métricas de uso.</li>
+<li>Métodos: <code>__init__</code>, <code>obtener_o_calcular</code>, <code>mostrar_estadisticas</code>, <code>limpiar</code></li>
+<li><strong>Funciones públicas (13):</strong></li>
+<li><code>calcular_hash_dataframe()</code> (L16) — <em>Calcula un hash único para un DataFrame.</em></li>
+<li><code>cache_con_timeout()</code> (L41) — <em>Decorador para cachear resultados con timeout personalizado.</em></li>
+<li><code>limpiar_cache_completo()</code> (L63) — <em>Limpia todo el caché de Streamlit.</em></li>
+<li><code>mostrar_indicador_cache()</code> (L79) — <em>Muestra un indicador visual del estado del caché.</em></li>
+<li><code>decorador_medicion_tiempo()</code> (L99) — <em>Decorador para medir y mostrar tiempo de ejecución.</em></li>
+<li><code>cachear_dataframe()</code> (L135) — <em>Cachea un DataFrame con una key personalizada.</em></li>
+<li><code>decorator()</code> (L54)</li>
+<li><code>wrapper()</code> (L118)</li>
+<li><code>obtener_o_calcular()</code> (L177) — <em>Obtiene dato del caché o lo calcula si no existe.</em></li>
+<li><code>mostrar_estadisticas()</code> (L229) — <em>Muestra métricas de uso del caché.</em></li>
+<li><code>limpiar()</code> (L250) — <em>Limpia todo el caché gestionado.</em></li>
+<li><code>funcion_lenta()</code> (L284)</li>
+<li><code>wrapper()</code> (L57)</li>
+<li>Funciones privadas (1): <code>__init__</code></li>
+</ul>
+<h3 id="constantespy-297-lineas"><code>constantes.py</code> (297 líneas)</h3>
+<p><em>Constantes centralizadas para el Dashboard Fradma.</em></p>
+<ul>
+<li><strong>class <code>UmbralesCxC</code></strong> (línea 108): Umbrales para clasificación y alertas de CxC.</li>
+<li><strong>class <code>ScoreSalud</code></strong> (línea 149): Rangos y pesos para el score de salud financiera.</li>
+<li><strong>class <code>PrioridadCobranza</code></strong> (línea 175): Umbrales para clasificación de prioridad de cobranza.</li>
+<li><strong>class <code>ConfigVisualizacion</code></strong> (línea 279): Configuración para gráficos y tablas.</li>
+</ul>
+<h3 id="cxc_helperpy-449-lineas"><code>cxc_helper.py</code> (449 líneas)</h3>
+<p><em>Funciones helper para cálculos de Cuentas por Cobrar (CxC).</em></p>
+<ul>
+<li><strong>Funciones públicas (11):</strong></li>
+<li><code>detectar_columna()</code> (L23) — <em>Detecta la primera columna existente de una lista de candidatos.</em></li>
+<li><code>excluir_pagados()</code> (L52) — <em>Crea una máscara booleana para excluir registros pagados.</em></li>
+<li><code>calcular_dias_overdue()</code> (L88) — <em>Calcula días de atraso usando lógica unificada con fallback en cascada.</em></li>
+<li><code>preparar_datos_cxc()</code> (L176) — <em>Prepara datos de CxC con lógica unificada del Reporte Ejecutivo.</em></li>
+<li><code>calcular_score_salud()</code> (L221) — <em>Calcula el score de salud financiera con consideración de todos los rangos.</em></li>
+<li><code>clasificar_score_salud()</code> (L273) — <em>Clasifica un score de salud en categoría y color.</em></li>
+<li><code>clasificar_antiguedad()</code> (L295) — <em>Clasifica deuda por antigüedad en categorías estándar.</em></li>
+<li><code>calcular_metricas_basicas()</code> (L321) — <em>Calcula métricas básicas de CxC a partir de datos no pagados.</em></li>
+<li><code>obtener_semaforo_morosidad()</code> (L394) — <em>Retorna emoji de semáforo según nivel de morosidad.</em></li>
+<li><code>obtener_semaforo_riesgo()</code> (L414) — <em>Retorna emoji de semáforo según nivel de riesgo alto.</em></li>
+<li><code>obtener_semaforo_concentracion()</code> (L434) — <em>Retorna emoji de semáforo según nivel de concentración de cartera.</em></li>
+<li>Funciones privadas (1): <code>_parsear_fechas</code></li>
+</ul>
+<h3 id="cxc_metricas_clientepy-193-lineas"><code>cxc_metricas_cliente.py</code> (193 líneas)</h3>
+<p><em>Módulo para calcular métricas avanzadas de CxC agrupadas por cliente.</em></p>
+<ul>
+<li><strong>Funciones públicas (4):</strong></li>
+<li><code>calcular_metricas_por_cliente()</code> (L15) — <em>Calcula métricas de antigüedad por cliente usando 3 métodos:</em></li>
+<li><code>obtener_top_n_clientes()</code> (L92) — <em>Retorna los top N clientes por saldo total.</em></li>
+<li><code>obtener_clientes_por_rango()</code> (L106) — <em>Filtra clientes por rango de antigüedad.</em></li>
+<li><code>obtener_facturas_cliente()</code> (L120) — <em>Retorna el detalle de todas las facturas de un cliente específico.</em></li>
+<li>Funciones privadas (1): <code>_rango</code></li>
+</ul>
+<h3 id="data_cleanerpy-162-lineas"><code>data_cleaner.py</code> (162 líneas)</h3>
+<p><em>Módulo de limpieza y normalización de datos para Fradma Dashboard.</em></p>
+<ul>
+<li><strong>Funciones públicas (5):</strong></li>
+<li><code>normalizar_texto()</code> (L12) — <em>Normaliza un texto eliminando acentos, convirtiendo a minúsculas y limpiando espacios.</em></li>
+<li><code>cargar_aliases()</code> (L41) — <em>Carga el archivo de aliases/mapeos desde JSON.</em></li>
+<li><code>aplicar_aliases()</code> (L63) — <em>Aplica mapeo de aliases a una Serie de pandas.</em></li>
+<li><code>limpiar_columnas_texto()</code> (L92) — <em>Limpia y normaliza columnas de texto en un DataFrame.</em></li>
+<li><code>detectar_duplicados_similares()</code> (L137) — <em>Detecta valores similares que probablemente son duplicados.</em></li>
+</ul>
+<h3 id="data_normalizerpy-307-lineas"><code>data_normalizer.py</code> (307 líneas)</h3>
+<p><em>Módulo para normalización de datos.</em></p>
+<ul>
+<li><strong>Funciones públicas (8):</strong></li>
+<li><code>normalizar_columnas()</code> (L19) — <em>Normaliza nombres de columnas de un DataFrame.</em></li>
+<li><code>normalizar_columna_saldo()</code> (L61) — <em>Normaliza columnas de saldo/adeudo a un nombre estándar.</em></li>
+<li><code>normalizar_columna_valor()</code> (L100) — <em>Normaliza columnas de ventas/valor a un nombre estándar.</em></li>
+<li><code>limpiar_valores_monetarios()</code> (L139) — <em>Limpia valores monetarios eliminando símbolos y formatos.</em></li>
+<li><code>detectar_columnas_cxc()</code> (L168) — <em>Detecta si un DataFrame tiene columnas de CxC.</em></li>
+<li><code>excluir_pagados()</code> (L200) — <em>Excluye registros pagados de un DataFrame de CxC.</em></li>
+<li><code>normalizar_datos_cxc()</code> (L245) — <em>Normaliza datos de ventas y CxC de forma consistente.</em></li>
+<li><code>normalizar_columna_fecha()</code> (L286) — <em>Normaliza columna de fecha a datetime.</em></li>
+</ul>
+<h3 id="export_helperpy-1606-lineas"><code>export_helper.py</code> (1,606 líneas)</h3>
+<p><em>Utilidades para exportar reportes del dashboard a Excel y PDF.</em></p>
+<ul>
+<li><strong>Funciones públicas (6):</strong></li>
+<li><code>crear_excel_metricas_cxc()</code> (L20) — <em>Crea un archivo Excel con múltiples hojas de métricas CxC.</em></li>
+<li><code>crear_reporte_html()</code> (L166) — <em>Crea un reporte HTML ejecutivo profesional con métricas configurables.</em></li>
+<li><code>preparar_datos_para_export()</code> (L786) — <em>Prepara DataFrame para exportación limpiando y formateando datos.</em></li>
+<li><code>crear_excel_cobranza_semanal()</code> (L827) — <em>Crea un Excel de lista semanal de cobranza listo para compartir con el equipo.</em></li>
+<li><code>crear_reporte_pdf_ejecutivo()</code> (L1056) — <em>Crea un reporte ejecutivo en PDF a partir de una consulta del Data Assistant.</em></li>
+<li><code>limpiar_texto_para_pdf()</code> (L1207) — <em>Limpia texto removiendo markdown y escapando caracteres para ReportLab.</em></li>
+<li>Funciones privadas (5): <code>_fmt_nivel</code>, <code>_is_ck</code>, <code>_is_mk</code>, <code>_is_pk</code>, <code>_fmtk</code></li>
+</ul>
+<h3 id="filterspy-669-lineas"><code>filters.py</code> (669 líneas)</h3>
+<p><em>Componentes de filtrado avanzado para el dashboard Streamlit.</em></p>
+<ul>
+<li><strong>Funciones públicas (5):</strong></li>
+<li><code>aplicar_filtro_fechas()</code> (L14) — <em>Aplica filtro de fechas al DataFrame con múltiples modos de comparación.</em></li>
+<li><code>aplicar_filtro_cliente()</code> (L339) — <em>Aplica filtro de selección de clientes con búsqueda intuitiva.</em></li>
+<li><code>aplicar_filtro_monto()</code> (L415) — <em>Aplica filtro de rango de montos.</em></li>
+<li><code>aplicar_filtro_categoria_riesgo()</code> (L509) — <em>Aplica filtro por categoría de riesgo basado en días de atraso.</em></li>
+<li><code>mostrar_resumen_filtros()</code> (L595) — <em>Muestra un resumen de los filtros aplicados.</em></li>
+</ul>
+<h3 id="filters_helperpy-118-lineas"><code>filters_helper.py</code> (118 líneas)</h3>
+<p><em>Helper para manejo de filtros en análisis IA.</em></p>
+<ul>
+<li><strong>Funciones públicas (3):</strong></li>
+<li><code>obtener_lineas_filtradas()</code> (L16) — <em>Filtra líneas específicas removiendo 'Todas' y valores vacíos.</em></li>
+<li><code>generar_contexto_filtros()</code> (L53) — <em>Genera mensaje de contexto para la IA sobre el alcance del análisis.</em></li>
+<li><code>aplicar_filtro_dataframe()</code> (L87) — <em>Aplica filtro de líneas a un DataFrame de forma segura.</em></li>
+</ul>
+<h3 id="formatospy-187-lineas"><code>formatos.py</code> (187 líneas)</h3>
+<p><em>Módulo de utilidades para formateo consistente de datos en el dashboard.</em></p>
+<ul>
+<li><strong>Funciones públicas (7):</strong></li>
+<li><code>now_mx()</code> (L13) — <em>Retorna la hora actual en la zona horaria de México (America/Mexico_City).</em></li>
+<li><code>formato_moneda()</code> (L19) — <em>Formatea un valor numérico como moneda USD con separadores de miles.</em></li>
+<li><code>formato_numero()</code> (L45) — <em>Formatea un número con separadores de miles.</em></li>
+<li><code>formato_porcentaje()</code> (L69) — <em>Formatea un valor como porcentaje.</em></li>
+<li><code>formato_delta_moneda()</code> (L99) — <em>Formatea un delta de moneda para usar en st.metric().</em></li>
+<li><code>formato_compacto()</code> (L128) — <em>Formatea números grandes de manera compacta (K, M, B).</em></li>
+<li><code>formato_dias()</code> (L158) — <em>Formatea días con texto descriptivo.</em></li>
+</ul>
+<h3 id="knowledge_basepy-744-lineas"><code>knowledge_base.py</code> (744 líneas)</h3>
+<p><em>Módulo: Knowledge Base - Motor de Búsqueda e Indexación Wiki</em></p>
+<ul>
+<li><strong>class <code>Document</code></strong> (línea 32): Representa un documento indexado.</li>
+<li><strong>class <code>SearchResult</code></strong> (línea 47): Resultado de búsqueda con contexto.</li>
+<li><strong>class <code>SearchStats</code></strong> (línea 56): Estadísticas de una búsqueda.</li>
+<li><strong>class <code>MarkdownParser</code></strong> (línea 69): Parsea archivos Markdown en documentos estructurados.</li>
+<li>Métodos: <code>parse_file</code>, <code>_extract_title</code>, <code>_parse_sections</code>, <code>_categorize</code>, <code>_extract_metadata</code></li>
+<li><strong>class <code>SearchEngine</code></strong> (línea 240): Motor de búsqueda full-text sobre documentos indexados.</li>
+<li>Métodos: <code>__init__</code>, <code>_load_stopwords</code>, <code>index_directory</code>, <code>index_file</code>, <code>_build_inverted_index</code>, <code>_tokenize</code>, <code>search</code>, <code>_extract_snippet</code> +9 más</li>
+<li><strong>Funciones públicas (15):</strong></li>
+<li><code>get_search_engine()</code> (L707) — <em>Obtiene o crea la instancia del SearchEngine.</em></li>
+<li><code>invalidate_cache()</code> (L741) — <em>Invalida el cache del SearchEngine para forzar re-indexación.</em></li>
+<li><code>parse_file()</code> (L87) — <em>Parsea un archivo Markdown y retorna un Document.</em></li>
+<li><code>index_directory()</code> (L267) — <em>Indexa todos los archivos Markdown en un directorio.</em></li>
+<li><code>index_file()</code> (L298) — <em>Indexa un archivo individual.</em></li>
+<li><code>search()</code> (L347) — <em>Búsqueda full-text con ranking por relevancia.</em></li>
+<li><code>get_categories()</code> (L501) — <em>Retorna categorías con conteo de documentos.</em></li>
+<li><code>get_document_by_id()</code> (L508) — <em>Obtiene un documento por su ID.</em></li>
+<li><code>get_all_documents()</code> (L512) — <em>Retorna todos los documentos, opcionalmente filtrados.</em></li>
+<li><code>get_search_history()</code> (L519) — <em>Retorna historial de búsquedas recientes.</em></li>
+<li><code>get_stats()</code> (L523) — <em>Retorna estadísticas del índice.</em></li>
+<li><code>get_related_documents()</code> (L540) — <em>Encuentra documentos relacionados basado en tokens compartidos.</em></li>
+<li><code>get_document_history()</code> (L562) — <em>Obtiene el historial de cambios (git log) de un documento.</em></li>
+<li><code>save_document()</code> (L629) — <em>Guarda cambios en un documento existente.</em></li>
+<li><code>create_document()</code> (L671) — <em>Crea un nuevo documento markdown.</em></li>
+<li>Funciones privadas (9): <code>_extract_title</code>, <code>_parse_sections</code>, <code>_categorize</code>, <code>_extract_metadata</code>, <code>__init__</code>, <code>_load_stopwords</code>, <code>_build_inverted_index</code>, <code>_tokenize</code>, <code>_extract_snippet</code></li>
+</ul>
+<h3 id="loggerpy-232-lineas"><code>logger.py</code> (232 líneas)</h3>
+<p><em>Sistema de logging estructurado para el Dashboard FRADMA.</em></p>
+<ul>
+<li><strong>class <code>ColoredFormatter</code></strong> (línea 26): Formatter con colores para output de consola.</li>
+<li>Métodos: <code>format</code></li>
+<li><strong>Funciones públicas (7):</strong></li>
+<li><code>configurar_logger()</code> (L47) — <em>Configura y retorna un logger estructurado.</em></li>
+<li><code>log_execution_time()</code> (L126) — <em>Decorador para medir y loggear el tiempo de ejecución de funciones.</em></li>
+<li><code>log_dataframe_info()</code> (L167) — <em>Loggea información útil sobre un DataFrame.</em></li>
+<li><code>format()</code> (L39) — <em>Formatear el log record con colores.</em></li>
+<li><code>decorator()</code> (L143)</li>
+<li><code>funcion_ejemplo()</code> (L217)</li>
+<li><code>wrapper()</code> (L145)</li>
+</ul>
+<h3 id="neon_loaderpy-145-lineas"><code>neon_loader.py</code> (145 líneas)</h3>
+<p><em>Carga de datos CFDI desde Neon hacia session_state["df"].</em></p>
+<ul>
+<li><strong>Funciones públicas (1):</strong></li>
+<li><code>cargar_cfdi_como_df()</code> (L41) — <em>Lee cfdi_ventas de Neon filtrado por empresa_id y devuelve un DataFrame</em></li>
+<li>Funciones privadas (1): <code>_streamlit_neon_url</code></li>
+</ul>
+<h3 id="nl2sqlpy-2043-lineas"><code>nl2sql.py</code> (2,043 líneas)</h3>
+<p><em>Motor NL2SQL — Consultas en Lenguaje Natural sobre Base de Datos CFDI.</em></p>
+<ul>
+<li><strong>class <code>NL2SQLResult</code></strong> (línea 147): Resultado de una consulta en lenguaje natural.</li>
+<li>Métodos: <code>success</code>, <code>to_dict</code></li>
+<li><strong>class <code>NL2SQLEngine</code></strong> (línea 424): Motor de consultas en lenguaje natural sobre base de datos CFDI.</li>
+<li>Métodos: <code>__init__</code>, <code>generate_sql</code>, <code>_build_system_prompt</code>, <code>_clean_sql</code>, <code>_detect_month</code>, <code>_detect_explicit_year</code>, <code>_detect_date_range</code>, <code>_ensure_month_filter</code> +12 más</li>
+<li><strong>Funciones públicas (15):</strong></li>
+<li><code>validate_sql_static()</code> (L1986) — <em>Validación estática de SQL sin necesidad de instanciar el engine.</em></li>
+<li><code>get_example_questions()</code> (L2041) — <em>Retorna las preguntas de ejemplo organizadas por categoría.</em></li>
+<li><code>success()</code> (L161)</li>
+<li><code>to_dict()</code> (L164)</li>
+<li><code>generate_sql()</code> (L472) — <em>Genera SQL a partir de una pregunta en lenguaje natural.</em></li>
+<li><code>validate_sql()</code> (L1042) — <em>Valida que el SQL sea seguro para ejecución.</em></li>
+<li><code>execute_query()</code> (L1180) — <em>Ejecuta una query SQL contra la base de datos.</em></li>
+<li><code>interpret_results()</code> (L1239) — <em>Genera una interpretación en lenguaje natural de los resultados.</em></li>
+<li><code>ask()</code> (L1758) — <em>Pipeline completo: pregunta → SQL → ejecución → interpretación.</em></li>
+<li><code>get_history()</code> (L1894) — <em>Retorna el historial de consultas.</em></li>
+<li><code>clear_history()</code> (L1898) — <em>Limpia el historial de consultas.</em></li>
+<li><code>test_connection()</code> (L1902) — <em>Prueba la conexión a la base de datos.</em></li>
+<li><code>get_table_counts()</code> (L1923) — <em>Obtiene el conteo de registros por tabla.</em></li>
+<li><code>get_date_range()</code> (L1955) — <em>Obtiene el rango de fechas de los datos.</em></li>
+<li><code>wrap_div()</code> (L1142)</li>
+<li>Funciones privadas (12): <code>_normalize_highlights</code>, <code>_protect</code>, <code>__init__</code>, <code>_build_system_prompt</code>, <code>_clean_sql</code>, <code>_detect_month</code>, <code>_detect_explicit_year</code>, <code>_detect_date_range</code>, <code>_ensure_month_filter</code>, <code>_fix_year_contradictions</code> +2</li>
+</ul>
+<h3 id="roi_trackerpy-369-lineas"><code>roi_tracker.py</code> (369 líneas)</h3>
+<p><em>ROI Tracker - Sistema de seguimiento de retorno de inversión</em></p>
+<ul>
+<li><strong>class <code>ROITracker</code></strong> (línea 10): Tracker de ROI para medir el valor generado por el uso de la plataforma.</li>
+<li>Métodos: <code>__init__</code>, <code>_init_session</code>, <code>get_user_hourly_rate</code>, <code>track_action</code>, <code>track_risk_avoided</code>, <code>get_analyst_salary</code>, <code>set_analyst_salary</code>, <code>hrs_to_workdays</code> +4 más</li>
+<li><strong>Funciones públicas (12):</strong></li>
+<li><code>init_roi_tracker()</code> (L343) — <em>Inicializa el ROI tracker en el session state</em></li>
+<li><code>quick_track()</code> (L358) — <em>Función rápida para trackear una acción</em></li>
+<li><code>get_user_hourly_rate()</code> (L107) — <em>Obtiene el costo por hora del usuario actual</em></li>
+<li><code>track_action()</code> (L126) — <em>Rastrea una acción y calcula el ROI automáticamente</em></li>
+<li><code>track_risk_avoided()</code> (L197) — <em>Rastrea un riesgo detectado y evitado (requiere IA Premium)</em></li>
+<li><code>get_analyst_salary()</code> (L238) — <em>Obtiene el sueldo configurado de analista o el default</em></li>
+<li><code>set_analyst_salary()</code> (L242) — <em>Configura el sueldo de referencia del analista</em></li>
+<li><code>hrs_to_workdays()</code> (L246) — <em>Convierte horas a días laborales (8 hrs = 1 día)</em></li>
+<li><code>calculate_analyst_cost_equivalent()</code> (L250) — <em>Calcula el costo equivalente en sueldos de analista</em></li>
+<li><code>get_summary()</code> (L279) — <em>Obtiene resumen del ROI acumulado con días laborales calculados</em></li>
+<li><code>get_recent_actions()</code> (L322) — <em>Obtiene las últimas acciones rastreadas</em></li>
+<li><code>reset_session()</code> (L335) — <em>Reinicia el tracking de la sesión actual (útil para testing)</em></li>
+<li>Funciones privadas (2): <code>__init__</code>, <code>_init_session</code></li>
+</ul>
+<h2 id="cfdi-cfdi">📄 CFDI (cfdi/)</h2>
+<p><strong>Total: 1,463 líneas en 3 módulos</strong></p>
+<h3 id="enrichmentpy-520-lineas"><code>enrichment.py</code> (520 líneas)</h3>
+<p><em>Módulo de enriquecimiento de datos CFDI con IA.</em></p>
+<ul>
+<li><strong>class <code>CFDIEnrichment</code></strong> (línea 105): Clase para enriquecimiento de conceptos CFDI con IA.</li>
+<li>Métodos: <code>__init__</code>, <code>_get_cache_key</code>, <code>_clasificar_por_keywords</code>, <code>_clasificar_con_gpt</code>, <code>clasificar_concepto</code>, <code>enriquecer_conceptos_batch</code>, <code>detectar_anomalias</code>, <code>generar_resumen</code> +2 más</li>
+<li><strong>Funciones públicas (7):</strong></li>
+<li><code>clasificar_rapido()</code> (L504) — <em>Función helper para clasificación rápida sin instanciar clase.</em></li>
+<li><code>clasificar_concepto()</code> (L236) — <em>Clasifica un concepto en una línea de negocio.</em></li>
+<li><code>enriquecer_conceptos_batch()</code> (L287) — <em>Enriquece una lista de conceptos con clasificación.</em></li>
+<li><code>detectar_anomalias()</code> (L364) — <em>Detecta posibles anomalías en un concepto.</em></li>
+<li><code>generar_resumen()</code> (L432) — <em>Genera un resumen estadístico de conceptos enriquecidos.</em></li>
+<li><code>export_cache()</code> (L476) — <em>Exporta el caché a un archivo JSON.</em></li>
+<li><code>import_cache()</code> (L487) — <em>Importa un caché desde un archivo JSON.</em></li>
+<li>Funciones privadas (4): <code>__init__</code>, <code>_get_cache_key</code>, <code>_clasificar_por_keywords</code>, <code>_clasificar_con_gpt</code></li>
+</ul>
+<h3 id="ingestionpy-595-lineas"><code>ingestion.py</code> (595 líneas)</h3>
+<p><em>Módulo de ingesta de datos CFDI a Neon PostgreSQL.</em></p>
+<ul>
+<li><strong>class <code>NeonIngestion</code></strong> (línea 24): Clase para manejar la ingesta de datos CFDI a Neon PostgreSQL.</li>
+<li>Métodos: <code>__init__</code>, <code>__enter__</code>, <code>__exit__</code>, <code>connect</code>, <code>close</code>, <code>_uuid_exists</code>, <code>_upsert_cliente</code>, <code>insert_venta</code> +3 más</li>
+<li><strong>Funciones públicas (7):</strong></li>
+<li><code>verify_connection()</code> (L566) — <em>Verifica la conexión a Neon.</em></li>
+<li><code>connect()</code> (L62) — <em>Establece conexión a Neon.</em></li>
+<li><code>close()</code> (L71) — <em>Cierra conexión a Neon.</em></li>
+<li><code>insert_venta()</code> (L127) — <em>Inserta una factura de venta (CFDI) con sus conceptos y actualiza clientes.</em></li>
+<li><code>insert_ventas_batch()</code> (L305) — <em>Inserta múltiples facturas en batch.</em></li>
+<li><code>insert_pago()</code> (L387) — <em>Inserta un complemento de pago.</em></li>
+<li><code>get_empresa_stats()</code> (L489) — <em>Obtiene estadísticas de la empresa.</em></li>
+<li>Funciones privadas (5): <code>__init__</code>, <code>__enter__</code>, <code>__exit__</code>, <code>_uuid_exists</code>, <code>_upsert_cliente</code></li>
+</ul>
+<h3 id="parserpy-348-lineas"><code>parser.py</code> (348 líneas)</h3>
+<p><em>Parser de CFDI 4.0 - Extrae datos estructurados de XMLs de SAT</em></p>
+<ul>
+<li><strong>class <code>CFDIParser</code></strong> (línea 25): Parser para CFDI 4.0</li>
+<li>Métodos: <code>__init__</code>, <code>parse_cfdi_venta</code>, <code>_extract_comprobante</code>, <code>_extract_emisor</code>, <code>_extract_receptor</code>, <code>_extract_conceptos</code>, <code>_extract_impuestos</code>, <code>_extract_timbre</code> +1 más</li>
+<li><strong>class <code>ComplementoPagoParser</code></strong> (línea 224): Parser para Complemento de Pagos 2.0</li>
+<li>Métodos: <code>__init__</code>, <code>parse_complemento_pago</code>, <code>_parse_datetime</code></li>
+<li><strong>Funciones públicas (3):</strong></li>
+<li><code>parse_cfdi_batch()</code> (L297) — <em>Procesa múltiples CFDIs en batch</em></li>
+<li><code>parse_cfdi_venta()</code> (L31) — <em>Parsea un CFDI de venta (emitido) y extrae datos estructurados</em></li>
+<li><code>parse_complemento_pago()</code> (L230) — <em>Parsea un complemento de pago y extrae registros de cobranza</em></li>
+<li>Funciones privadas (10): <code>__init__</code>, <code>_extract_comprobante</code>, <code>_extract_emisor</code>, <code>_extract_receptor</code>, <code>_extract_conceptos</code>, <code>_extract_impuestos</code>, <code>_extract_timbre</code>, <code>_parse_datetime</code>, <code>__init__</code>, <code>_parse_datetime</code></li>
+</ul>
+<h2 id="dependencias">📦 Dependencias</h2>
+<h3 id="produccion">Producción</h3>
+<ul>
+<li><code>streamlit==1.52.1</code></li>
+<li><code>pandas==2.3.3</code></li>
+<li><code>numpy==2.3.5</code></li>
+<li><code>matplotlib==3.10.8</code></li>
+<li><code>seaborn==0.13.2</code></li>
+<li><code>plotly==6.5.0</code></li>
+<li><code>kaleido==0.2.1</code></li>
+<li><code>openpyxl==3.1.5</code></li>
+<li><code>xlsxwriter==3.2.9</code></li>
+<li><code>Unidecode==1.4.0</code></li>
+<li><code>requests==2.32.3</code></li>
+<li><code>openai==2.17.0</code></li>
+<li><code>python-dotenv==1.0.1</code></li>
+<li><code>bcrypt==5.0.0</code></li>
+<li><code>lxml==6.0.2</code></li>
+<li><code>psycopg2-binary==2.9.11</code></li>
+<li><code>reportlab==4.2.5</code></li>
+</ul>
+<h3 id="desarrollo">Desarrollo</h3>
+<ul>
+<li><code>pytest==9.0.2</code></li>
+<li><code>pytest-cov==7.0.0</code></li>
+<li><code>pytest-mock==3.15.1</code></li>
+<li><code>coverage==7.13.0</code></li>
+</ul>
+<h2 id="contribuidores">👥 Contribuidores</h2>
+<table>
+<thead>
+<tr>
+<th>Autor</th>
+<th>Commits</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>B10sp4rt4n</td>
+<td>390</td>
+</tr>
+</tbody>
+</table>
+<h2 id="estado-de-tests">🧪 Estado de Tests</h2>
+<ul>
+<li><strong>538 tests</strong> en 25 archivos</li>
+<li>Cobertura: <strong>10.5%</strong></li>
+</ul>
+<hr />
+<p><em>Wiki generado por <code>scripts/generate_wiki.py</code> el 2026-04-09T04:57:16</em><br />
+<em>Para regenerar: <code>python scripts/generate_wiki.py</code></em></p>
+  </div>
+</main>
+
+<script>
+  // Generar índice lateral desde los headings del contenido
+  const toc = document.getElementById('toc-links');
+  document.querySelectorAll('#content h2, #content h3').forEach((h, i) => {
+    if (!h.id) h.id = 'sec-' + i;
+    const a = document.createElement('a');
+    a.href = '#' + h.id;
+    a.textContent = (h.tagName === 'H3' ? '  · ' : '') + h.textContent;
+    a.style.paddingLeft = h.tagName === 'H3' ? '1rem' : '.5rem';
+    a.addEventListener('click', () => {
+      document.querySelectorAll('nav a').forEach(x => x.classList.remove('active'));
+      a.classList.add('active');
+    });
+    toc.appendChild(a);
+  });
+
+  // Resaltar sección activa al hacer scroll
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        const id = e.target.id;
+        document.querySelectorAll('nav a').forEach(a => {
+          a.classList.toggle('active', a.getAttribute('href') === '#' + id);
+        });
+      }
+    });
+  }, { rootMargin: '-10% 0px -80% 0px' });
+  document.querySelectorAll('#content h2, #content h3').forEach(h => observer.observe(h));
+</script>
+</body>
+</html>

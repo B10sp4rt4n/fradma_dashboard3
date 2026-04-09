@@ -1,6 +1,6 @@
 # Wiki Activo — Fradma Dashboard (Cima Analytics)
 
-> Generado automáticamente: **2026-02-28T05:12:55**
+> Generado automáticamente: **2026-04-09T04:57:16**
 > Este documento se regenera desde el código fuente real.
 
 ---
@@ -9,14 +9,14 @@
 
 | Métrica | Valor |
 |---------|-------|
-| Líneas de código Python | **23,271** |
-| Módulos Python | **35** |
-| Tests | **439** en 22 archivos |
-| Cobertura | **20.3%** |
-| Commits | **288** |
-| Último commit | 2026-02-28 05:11:20 |
+| Líneas de código Python | **32,170** |
+| Módulos Python | **41** |
+| Tests | **538** en 25 archivos |
+| Cobertura | **10.5%** |
+| Commits | **397** |
+| Último commit | 2026-04-09 04:43:28 |
 | Inicio del proyecto | 2025-06-05 |
-| Items del menú | **14** módulos |
+| Items del menú | **17** módulos |
 
 ## Menú de la Aplicación
 
@@ -30,14 +30,31 @@
 8. 💳 KPI Cartera CxC
 9. 👥 Vendedores + CxC
 10. 🧰 Herramientas Financieras
-11. 📦 Ingesta CFDIs (ZIP)
-12. 📚 Knowledge Base
-13. ⚙️ Gestión de Usuarios
-14. 🔧 Configuración
+11. 📂 Cargar mis facturas
+12. 📋 Universo de CFDIs
+13. 🧾 Desglose Fiscal
+14. 📍 Mapa de Clientes
+15. 📚 Knowledge Base
+16. ⚙️ Gestión de Usuarios
+17. 🔧 Configuración
 
 ## 📊 Módulos Principales (main/)
 
-**Total: 13,574 líneas en 14 módulos**
+**Total: 18,434 líneas en 18 módulos**
+
+### `data_assistant.py` (2,611 líneas)
+_Módulo: Asistente de Datos — Consultas en lenguaje natural sobre CFDIs._
+
+- **Funciones públicas (1):**
+  - `run()` (L2532) — _Punto de entrada del módulo Asistente de Datos._
+- Funciones privadas (36): `_get_engine`, `_invalidate_engine`, `_render_stats_kpi`, `_render_smart_table`, `_render_kpi_tab`, `_render_plotly_chart_and_save`, `_auto_chart`, `_render_stats_chart`, `_render_hero`, `_auto_connect_from_env` +26
+
+### `fiscal.py` (540 líneas)
+_Módulo: Desglose Fiscal_
+
+- **Funciones públicas (1):**
+  - `run()` (L144)
+- Funciones privadas (4): `_get_neon_url`, `_cargar_fiscal`, `_cargar_tendencia_fiscal`, `_cargar_retenciones`
 
 ### `heatmap_ventas.py` (404 líneas)
 __Sin docstring__
@@ -49,55 +66,56 @@ __Sin docstring__
   - `generar_periodo_id()` (L66) — _Genera el identificador del periodo de forma segura_
   - `format_currency()` (L205)
 
-### `herramientas_financieras.py` (1,689 líneas)
+### `herramientas_financieras.py` (1,690 líneas)
 _Módulo: Herramientas Financieras_
 
-- **class `FakeFile`** (línea 1315): 
+- **class `FakeFile`** (línea 1316): 
   - Métodos: `__init__`, `read`
 - **Funciones públicas (14):**
-  - `obtener_tasas_cambio()` (L31) — _Obtiene tasas de cambio actualizadas desde API gratuita._
-  - `get_tasas_fallback()` (L59) — _Tasas de respaldo en caso de fallo de API._
-  - `get_nombres_monedas()` (L79) — _Retorna diccionario con nombres completos de monedas._
-  - `mostrar_conversor_monedas()` (L117) — _Muestra interfaz del conversor de monedas._
-  - `mostrar_calculadora_descuento_pronto_pago()` (L325) — _Calculadora para evaluar si conviene dar descuento por pronto pago._
-  - `mostrar_calculadora_dso()` (L485) — _Calculadora de DSO - Días de ventas pendientes de cobro._
-  - `mostrar_calculadora_interes_moratorio()` (L707) — _Calculadora de interés moratorio por pagos vencidos._
-  - `obtener_indicadores_economicos()` (L953) — _Obtiene indicadores económicos básicos._
-  - `mostrar_indicadores_economicos()` (L985) — _Muestra panel con indicadores económicos de referencia._
-  - `parsear_xml_cfdi()` (L1113) — _Parsea un archivo XML de factura CFDI (México)._
-  - `mostrar_digestor_xml()` (L1235) — _Muestra interfaz para digerir facturas XML (CFDI)._
-  - `run()` (L1656) — _Función principal del módulo de herramientas financieras._
-  - `format_moneda()` (L177)
-  - `read()` (L1319)
+  - `obtener_tasas_cambio()` (L32) — _Obtiene tasas de cambio actualizadas desde API gratuita._
+  - `get_tasas_fallback()` (L60) — _Tasas de respaldo en caso de fallo de API._
+  - `get_nombres_monedas()` (L80) — _Retorna diccionario con nombres completos de monedas._
+  - `mostrar_conversor_monedas()` (L118) — _Muestra interfaz del conversor de monedas._
+  - `mostrar_calculadora_descuento_pronto_pago()` (L326) — _Calculadora para evaluar si conviene dar descuento por pronto pago._
+  - `mostrar_calculadora_dso()` (L486) — _Calculadora de DSO - Días de ventas pendientes de cobro._
+  - `mostrar_calculadora_interes_moratorio()` (L708) — _Calculadora de interés moratorio por pagos vencidos._
+  - `obtener_indicadores_economicos()` (L954) — _Obtiene indicadores económicos básicos._
+  - `mostrar_indicadores_economicos()` (L986) — _Muestra panel con indicadores económicos de referencia._
+  - `parsear_xml_cfdi()` (L1114) — _Parsea un archivo XML de factura CFDI (México)._
+  - `mostrar_digestor_xml()` (L1236) — _Muestra interfaz para digerir facturas XML (CFDI)._
+  - `run()` (L1657) — _Función principal del módulo de herramientas financieras._
+  - `format_moneda()` (L178)
+  - `read()` (L1320)
 - Funciones privadas (1): `__init__`
 
-### `ingesta_cfdi.py` (1,195 líneas)
+### `ingesta_cfdi.py` (1,418 líneas)
 _Módulo de ingesta de CFDIs desde ZIP._
 
 - **Funciones públicas (8):**
   - `extract_zip_to_temp()` (L38) — _Extrae un ZIP subido a una carpeta temporal._
   - `read_xml_contents()` (L64) — _Lee el contenido de múltiples archivos XML._
   - `mostrar_estadisticas_procesamiento()` (L79) — _Muestra estadísticas generales del procesamiento._
-  - `crear_dataframe_conceptos()` (L148) — _Crea un DataFrame completo con todos los conceptos de las facturas._
-  - `mostrar_distribuciones()` (L206) — _Muestra distribuciones por empresa y producto._
-  - `mostrar_analisis_avanzados()` (L364) — _Muestra análisis avanzados sin IA: Pareto, tickets promedio, frecuencia, etc._
-  - `mostrar_analisis_precios()` (L660) — _Muestra análisis de precios y variaciones._
-  - `main()` (L826) — _Función principal de la página._
+  - `crear_dataframe_conceptos()` (L240) — _Crea un DataFrame completo con todos los conceptos de las facturas._
+  - `mostrar_distribuciones()` (L298) — _Muestra distribuciones por empresa y producto._
+  - `mostrar_analisis_avanzados()` (L456) — _Muestra análisis avanzados sin IA: Pareto, tickets promedio, frecuencia, etc._
+  - `mostrar_analisis_precios()` (L752) — _Muestra análisis de precios y variaciones._
+  - `main()` (L918) — _Función principal de la página._
+- Funciones privadas (1): `_render_ingesta_summary`
 
-### `knowledge_base.py` (744 líneas)
+### `knowledge_base.py` (769 líneas)
 _Módulo: Knowledge Base / Wiki — Interfaz Streamlit_
 
 - **Funciones públicas (1):**
-  - `run()` (L704) — _Punto de entrada del módulo Knowledge Base._
+  - `run()` (L729) — _Punto de entrada del módulo Knowledge Base._
 - Funciones privadas (15): `_badge_html`, `_short_path`, `_fmt_words`, `_clean_anchor_links`, `_render_explorer`, `_render_search`, `_render_document`, `_render_full_content`, `_render_stats`, `_render_history` +5
 
-### `kpi_cpc.py` (2,326 líneas)
+### `kpi_cpc.py` (2,391 líneas)
 __Sin docstring__
 
 - **Funciones públicas (2):**
-  - `run()` (L60) — _Función principal del módulo KPI CxC (Cuentas por Cobrar)._
-  - `clasificar_riesgo()` (L1367)
-- Funciones privadas (2): `_detectar_col_vendedor`, `_rango_evol`
+  - `run()` (L61) — _Función principal del módulo KPI CxC (Cuentas por Cobrar)._
+  - `clasificar_riesgo()` (L1432)
+- Funciones privadas (4): `_detectar_col_vendedor`, `_es_vigente`, `_es_vencida`, `_rango_evol`
 
 ### `main_comparativo.py` (113 líneas)
 __Sin docstring__
@@ -124,14 +142,21 @@ __Sin docstring__
 - **Funciones públicas (1):**
   - `run()` (L5)
 
-### `reporte_consolidado.py` (668 líneas)
+### `mapa_clientes.py` (362 líneas)
+_Módulo: Mapa de Clientes_
+
+- **Funciones públicas (1):**
+  - `run()` (L200)
+- Funciones privadas (5): `_cp_a_estado`, `_get_neon_url`, `_cargar_datos`, `_geocodificar_cp_online`, `_cargar_coords`
+
+### `reporte_consolidado.py` (669 líneas)
 _Módulo: Reporte Consolidado - Dashboard Ejecutivo_
 
 - **Funciones públicas (4):**
-  - `agrupar_por_periodo()` (L31) — _Agrupa un DataFrame de ventas por el período especificado._
-  - `crear_grafico_ventas_periodo()` (L64) — _Crea un gráfico de barras/líneas de ventas por período._
-  - `crear_pie_cxc()` (L115) — _Crea un gráfico de pie para distribución de CxC._
-  - `run()` (L545) — _Función principal del Reporte Consolidado._
+  - `agrupar_por_periodo()` (L32) — _Agrupa un DataFrame de ventas por el período especificado._
+  - `crear_grafico_ventas_periodo()` (L65) — _Crea un gráfico de barras/líneas de ventas por período._
+  - `crear_pie_cxc()` (L116) — _Crea un gráfico de pie para distribución de CxC._
+  - `run()` (L546) — _Función principal del Reporte Consolidado._
 - Funciones privadas (8): `_preparar_datos_iniciales`, `_obtener_configuracion_ui`, `_calcular_metricas_ventas`, `_calcular_metricas_cxc`, `_renderizar_kpis`, `_renderizar_visualizaciones`, `_renderizar_analisis_ia`, `_renderizar_tabla_detalle`
 
 ### `reporte_ejecutivo.py` (1,148 líneas)
@@ -140,63 +165,71 @@ _Módulo de Reporte Ejecutivo para el Dashboard Fradma._
 - **Funciones públicas (1):**
   - `mostrar_reporte_ejecutivo()` (L21) — _Muestra el reporte ejecutivo consolidado con métricas clave de negocio._
 
-### `vendedores_cxc.py` (1,013 líneas)
+### `universo_cfdi.py` (675 líneas)
+_Módulo: Universo de CFDIs_
+
+- **Funciones públicas (1):**
+  - `run()` (L225)
+- Funciones privadas (8): `_get_neon_url`, `_cargar_datos`, `_cargar_detalle`, `_cargar_tendencia`, `_cargar_pue_ppd`, `_clasificar_ppd`, `_color_estatus`, `_color_clasif`
+
+### `vendedores_cxc.py` (1,360 líneas)
 _Módulo: Vendedores + CxC_
 
 - **Funciones públicas (2):**
-  - `run()` (L124)
-  - `clasificar_antiguedad_detallado()` (L320)
+  - `run()` (L136)
+  - `clasificar_antiguedad_detallado()` (L380)
 - Funciones privadas (5): `_normalizar_nombre_cliente`, `_detectar_col_vendedor`, `_detectar_col_ventas`, `_detectar_col_cliente`, `_score_calidad`
 
-### `ytd_lineas.py` (1,543 líneas)
+### `ytd_lineas.py` (1,548 líneas)
 _Módulo: Reporte YTD (Year-to-Date) por Línea de Negocio_
 
 - **Funciones públicas (13):**
-  - `calcular_ytd()` (L60) — _Calcula ventas YTD hasta una fecha específica._
-  - `calcular_metricas_ytd()` (L96) — _Calcula métricas agregadas YTD._
-  - `crear_grafico_lineas_acumulado()` (L123) — _Crea gráfico de líneas con ventas acumuladas por mes._
-  - `crear_grafico_barras_comparativo()` (L225) — _Crea gráfico de barras comparando año actual vs anterior por línea._
-  - `crear_treemap_participacion()` (L373) — _Crea treemap mostrando participación de cada línea._
-  - `crear_grafico_comparativo_anos_completos()` (L407) — _Crea gráfico de barras comparando ventas totales de años completos._
-  - `crear_tabla_top_productos()` (L514) — _Crea tabla con top productos del período._
-  - `crear_tabla_top_clientes()` (L527) — _Crea tabla con top clientes del período._
-  - `exportar_excel_ytd()` (L540) — _Genera archivo Excel con reporte YTD completo._
-  - `run()` (L605) — _Función principal del módulo YTD por Líneas._
-  - `calcular_crecimiento_seguro()` (L274)
-  - `aplicar_color_fondo()` (L1302)
-  - `aplicar_color_fondo_local()` (L1366)
+  - `calcular_ytd()` (L61) — _Calcula ventas YTD hasta una fecha específica._
+  - `calcular_metricas_ytd()` (L101) — _Calcula métricas agregadas YTD._
+  - `crear_grafico_lineas_acumulado()` (L128) — _Crea gráfico de líneas con ventas acumuladas por mes._
+  - `crear_grafico_barras_comparativo()` (L230) — _Crea gráfico de barras comparando año actual vs anterior por línea._
+  - `crear_treemap_participacion()` (L378) — _Crea treemap mostrando participación de cada línea._
+  - `crear_grafico_comparativo_anos_completos()` (L412) — _Crea gráfico de barras comparando ventas totales de años completos._
+  - `crear_tabla_top_productos()` (L519) — _Crea tabla con top productos del período._
+  - `crear_tabla_top_clientes()` (L532) — _Crea tabla con top clientes del período._
+  - `exportar_excel_ytd()` (L545) — _Genera archivo Excel con reporte YTD completo._
+  - `run()` (L610) — _Función principal del módulo YTD por Líneas._
+  - `calcular_crecimiento_seguro()` (L279)
+  - `aplicar_color_fondo()` (L1307)
+  - `aplicar_color_fondo_local()` (L1371)
 
-### `ytd_productos.py` (2,000 líneas)
+### `ytd_productos.py` (2,005 líneas)
 _Módulo: Reporte YTD (Year-to-Date) por Producto_
 
 - **Funciones públicas (15):**
-  - `calcular_ytd()` (L60) — _Calcula ventas YTD hasta una fecha específica._
-  - `calcular_metricas_ytd()` (L96) — _Calcula métricas agregadas YTD._
-  - `crear_grafico_temporal_producto()` (L123) — _Crea gráfico de evolución temporal de un producto específico._
-  - `crear_treemap_clientes_producto()` (L220) — _Crea treemap de clientes que compran un producto específico._
-  - `crear_treemap_productos_top()` (L289) — _Crea treemap de productos top con resto agrupado como 'Otros'._
-  - `crear_grafico_lineas_acumulado()` (L359) — _Crea gráfico de productos con ventas acumuladas por mes._
-  - `crear_grafico_barras_comparativo()` (L461) — _Crea gráfico de barras comparando año actual vs anterior por producto._
-  - `crear_treemap_participacion()` (L609) — _Crea treemap mostrando participación de cada línea._
-  - `crear_grafico_comparativo_anos_completos()` (L643) — _Crea gráfico de barras comparando ventas totales de años completos._
-  - `crear_tabla_top_productos()` (L750) — _Crea tabla con top productos del período._
-  - `crear_tabla_top_clientes()` (L763) — _Crea tabla con top clientes del período._
-  - `exportar_excel_ytd()` (L776) — _Genera archivo Excel con reporte YTD completo._
-  - `run()` (L841) — _Función principal del módulo YTD por Líneas._
-  - `calcular_crecimiento_seguro()` (L510)
-  - `highlight_selected()` (L1408)
+  - `calcular_ytd()` (L61) — _Calcula ventas YTD hasta una fecha específica._
+  - `calcular_metricas_ytd()` (L101) — _Calcula métricas agregadas YTD._
+  - `crear_grafico_temporal_producto()` (L128) — _Crea gráfico de evolución temporal de un producto específico._
+  - `crear_treemap_clientes_producto()` (L225) — _Crea treemap de clientes que compran un producto específico._
+  - `crear_treemap_productos_top()` (L294) — _Crea treemap de productos top con resto agrupado como 'Otros'._
+  - `crear_grafico_lineas_acumulado()` (L364) — _Crea gráfico de productos con ventas acumuladas por mes._
+  - `crear_grafico_barras_comparativo()` (L466) — _Crea gráfico de barras comparando año actual vs anterior por producto._
+  - `crear_treemap_participacion()` (L614) — _Crea treemap mostrando participación de cada línea._
+  - `crear_grafico_comparativo_anos_completos()` (L648) — _Crea gráfico de barras comparando ventas totales de años completos._
+  - `crear_tabla_top_productos()` (L755) — _Crea tabla con top productos del período._
+  - `crear_tabla_top_clientes()` (L768) — _Crea tabla con top clientes del período._
+  - `exportar_excel_ytd()` (L781) — _Genera archivo Excel con reporte YTD completo._
+  - `run()` (L846) — _Función principal del módulo YTD por Líneas._
+  - `calcular_crecimiento_seguro()` (L515)
+  - `highlight_selected()` (L1413)
 
 ## 🔧 Utilidades (utils/)
 
-**Total: 6,826 líneas en 17 módulos**
+**Total: 10,227 líneas en 19 módulos**
 
-### `admin_panel.py` (502 líneas)
+### `admin_panel.py` (757 líneas)
 _Panel de administración de usuarios para FRADMA Dashboard._
 
 - **Funciones públicas (3):**
   - `mostrar_panel_usuarios()` (L20) — _Panel completo de gestión de usuarios._
-  - `mostrar_panel_configuracion()` (L344) — _Panel de configuración del sistema._
-  - `mostrar_info_usuario()` (L433) — _Muestra información del usuario en el sidebar._
+  - `mostrar_panel_configuracion()` (L567) — _Panel de configuración del sistema._
+  - `mostrar_info_usuario()` (L656) — _Muestra información del usuario en el sidebar._
+- Funciones privadas (1): `_fmt_dt`
 
 ### `ai_helper.py` (452 líneas)
 _Módulo: AI Helper - Integración con OpenAI GPT-4o-mini_
@@ -214,31 +247,31 @@ _Módulo: AI Helper Premium - Funciones avanzadas de IA para análisis ejecutivo
   - `generar_insights_kpi_vendedores()` (L19) — _Genera insights estratégicos sobre el desempeño del equipo de ventas._
   - `generar_insights_ejecutivo_consolidado()` (L148) — _Genera insights ejecutivos de alto nivel integrando ventas y CxC._
 
-### `auth.py` (662 líneas)
+### `auth.py` (948 líneas)
 _Sistema de autenticación multi-usuario para FRADMA Dashboard._
 
-- **class `UserRole`** (línea 29): Roles disponibles en el sistema
-- **class `User`** (línea 37): Representa un usuario del sistema
-  - Métodos: `can_export`, `can_use_ai`, `can_manage_users`, `can_edit_config`
-- **class `AuthManager`** (línea 63): Gestor centralizado de autenticación y usuarios
-  - Métodos: `__init__`, `_init_db`, `_hash_password`, `_verify_password`, `authenticate`, `_log_login`, `create_user`, `list_users` +7 más
-- **Funciones públicas (20):**
-  - `get_current_user()` (L581) — _Obtiene usuario actual de la sesión_
-  - `require_auth()` (L586) — _Decorador para requerir autenticación._
-  - `require_role()` (L604) — _Decorador para requerir rol específico._
-  - `can_export()` (L46) — _¿Puede exportar reportes?_
-  - `can_use_ai()` (L50) — _¿Puede usar análisis con IA?_
-  - `can_manage_users()` (L54) — _¿Puede gestionar usuarios?_
-  - `can_edit_config()` (L58) — _¿Puede editar configuración del sistema?_
-  - `authenticate()` (L155) — _Autentica usuario y retorna objeto User si es válido._
-  - `create_user()` (L236) — _Crea nuevo usuario._
-  - `list_users()` (L306) — _Lista todos los usuarios del sistema._
-  - `get_user()` (L343) — _Obtiene información de un usuario específico_
-  - `update_user()` (L351) — _Actualiza información de un usuario._
-  - `change_password()` (L391) — _Cambia password de un usuario (requiere password actual)._
-  - `reset_password()` (L432) — _Resetea password de un usuario (solo admins)._
-  - `deactivate_user()` (L470) — _Desactiva un usuario (soft delete)._
-- Funciones privadas (5): `__init__`, `_init_db`, `_hash_password`, `_verify_password`, `_log_login`
+- **class `UserRole`** (línea 30): Roles disponibles en el sistema
+- **class `User`** (línea 38): Representa un usuario del sistema
+  - Métodos: `can_export`, `can_use_ai`, `can_manage_users`, `can_edit_config`, `is_superadmin`, `tiene_multiples_empresas`
+- **class `AuthManager`** (línea 75): Gestor centralizado de autenticación y usuarios — Neon PostgreSQL.
+  - Métodos: `__init__`, `_ensure_schema`, `_ensure_default_empresa`, `_hash_password`, `_verify_password`, `_ensure_admin`, `_log_login`, `authenticate` +18 más
+- **Funciones públicas (31):**
+  - `get_current_user()` (L867) — _Obtiene usuario actual de la sesión_
+  - `require_auth()` (L872) — _Decorador para requerir autenticación._
+  - `require_role()` (L890) — _Decorador para requerir rol específico._
+  - `can_export()` (L52)
+  - `can_use_ai()` (L55)
+  - `can_manage_users()` (L58)
+  - `can_edit_config()` (L61)
+  - `is_superadmin()` (L65) — _Superadmin = admin sin empresa asignada → ve todos los datos._
+  - `tiene_multiples_empresas()` (L70) — _True si el usuario tiene acceso a más de una empresa._
+  - `authenticate()` (L251) — _Autentica usuario; retorna User si válido, None si falla._
+  - `create_user()` (L335)
+  - `list_users()` (L408) — _Lista usuarios. Si empresa_id, filtra los que pertenecen a ese tenant_
+  - `get_user()` (L453)
+  - `update_user()` (L457)
+  - `change_password()` (L481)
+- Funciones privadas (8): `_get_conn`, `__init__`, `_ensure_schema`, `_ensure_default_empresa`, `_hash_password`, `_verify_password`, `_ensure_admin`, `_log_login`
 
 ### `cache_helper.py` (292 líneas)
 _Utilidades de caché para optimización de performance en Streamlit._
@@ -269,21 +302,22 @@ _Constantes centralizadas para el Dashboard Fradma._
 - **class `PrioridadCobranza`** (línea 175): Umbrales para clasificación de prioridad de cobranza.
 - **class `ConfigVisualizacion`** (línea 279): Configuración para gráficos y tablas.
 
-### `cxc_helper.py` (424 líneas)
+### `cxc_helper.py` (449 líneas)
 _Funciones helper para cálculos de Cuentas por Cobrar (CxC)._
 
 - **Funciones públicas (11):**
   - `detectar_columna()` (L23) — _Detecta la primera columna existente de una lista de candidatos._
-  - `excluir_pagados()` (L43) — _Crea una máscara booleana para excluir registros pagados._
-  - `calcular_dias_overdue()` (L64) — _Calcula días de atraso usando lógica unificada con fallback en cascada._
-  - `preparar_datos_cxc()` (L151) — _Prepara datos de CxC con lógica unificada del Reporte Ejecutivo._
-  - `calcular_score_salud()` (L196) — _Calcula el score de salud financiera con consideración de todos los rangos._
-  - `clasificar_score_salud()` (L248) — _Clasifica un score de salud en categoría y color._
-  - `clasificar_antiguedad()` (L270) — _Clasifica deuda por antigüedad en categorías estándar._
-  - `calcular_metricas_basicas()` (L296) — _Calcula métricas básicas de CxC a partir de datos no pagados._
-  - `obtener_semaforo_morosidad()` (L369) — _Retorna emoji de semáforo según nivel de morosidad._
-  - `obtener_semaforo_riesgo()` (L389) — _Retorna emoji de semáforo según nivel de riesgo alto._
-  - `obtener_semaforo_concentracion()` (L409) — _Retorna emoji de semáforo según nivel de concentración de cartera._
+  - `excluir_pagados()` (L52) — _Crea una máscara booleana para excluir registros pagados._
+  - `calcular_dias_overdue()` (L88) — _Calcula días de atraso usando lógica unificada con fallback en cascada._
+  - `preparar_datos_cxc()` (L176) — _Prepara datos de CxC con lógica unificada del Reporte Ejecutivo._
+  - `calcular_score_salud()` (L221) — _Calcula el score de salud financiera con consideración de todos los rangos._
+  - `clasificar_score_salud()` (L273) — _Clasifica un score de salud en categoría y color._
+  - `clasificar_antiguedad()` (L295) — _Clasifica deuda por antigüedad en categorías estándar._
+  - `calcular_metricas_basicas()` (L321) — _Calcula métricas básicas de CxC a partir de datos no pagados._
+  - `obtener_semaforo_morosidad()` (L394) — _Retorna emoji de semáforo según nivel de morosidad._
+  - `obtener_semaforo_riesgo()` (L414) — _Retorna emoji de semáforo según nivel de riesgo alto._
+  - `obtener_semaforo_concentracion()` (L434) — _Retorna emoji de semáforo según nivel de concentración de cartera._
+- Funciones privadas (1): `_parsear_fechas`
 
 ### `cxc_metricas_cliente.py` (193 líneas)
 _Módulo para calcular métricas avanzadas de CxC agrupadas por cliente._
@@ -318,15 +352,17 @@ _Módulo para normalización de datos._
   - `normalizar_datos_cxc()` (L245) — _Normaliza datos de ventas y CxC de forma consistente._
   - `normalizar_columna_fecha()` (L286) — _Normaliza columna de fecha a datetime._
 
-### `export_helper.py` (1,049 líneas)
+### `export_helper.py` (1,606 líneas)
 _Utilidades para exportar reportes del dashboard a Excel y PDF._
 
-- **Funciones públicas (4):**
-  - `crear_excel_metricas_cxc()` (L15) — _Crea un archivo Excel con múltiples hojas de métricas CxC._
-  - `crear_reporte_html()` (L161) — _Crea un reporte HTML ejecutivo profesional con métricas configurables._
-  - `preparar_datos_para_export()` (L781) — _Prepara DataFrame para exportación limpiando y formateando datos._
-  - `crear_excel_cobranza_semanal()` (L822) — _Crea un Excel de lista semanal de cobranza listo para compartir con el equipo._
-- Funciones privadas (1): `_fmt_nivel`
+- **Funciones públicas (6):**
+  - `crear_excel_metricas_cxc()` (L20) — _Crea un archivo Excel con múltiples hojas de métricas CxC._
+  - `crear_reporte_html()` (L166) — _Crea un reporte HTML ejecutivo profesional con métricas configurables._
+  - `preparar_datos_para_export()` (L786) — _Prepara DataFrame para exportación limpiando y formateando datos._
+  - `crear_excel_cobranza_semanal()` (L827) — _Crea un Excel de lista semanal de cobranza listo para compartir con el equipo._
+  - `crear_reporte_pdf_ejecutivo()` (L1056) — _Crea un reporte ejecutivo en PDF a partir de una consulta del Data Assistant._
+  - `limpiar_texto_para_pdf()` (L1207) — _Limpia texto removiendo markdown y escapando caracteres para ReportLab._
+- Funciones privadas (5): `_fmt_nivel`, `_is_ck`, `_is_mk`, `_is_pk`, `_fmtk`
 
 ### `filters.py` (669 líneas)
 _Componentes de filtrado avanzado para el dashboard Streamlit._
@@ -346,16 +382,17 @@ _Helper para manejo de filtros en análisis IA._
   - `generar_contexto_filtros()` (L53) — _Genera mensaje de contexto para la IA sobre el alcance del análisis._
   - `aplicar_filtro_dataframe()` (L87) — _Aplica filtro de líneas a un DataFrame de forma segura._
 
-### `formatos.py` (177 líneas)
+### `formatos.py` (187 líneas)
 _Módulo de utilidades para formateo consistente de datos en el dashboard._
 
-- **Funciones públicas (6):**
-  - `formato_moneda()` (L9) — _Formatea un valor numérico como moneda USD con separadores de miles._
-  - `formato_numero()` (L35) — _Formatea un número con separadores de miles._
-  - `formato_porcentaje()` (L59) — _Formatea un valor como porcentaje._
-  - `formato_delta_moneda()` (L89) — _Formatea un delta de moneda para usar en st.metric()._
-  - `formato_compacto()` (L118) — _Formatea números grandes de manera compacta (K, M, B)._
-  - `formato_dias()` (L148) — _Formatea días con texto descriptivo._
+- **Funciones públicas (7):**
+  - `now_mx()` (L13) — _Retorna la hora actual en la zona horaria de México (America/Mexico_City)._
+  - `formato_moneda()` (L19) — _Formatea un valor numérico como moneda USD con separadores de miles._
+  - `formato_numero()` (L45) — _Formatea un número con separadores de miles._
+  - `formato_porcentaje()` (L69) — _Formatea un valor como porcentaje._
+  - `formato_delta_moneda()` (L99) — _Formatea un delta de moneda para usar en st.metric()._
+  - `formato_compacto()` (L128) — _Formatea números grandes de manera compacta (K, M, B)._
+  - `formato_dias()` (L158) — _Formatea días con texto descriptivo._
 
 ### `knowledge_base.py` (744 líneas)
 _Módulo: Knowledge Base - Motor de Búsqueda e Indexación Wiki_
@@ -385,39 +422,75 @@ _Módulo: Knowledge Base - Motor de Búsqueda e Indexación Wiki_
   - `create_document()` (L671) — _Crea un nuevo documento markdown._
 - Funciones privadas (9): `_extract_title`, `_parse_sections`, `_categorize`, `_extract_metadata`, `__init__`, `_load_stopwords`, `_build_inverted_index`, `_tokenize`, `_extract_snippet`
 
-### `logger.py` (227 líneas)
+### `logger.py` (232 líneas)
 _Sistema de logging estructurado para el Dashboard FRADMA._
 
-- **class `ColoredFormatter`** (línea 25): Formatter con colores para output de consola.
+- **class `ColoredFormatter`** (línea 26): Formatter con colores para output de consola.
   - Métodos: `format`
 - **Funciones públicas (7):**
-  - `configurar_logger()` (L46) — _Configura y retorna un logger estructurado._
-  - `log_execution_time()` (L121) — _Decorador para medir y loggear el tiempo de ejecución de funciones._
-  - `log_dataframe_info()` (L162) — _Loggea información útil sobre un DataFrame._
-  - `format()` (L38) — _Formatear el log record con colores._
-  - `decorator()` (L138)
-  - `funcion_ejemplo()` (L212)
-  - `wrapper()` (L140)
+  - `configurar_logger()` (L47) — _Configura y retorna un logger estructurado._
+  - `log_execution_time()` (L126) — _Decorador para medir y loggear el tiempo de ejecución de funciones._
+  - `log_dataframe_info()` (L167) — _Loggea información útil sobre un DataFrame._
+  - `format()` (L39) — _Formatear el log record con colores._
+  - `decorator()` (L143)
+  - `funcion_ejemplo()` (L217)
+  - `wrapper()` (L145)
 
-### `roi_tracker.py` (294 líneas)
+### `neon_loader.py` (145 líneas)
+_Carga de datos CFDI desde Neon hacia session_state["df"]._
+
+- **Funciones públicas (1):**
+  - `cargar_cfdi_como_df()` (L41) — _Lee cfdi_ventas de Neon filtrado por empresa_id y devuelve un DataFrame_
+- Funciones privadas (1): `_streamlit_neon_url`
+
+### `nl2sql.py` (2,043 líneas)
+_Motor NL2SQL — Consultas en Lenguaje Natural sobre Base de Datos CFDI._
+
+- **class `NL2SQLResult`** (línea 147): Resultado de una consulta en lenguaje natural.
+  - Métodos: `success`, `to_dict`
+- **class `NL2SQLEngine`** (línea 424): Motor de consultas en lenguaje natural sobre base de datos CFDI.
+  - Métodos: `__init__`, `generate_sql`, `_build_system_prompt`, `_clean_sql`, `_detect_month`, `_detect_explicit_year`, `_detect_date_range`, `_ensure_month_filter` +12 más
+- **Funciones públicas (15):**
+  - `validate_sql_static()` (L1986) — _Validación estática de SQL sin necesidad de instanciar el engine._
+  - `get_example_questions()` (L2041) — _Retorna las preguntas de ejemplo organizadas por categoría._
+  - `success()` (L161)
+  - `to_dict()` (L164)
+  - `generate_sql()` (L472) — _Genera SQL a partir de una pregunta en lenguaje natural._
+  - `validate_sql()` (L1042) — _Valida que el SQL sea seguro para ejecución._
+  - `execute_query()` (L1180) — _Ejecuta una query SQL contra la base de datos._
+  - `interpret_results()` (L1239) — _Genera una interpretación en lenguaje natural de los resultados._
+  - `ask()` (L1758) — _Pipeline completo: pregunta → SQL → ejecución → interpretación._
+  - `get_history()` (L1894) — _Retorna el historial de consultas._
+  - `clear_history()` (L1898) — _Limpia el historial de consultas._
+  - `test_connection()` (L1902) — _Prueba la conexión a la base de datos._
+  - `get_table_counts()` (L1923) — _Obtiene el conteo de registros por tabla._
+  - `get_date_range()` (L1955) — _Obtiene el rango de fechas de los datos._
+  - `wrap_div()` (L1142)
+- Funciones privadas (12): `_normalize_highlights`, `_protect`, `__init__`, `_build_system_prompt`, `_clean_sql`, `_detect_month`, `_detect_explicit_year`, `_detect_date_range`, `_ensure_month_filter`, `_fix_year_contradictions` +2
+
+### `roi_tracker.py` (369 líneas)
 _ROI Tracker - Sistema de seguimiento de retorno de inversión_
 
-- **class `ROITracker`** (línea 9): Tracker de ROI para medir el valor generado por el uso de la plataforma.
-  - Métodos: `__init__`, `_init_session`, `get_user_hourly_rate`, `track_action`, `track_risk_avoided`, `get_summary`, `get_recent_actions`, `reset_session`
-- **Funciones públicas (8):**
-  - `init_roi_tracker()` (L268) — _Inicializa el ROI tracker en el session state_
-  - `quick_track()` (L283) — _Función rápida para trackear una acción_
-  - `get_user_hourly_rate()` (L88) — _Obtiene el costo por hora del usuario actual_
-  - `track_action()` (L107) — _Rastrea una acción y calcula el ROI automáticamente_
-  - `track_risk_avoided()` (L178) — _Rastrea un riesgo detectado y evitado (requiere IA Premium)_
-  - `get_summary()` (L219) — _Obtiene resumen del ROI acumulado_
-  - `get_recent_actions()` (L249) — _Obtiene las últimas acciones rastreadas_
-  - `reset_session()` (L262) — _Reinicia el tracking de la sesión actual (útil para testing)_
+- **class `ROITracker`** (línea 10): Tracker de ROI para medir el valor generado por el uso de la plataforma.
+  - Métodos: `__init__`, `_init_session`, `get_user_hourly_rate`, `track_action`, `track_risk_avoided`, `get_analyst_salary`, `set_analyst_salary`, `hrs_to_workdays` +4 más
+- **Funciones públicas (12):**
+  - `init_roi_tracker()` (L343) — _Inicializa el ROI tracker en el session state_
+  - `quick_track()` (L358) — _Función rápida para trackear una acción_
+  - `get_user_hourly_rate()` (L107) — _Obtiene el costo por hora del usuario actual_
+  - `track_action()` (L126) — _Rastrea una acción y calcula el ROI automáticamente_
+  - `track_risk_avoided()` (L197) — _Rastrea un riesgo detectado y evitado (requiere IA Premium)_
+  - `get_analyst_salary()` (L238) — _Obtiene el sueldo configurado de analista o el default_
+  - `set_analyst_salary()` (L242) — _Configura el sueldo de referencia del analista_
+  - `hrs_to_workdays()` (L246) — _Convierte horas a días laborales (8 hrs = 1 día)_
+  - `calculate_analyst_cost_equivalent()` (L250) — _Calcula el costo equivalente en sueldos de analista_
+  - `get_summary()` (L279) — _Obtiene resumen del ROI acumulado con días laborales calculados_
+  - `get_recent_actions()` (L322) — _Obtiene las últimas acciones rastreadas_
+  - `reset_session()` (L335) — _Reinicia el tracking de la sesión actual (útil para testing)_
 - Funciones privadas (2): `__init__`, `_init_session`
 
 ## 📄 CFDI (cfdi/)
 
-**Total: 1,325 líneas en 3 módulos**
+**Total: 1,463 líneas en 3 módulos**
 
 ### `enrichment.py` (520 líneas)
 _Módulo de enriquecimiento de datos CFDI con IA._
@@ -434,33 +507,33 @@ _Módulo de enriquecimiento de datos CFDI con IA._
   - `import_cache()` (L487) — _Importa un caché desde un archivo JSON._
 - Funciones privadas (4): `__init__`, `_get_cache_key`, `_clasificar_por_keywords`, `_clasificar_con_gpt`
 
-### `ingestion.py` (498 líneas)
+### `ingestion.py` (595 líneas)
 _Módulo de ingesta de datos CFDI a Neon PostgreSQL._
 
 - **class `NeonIngestion`** (línea 24): Clase para manejar la ingesta de datos CFDI a Neon PostgreSQL.
-  - Métodos: `__init__`, `__enter__`, `__exit__`, `connect`, `close`, `_uuid_exists`, `insert_venta`, `insert_ventas_batch` +2 más
+  - Métodos: `__init__`, `__enter__`, `__exit__`, `connect`, `close`, `_uuid_exists`, `_upsert_cliente`, `insert_venta` +3 más
 - **Funciones públicas (7):**
-  - `verify_connection()` (L477) — _Verifica la conexión a Neon._
-  - `connect()` (L56) — _Establece conexión a Neon._
-  - `close()` (L65) — _Cierra conexión a Neon._
-  - `insert_venta()` (L88) — _Inserta una factura de venta (CFDI) con sus conceptos._
-  - `insert_ventas_batch()` (L216) — _Inserta múltiples facturas en batch._
-  - `insert_pago()` (L298) — _Inserta un complemento de pago._
-  - `get_empresa_stats()` (L400) — _Obtiene estadísticas de la empresa._
-- Funciones privadas (4): `__init__`, `__enter__`, `__exit__`, `_uuid_exists`
+  - `verify_connection()` (L566) — _Verifica la conexión a Neon._
+  - `connect()` (L62) — _Establece conexión a Neon._
+  - `close()` (L71) — _Cierra conexión a Neon._
+  - `insert_venta()` (L127) — _Inserta una factura de venta (CFDI) con sus conceptos y actualiza clientes._
+  - `insert_ventas_batch()` (L305) — _Inserta múltiples facturas en batch._
+  - `insert_pago()` (L387) — _Inserta un complemento de pago._
+  - `get_empresa_stats()` (L489) — _Obtiene estadísticas de la empresa._
+- Funciones privadas (5): `__init__`, `__enter__`, `__exit__`, `_uuid_exists`, `_upsert_cliente`
 
-### `parser.py` (307 líneas)
+### `parser.py` (348 líneas)
 _Parser de CFDI 4.0 - Extrae datos estructurados de XMLs de SAT_
 
 - **class `CFDIParser`** (línea 25): Parser para CFDI 4.0
-  - Métodos: `__init__`, `parse_cfdi_venta`, `_extract_comprobante`, `_extract_emisor`, `_extract_receptor`, `_extract_conceptos`, `_extract_timbre`, `_parse_datetime`
-- **class `ComplementoPagoParser`** (línea 187): Parser para Complemento de Pagos 2.0
+  - Métodos: `__init__`, `parse_cfdi_venta`, `_extract_comprobante`, `_extract_emisor`, `_extract_receptor`, `_extract_conceptos`, `_extract_impuestos`, `_extract_timbre` +1 más
+- **class `ComplementoPagoParser`** (línea 224): Parser para Complemento de Pagos 2.0
   - Métodos: `__init__`, `parse_complemento_pago`, `_parse_datetime`
 - **Funciones públicas (3):**
-  - `parse_cfdi_batch()` (L260) — _Procesa múltiples CFDIs en batch_
+  - `parse_cfdi_batch()` (L297) — _Procesa múltiples CFDIs en batch_
   - `parse_cfdi_venta()` (L31) — _Parsea un CFDI de venta (emitido) y extrae datos estructurados_
-  - `parse_complemento_pago()` (L193) — _Parsea un complemento de pago y extrae registros de cobranza_
-- Funciones privadas (9): `__init__`, `_extract_comprobante`, `_extract_emisor`, `_extract_receptor`, `_extract_conceptos`, `_extract_timbre`, `_parse_datetime`, `__init__`, `_parse_datetime`
+  - `parse_complemento_pago()` (L230) — _Parsea un complemento de pago y extrae registros de cobranza_
+- Funciones privadas (10): `__init__`, `_extract_comprobante`, `_extract_emisor`, `_extract_receptor`, `_extract_conceptos`, `_extract_impuestos`, `_extract_timbre`, `_parse_datetime`, `__init__`, `_parse_datetime`
 
 ## 📦 Dependencias
 
@@ -472,6 +545,7 @@ _Parser de CFDI 4.0 - Extrae datos estructurados de XMLs de SAT_
 - `matplotlib==3.10.8`
 - `seaborn==0.13.2`
 - `plotly==6.5.0`
+- `kaleido==0.2.1`
 - `openpyxl==3.1.5`
 - `xlsxwriter==3.2.9`
 - `Unidecode==1.4.0`
@@ -479,8 +553,9 @@ _Parser de CFDI 4.0 - Extrae datos estructurados de XMLs de SAT_
 - `openai==2.17.0`
 - `python-dotenv==1.0.1`
 - `bcrypt==5.0.0`
-- `lxml==5.3.0`
-- `psycopg2-binary==2.9.10`
+- `lxml==6.0.2`
+- `psycopg2-binary==2.9.11`
+- `reportlab==4.2.5`
 
 ### Desarrollo
 
@@ -493,13 +568,13 @@ _Parser de CFDI 4.0 - Extrae datos estructurados de XMLs de SAT_
 
 | Autor | Commits |
 |-------|---------|
-| B10sp4rt4n | 281 |
+| B10sp4rt4n | 390 |
 
 ## 🧪 Estado de Tests
 
-- **439 tests** en 22 archivos
-- Cobertura: **20.3%**
+- **538 tests** en 25 archivos
+- Cobertura: **10.5%**
 
 ---
-_Wiki generado por `scripts/generate_wiki.py` el 2026-02-28T05:12:55_
+_Wiki generado por `scripts/generate_wiki.py` el 2026-04-09T04:57:16_
 _Para regenerar: `python scripts/generate_wiki.py`_
