@@ -1061,6 +1061,29 @@ if archivo:
                     try:
                         _df_h = normalizar_columnas(pd.read_excel(archivo_bytes, sheet_name=_h))
                         _df_h["_hoja_origen"] = _h
+
+                        # ── Preservar clasificación vigente/vencida del Excel ──────────
+                        # Si no se hace esto, preparar_datos_cxc recalcula dias_overdue
+                        # desde la fecha de emisión y convierte vigentes en vencidas.
+                        # Se replica la misma lógica que usa kpi_cpc.py.
+                        _nh = _h.upper()
+                        _es_vigente_hoja = any(k in _nh for k in ("VG", "VIGENTE", "VIGENTES"))
+                        _es_vencida_hoja = any(k in _nh for k in ("VCD", "VENCID"))
+
+                        if _es_vigente_hoja:
+                            # Forzar negativo para que calcular_dias_overdue use este valor
+                            # sin caer en los fallbacks de fecha (Método 1 en la función)
+                            if "dias_vencido" not in _df_h.columns:
+                                _df_h["dias_vencido"] = -1
+                            else:
+                                _dv = pd.to_numeric(_df_h["dias_vencido"], errors="coerce")
+                                _df_h["dias_vencido"] = _dv.where(_dv < 0, -1)
+                        elif _es_vencida_hoja:
+                            # Garantizar que dias_vencido sea positivo (ya vencida)
+                            if "dias_vencido" in _df_h.columns:
+                                _dv = pd.to_numeric(_df_h["dias_vencido"], errors="coerce").fillna(1)
+                                _df_h["dias_vencido"] = _dv.where(_dv > 0, 1)
+
                         _dfs_cxc.append(_df_h)
                     except Exception as _e:
                         logger.warning(f"No se pudo leer hoja CxC '{_h}': {_e}")
