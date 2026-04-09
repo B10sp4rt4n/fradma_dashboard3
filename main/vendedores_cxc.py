@@ -582,6 +582,235 @@ def run():
         delta=f"Score {mejor['score_calidad']:.0f}/100",
     )
 
+    # ── FICHA INTEGRAL POR VENDEDOR ───────────────────────────────────────────
+    st.subheader("🧑‍💼 Ficha Integral por Vendedor")
+    st.caption(
+        "Selecciona un vendedor para ver su desempeño comercial completo: "
+        "ventas, clientes, productos, cartera y plan de acción."
+    )
+
+    vendedor_seleccionado_ficha = st.selectbox(
+        "Selecciona un vendedor",
+        options=df_cruce.sort_values("ventas_totales", ascending=False)["vendedor"].tolist(),
+        key="ficha_vendedor_select",
+    )
+
+    if vendedor_seleccionado_ficha:
+        fila = df_cruce[df_cruce["vendedor"] == vendedor_seleccionado_ficha].iloc[0]
+
+        # --- Datos de ventas para este vendedor ---
+        df_v = df_ventas[df_ventas["vendedor"] == vendedor_seleccionado_ficha]
+        # Mejor cliente por ventas
+        mejor_cliente = "—"
+        if col_cliente_v and col_cliente_v in df_v.columns and not df_v.empty:
+            mejor_cliente = (
+                df_v.groupby(col_cliente_v)["valor_usd"].sum().idxmax()
+            )
+        # Producto estrella
+        mejor_producto = "—"
+        if "producto" in df_v.columns and not df_v.empty:
+            mejor_producto = df_v.groupby("producto")["valor_usd"].sum().idxmax()
+        # Línea de negocio dominante
+        mejor_linea = "—"
+        if "linea_de_negocio" in df_v.columns and not df_v.empty:
+            mejor_linea = df_v.groupby("linea_de_negocio")["valor_usd"].sum().idxmax()
+
+        # --- CxC para este vendedor ---
+        df_cxc_v = df_cxc_vend[df_cxc_vend["vendedor"] == vendedor_seleccionado_ficha]
+        cliente_mayor_deuda = "—"
+        monto_mayor_deuda = 0.0
+        if not df_cxc_v.empty and "deudor" in df_cxc_v.columns:
+            _g = df_cxc_v.groupby("deudor")["saldo_adeudado"].sum()
+            cliente_mayor_deuda = _g.idxmax()
+            monto_mayor_deuda = _g.max()
+
+        # ═══════════════════════════════════════════════════════════════
+        # BLOQUE SUPERIOR: KPIs rápidos
+        # ═══════════════════════════════════════════════════════════════
+        st.markdown(f"### {fila['nivel_calidad']} **{vendedor_seleccionado_ficha}**")
+
+        kc1, kc2, kc3, kc4, kc5 = st.columns(5)
+        kc1.metric("💰 Ventas Totales",   f"${fila['ventas_totales']:,.0f}")
+        kc2.metric("🎫 Ticket Promedio",  f"${fila['ticket_promedio']:,.0f}")
+        kc3.metric("📋 Ops",              f"{int(fila['num_operaciones'])}")
+        kc4.metric("🏦 Cartera Total",    f"${fila['cartera_total']:,.0f}")
+        kc5.metric("⚠️ Vencida",
+                   f"${fila['cartera_vencida']:,.0f}",
+                   delta=f"{fila['pct_vencida']:.1f}%",
+                   delta_color="inverse")
+
+        # ═══════════════════════════════════════════════════════════════
+        # BLOQUE MEDIO: Comercial + CxC
+        # ═══════════════════════════════════════════════════════════════
+        col_com, col_cxc = st.columns(2)
+
+        with col_com:
+            st.markdown("#### 🛒 Desempeño Comercial")
+            st.markdown(f"- **Línea principal:** {mejor_linea}")
+            st.markdown(f"- **Producto estrella:** {mejor_producto}")
+            st.markdown(f"- **Mejor cliente:** {mejor_cliente}")
+
+            if col_cliente_v and col_cliente_v in df_v.columns and not df_v.empty:
+                top_clientes_venta = (
+                    df_v.groupby(col_cliente_v)["valor_usd"]
+                    .sum()
+                    .sort_values(ascending=False)
+                    .head(5)
+                    .reset_index()
+                )
+                top_clientes_venta.columns = ["Cliente", "Ventas ($)"]
+                st.dataframe(
+                    top_clientes_venta.style.format({"Ventas ($)": "${:,.0f}"}),
+                    hide_index=True, use_container_width=True,
+                )
+
+            if "producto" in df_v.columns and not df_v.empty:
+                with st.expander("🔍 Top 5 productos"):
+                    top_prod = (
+                        df_v.groupby("producto")["valor_usd"]
+                        .sum()
+                        .sort_values(ascending=False)
+                        .head(5)
+                        .reset_index()
+                    )
+                    top_prod.columns = ["Producto", "Ventas ($)"]
+                    st.dataframe(
+                        top_prod.style.format({"Ventas ($)": "${:,.0f}"}),
+                        hide_index=True, use_container_width=True,
+                    )
+
+        with col_cxc:
+            st.markdown("#### 💳 Cuentas por Cobrar")
+            st.markdown(f"- **Score calidad:** {fila['score_calidad']:.0f}/100 · {fila['nivel_calidad']}")
+            st.markdown(f"- **Cliente con mayor deuda:** {cliente_mayor_deuda} (${monto_mayor_deuda:,.0f})")
+            st.markdown(f"- **Días máximo vencido:** {int(fila['dias_max'])} días")
+
+            _labels = ["Vigente", "1-30d", "31-60d", "61-90d", ">90d"]
+            _vals = [
+                fila["cartera_vigente"], fila["cartera_1_30"],
+                fila["cartera_31_60"],   fila["cartera_61_90"],
+                fila["cartera_alto_riesgo"],
+            ]
+            _colors = ["#4CAF50", "#8BC34A", "#FFEB3B", "#FF9800", "#F44336"]
+            _vals_filtrados = [(l, v, c) for l, v, c in zip(_labels, _vals, _colors) if v > 0]
+            if _vals_filtrados:
+                _l, _v, _c = zip(*_vals_filtrados)
+                fig_mini = go.Figure(go.Pie(
+                    labels=list(_l), values=list(_v),
+                    marker_colors=list(_c),
+                    hole=0.5, textinfo="label+percent",
+                    textposition="outside",
+                ))
+                fig_mini.update_layout(
+                    height=270, showlegend=False,
+                    margin=dict(t=10, b=10, l=10, r=10),
+                    paper_bgcolor="rgba(0,0,0,0)",
+                )
+                st.plotly_chart(fig_mini, use_container_width=True)
+
+            if not df_cxc_v.empty:
+                _venc = df_cxc_v[df_cxc_v["dias_overdue"] > 0].copy()
+                if not _venc.empty:
+                    with st.expander(f"📋 Facturas vencidas ({len(_venc)})"):
+                        _cols_show = [c for c in ("deudor", "factura", "saldo_adeudado", "dias_overdue", "fecha")
+                                      if c in _venc.columns]
+                        st.dataframe(
+                            _venc[_cols_show]
+                            .sort_values("dias_overdue", ascending=False)
+                            .head(20)
+                            .style.format({
+                                "saldo_adeudado": "${:,.0f}",
+                                "dias_overdue": "{:.0f} días",
+                            }),
+                            hide_index=True, use_container_width=True,
+                        )
+
+        if "fecha" in df_v.columns and not df_v.empty:
+            df_v2 = df_v.copy()
+            df_v2["mes_año"] = pd.to_datetime(df_v2["fecha"], errors="coerce").dt.to_period("M").astype(str)
+            evol = (
+                df_v2.groupby("mes_año")["valor_usd"]
+                .sum()
+                .reset_index()
+                .sort_values("mes_año")
+            )
+            if len(evol) > 1:
+                st.markdown("#### 📅 Evolución Mensual de Ventas")
+                fig_evol = px.bar(
+                    evol, x="mes_año", y="valor_usd",
+                    labels={"mes_año": "Mes", "valor_usd": "Ventas ($)"},
+                    color_discrete_sequence=["#1f77b4"],
+                )
+                fig_evol.update_layout(
+                    height=250, plot_bgcolor="rgba(0,0,0,0)",
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    margin=dict(t=10, b=10),
+                    xaxis_tickangle=-45,
+                )
+                st.plotly_chart(fig_evol, use_container_width=True)
+
+        st.markdown("#### 🎯 Plan de Acción")
+
+        score = fila["score_calidad"]
+        pct_venc = fila["pct_vencida"]
+        ratio = fila["ratio_deuda_ventas"]
+        dias_max = fila["dias_max"]
+        ventas = fila["ventas_totales"]
+        total_vend = df_cruce["ventas_totales"].sum()
+        pct_participacion = ventas / total_vend * 100 if total_vend > 0 else 0
+
+        acciones = []
+        if score >= 85:
+            acciones.append(("🟢", "Cartera sana",
+                "Mantener condiciones actuales de crédito. Este vendedor es referente de buenas prácticas de cobro."))
+        elif score >= 65:
+            acciones.append(("🟡", "Alertar cartera en riesgo",
+                f"Revisar facturas con {int(fila['cartera_1_30']):,} USD en 1-30 días antes de que escalen. "
+                "Agendar llamada de seguimiento con el cliente de mayor deuda."))
+        elif score >= 40:
+            acciones.append(("🟠", "Plan de cobro urgente",
+                f"${fila['cartera_vencida']:,.0f} en cartera vencida ({pct_venc:.1f}%). "
+                "Establecer acuerdo de pagos parciales con clientes morosos. "
+                "Considerar pausar nuevas ventas a clientes con deuda >60 días."))
+        else:
+            acciones.append(("🔴", "Intervención inmediata requerida",
+                f"Score crítico ({score:.0f}/100). ${fila['cartera_alto_riesgo']:,.0f} USD llevan más de 90 días. "
+                "Escalar a dirección. Revisar si se deben provisionar como incobrables."))
+        if ratio > 30:
+            acciones.append(("🔴", "Ratio Deuda/Ventas elevado",
+                f"Por cada peso que vende, {ratio:.1f}% queda vencido. "
+                "Revisar perfiles de crédito de nuevos clientes antes de aprobar ventas."))
+        elif ratio > 15:
+            acciones.append(("🟡", "Ratio Deuda/Ventas moderado",
+                f"Ratio actual {ratio:.1f}%. Meta recomendada: <10%. "
+                "Reforzar seguimiento post-venta a 30 días de cada factura."))
+        if pct_participacion < 5:
+            acciones.append(("🟡", "Baja participación de ventas",
+                f"Solo {pct_participacion:.1f}% de las ventas del equipo. "
+                "Identificar si hay oportunidades de prospección o cartera de clientes sin desarrollar."))
+        elif pct_participacion > 40:
+            acciones.append(("🟢", "Vendedor estratégico",
+                f"Genera el {pct_participacion:.1f}% de las ventas totales. "
+                "Asegurar retención. Revisar metas y esquema de comisiones para mantener motivación."))
+        if dias_max > 180:
+            acciones.append(("🔴", "Factura críticamente vencida",
+                f"Existe una factura con {int(dias_max)} días de antigüedad. "
+                f"Cliente: {cliente_mayor_deuda}. Evaluar acción legal o ajuste de cartera."))
+        elif dias_max > 90:
+            acciones.append(("🟠", "Factura con antigüedad alta",
+                f"Factura con {int(dias_max)} días. Gestionar cobro directamente con {cliente_mayor_deuda}."))
+
+        for emoji, titulo, descripcion in acciones:
+            st.markdown(
+                f"""<div style="border-left: 4px solid {'#4CAF50' if emoji=='🟢' else '#FFEB3B' if emoji=='🟡' else '#FF9800' if emoji=='🟠' else '#F44336'};
+                    padding: 8px 12px; margin-bottom: 8px; border-radius: 4px;">
+                    <strong>{emoji} {titulo}</strong><br>
+                    <span style="font-size:0.9em;">{descripcion}</span>
+                </div>""",
+                unsafe_allow_html=True,
+            )
+
+    st.write("---")
     # ── Tabla comparativa ─────────────────────────────────────────────────────
     st.subheader("📋 Tabla Comparativa por Vendedor")
 
@@ -1013,259 +1242,12 @@ def run():
     if len(vendedores_alerta) == 0 and len(otras_alertas) == 0:
         st.success("✅ Todos los vendedores tienen indicadores dentro de rangos normales.")
 
-    # ── FICHA INTEGRAL POR VENDEDOR ───────────────────────────────────────────
-    st.write("---")
-    st.subheader("🧑‍💼 Ficha Integral por Vendedor")
-    st.caption(
-        "Selecciona un vendedor para ver su desempeño comercial completo: "
-        "ventas, clientes, productos, cartera y plan de acción."
-    )
-
-    vendedor_seleccionado_ficha = st.selectbox(
-        "Selecciona un vendedor",
-        options=df_cruce.sort_values("ventas_totales", ascending=False)["vendedor"].tolist(),
-        key="ficha_vendedor_select",
-    )
-
-    if vendedor_seleccionado_ficha:
-        fila = df_cruce[df_cruce["vendedor"] == vendedor_seleccionado_ficha].iloc[0]
-
-        # --- Datos de ventas para este vendedor ---
-        df_v = df_ventas[df_ventas["vendedor"] == vendedor_seleccionado_ficha]
-        # Mejor cliente por ventas
-        mejor_cliente = "—"
-        if col_cliente_v and col_cliente_v in df_v.columns and not df_v.empty:
-            mejor_cliente = (
-                df_v.groupby(col_cliente_v)["valor_usd"].sum().idxmax()
-            )
-        # Producto estrella
-        mejor_producto = "—"
-        if "producto" in df_v.columns and not df_v.empty:
-            mejor_producto = df_v.groupby("producto")["valor_usd"].sum().idxmax()
-        # Línea de negocio dominante
-        mejor_linea = "—"
-        if "linea_de_negocio" in df_v.columns and not df_v.empty:
-            mejor_linea = df_v.groupby("linea_de_negocio")["valor_usd"].sum().idxmax()
-
-        # --- CxC para este vendedor ---
-        df_cxc_v = df_cxc_vend[df_cxc_vend["vendedor"] == vendedor_seleccionado_ficha]
-        cliente_mayor_deuda = "—"
-        monto_mayor_deuda = 0.0
-        if not df_cxc_v.empty and "deudor" in df_cxc_v.columns:
-            _g = df_cxc_v.groupby("deudor")["saldo_adeudado"].sum()
-            cliente_mayor_deuda = _g.idxmax()
-            monto_mayor_deuda = _g.max()
-
-        # ═══════════════════════════════════════════════════════════════
-        # BLOQUE SUPERIOR: KPIs rápidos
-        # ═══════════════════════════════════════════════════════════════
-        st.markdown(f"### {fila['nivel_calidad']} **{vendedor_seleccionado_ficha}**")
-
-        kc1, kc2, kc3, kc4, kc5 = st.columns(5)
-        kc1.metric("💰 Ventas Totales",   f"${fila['ventas_totales']:,.0f}")
-        kc2.metric("🎫 Ticket Promedio",  f"${fila['ticket_promedio']:,.0f}")
-        kc3.metric("📋 Ops",              f"{int(fila['num_operaciones'])}")
-        kc4.metric("🏦 Cartera Total",    f"${fila['cartera_total']:,.0f}")
-        kc5.metric("⚠️ Vencida",
-                   f"${fila['cartera_vencida']:,.0f}",
-                   delta=f"{fila['pct_vencida']:.1f}%",
-                   delta_color="inverse")
-
-        # ═══════════════════════════════════════════════════════════════
-        # BLOQUE MEDIO: Comercial + CxC
-        # ═══════════════════════════════════════════════════════════════
-        col_com, col_cxc = st.columns(2)
-
-        with col_com:
-            st.markdown("#### 🛒 Desempeño Comercial")
-            st.markdown(f"- **Línea principal:** {mejor_linea}")
-            st.markdown(f"- **Producto estrella:** {mejor_producto}")
-            st.markdown(f"- **Mejor cliente:** {mejor_cliente}")
-
-            # Top 5 clientes por ventas
-            if col_cliente_v and col_cliente_v in df_v.columns and not df_v.empty:
-                top_clientes_venta = (
-                    df_v.groupby(col_cliente_v)["valor_usd"]
-                    .sum()
-                    .sort_values(ascending=False)
-                    .head(5)
-                    .reset_index()
-                )
-                top_clientes_venta.columns = ["Cliente", "Ventas ($)"]
-                st.dataframe(
-                    top_clientes_venta.style.format({"Ventas ($)": "${:,.0f}"}),
-                    hide_index=True, use_container_width=True,
-                )
-
-            # Top productos
-            if "producto" in df_v.columns and not df_v.empty:
-                with st.expander("🔍 Top 5 productos"):
-                    top_prod = (
-                        df_v.groupby("producto")["valor_usd"]
-                        .sum()
-                        .sort_values(ascending=False)
-                        .head(5)
-                        .reset_index()
-                    )
-                    top_prod.columns = ["Producto", "Ventas ($)"]
-                    st.dataframe(
-                        top_prod.style.format({"Ventas ($)": "${:,.0f}"}),
-                        hide_index=True, use_container_width=True,
-                    )
-
-        with col_cxc:
-            st.markdown("#### 💳 Cuentas por Cobrar")
-            st.markdown(f"- **Score calidad:** {fila['score_calidad']:.0f}/100 · {fila['nivel_calidad']}")
-            st.markdown(f"- **Cliente con mayor deuda:** {cliente_mayor_deuda} (${monto_mayor_deuda:,.0f})")
-            st.markdown(f"- **Días máximo vencido:** {int(fila['dias_max'])} días")
-
-            # Mini donut CxC
-            _labels = ["Vigente", "1-30d", "31-60d", "61-90d", ">90d"]
-            _vals = [
-                fila["cartera_vigente"], fila["cartera_1_30"],
-                fila["cartera_31_60"],   fila["cartera_61_90"],
-                fila["cartera_alto_riesgo"],
-            ]
-            _colors = ["#4CAF50", "#8BC34A", "#FFEB3B", "#FF9800", "#F44336"]
-            _vals_filtrados = [(l, v, c) for l, v, c in zip(_labels, _vals, _colors) if v > 0]
-            if _vals_filtrados:
-                _l, _v, _c = zip(*_vals_filtrados)
-                fig_mini = go.Figure(go.Pie(
-                    labels=list(_l), values=list(_v),
-                    marker_colors=list(_c),
-                    hole=0.5, textinfo="label+percent",
-                    textposition="outside",
-                ))
-                fig_mini.update_layout(
-                    height=270, showlegend=False,
-                    margin=dict(t=10, b=10, l=10, r=10),
-                    paper_bgcolor="rgba(0,0,0,0)",
-                )
-                st.plotly_chart(fig_mini, use_container_width=True)
-
-            # Tabla facturas vencidas del vendedor
-            if not df_cxc_v.empty:
-                _venc = df_cxc_v[df_cxc_v["dias_overdue"] > 0].copy()
-                if not _venc.empty:
-                    with st.expander(f"📋 Facturas vencidas ({len(_venc)})"):
-                        _cols_show = [c for c in ("deudor", "factura", "saldo_adeudado", "dias_overdue", "fecha")
-                                      if c in _venc.columns]
-                        st.dataframe(
-                            _venc[_cols_show]
-                            .sort_values("dias_overdue", ascending=False)
-                            .head(20)
-                            .style.format({
-                                "saldo_adeudado": "${:,.0f}",
-                                "dias_overdue": "{:.0f} días",
-                            }),
-                            hide_index=True, use_container_width=True,
-                        )
-
-        # ═══════════════════════════════════════════════════════════════
-        # BLOQUE INFERIOR: Evolución mensual de ventas
-        # ═══════════════════════════════════════════════════════════════
-        if "fecha" in df_v.columns and not df_v.empty:
-            df_v2 = df_v.copy()
-            df_v2["mes_año"] = pd.to_datetime(df_v2["fecha"], errors="coerce").dt.to_period("M").astype(str)
-            evol = (
-                df_v2.groupby("mes_año")["valor_usd"]
-                .sum()
-                .reset_index()
-                .sort_values("mes_año")
-            )
-            if len(evol) > 1:
-                st.markdown("#### 📅 Evolución Mensual de Ventas")
-                fig_evol = px.bar(
-                    evol, x="mes_año", y="valor_usd",
-                    labels={"mes_año": "Mes", "valor_usd": "Ventas ($)"},
-                    color_discrete_sequence=["#1f77b4"],
-                )
-                fig_evol.update_layout(
-                    height=250, plot_bgcolor="rgba(0,0,0,0)",
-                    paper_bgcolor="rgba(0,0,0,0)",
-                    margin=dict(t=10, b=10),
-                    xaxis_tickangle=-45,
-                )
-                st.plotly_chart(fig_evol, use_container_width=True)
-
-        # ═══════════════════════════════════════════════════════════════
-        # PLAN DE ACCIÓN
-        # ═══════════════════════════════════════════════════════════════
-        st.markdown("#### 🎯 Plan de Acción")
-
-        score = fila["score_calidad"]
-        pct_venc = fila["pct_vencida"]
-        ratio = fila["ratio_deuda_ventas"]
-        dias_max = fila["dias_max"]
-        ventas = fila["ventas_totales"]
-        total_vend = df_cruce["ventas_totales"].sum()
-        pct_participacion = ventas / total_vend * 100 if total_vend > 0 else 0
-
-        acciones = []
-
-        # Análisis de cartera
-        if score >= 85:
-            acciones.append(("🟢", "Cartera sana",
-                "Mantener condiciones actuales de crédito. Este vendedor es referente de buenas prácticas de cobro."))
-        elif score >= 65:
-            acciones.append(("🟡", "Alertar cartera en riesgo",
-                f"Revisar facturas con {int(fila['cartera_1_30']):,} USD en 1-30 días antes de que escalen. "
-                "Agendar llamada de seguimiento con el cliente de mayor deuda."))
-        elif score >= 40:
-            acciones.append(("🟠", "Plan de cobro urgente",
-                f"${fila['cartera_vencida']:,.0f} en cartera vencida ({pct_venc:.1f}%). "
-                "Establecer acuerdo de pagos parciales con clientes morosos. "
-                "Considerar pausar nuevas ventas a clientes con deuda >60 días."))
-        else:
-            acciones.append(("🔴", "Intervención inmediata requerida",
-                f"Score crítico ({score:.0f}/100). ${fila['cartera_alto_riesgo']:,.0f} USD llevan más de 90 días. "
-                "Escalar a dirección. Revisar si se deben provisionar como incobrables."))
-
-        # Análisis ratio deuda/ventas
-        if ratio > 30:
-            acciones.append(("🔴", "Ratio Deuda/Ventas elevado",
-                f"Por cada peso que vende, {ratio:.1f}% queda vencido. "
-                "Revisar perfiles de crédito de nuevos clientes antes de aprobar ventas."))
-        elif ratio > 15:
-            acciones.append(("🟡", "Ratio Deuda/Ventas moderado",
-                f"Ratio actual {ratio:.1f}%. Meta recomendada: <10%. "
-                "Reforzar seguimiento post-venta a 30 días de cada factura."))
-
-        # Análisis de participación de ventas
-        if pct_participacion < 5:
-            acciones.append(("🟡", "Baja participación de ventas",
-                f"Solo {pct_participacion:.1f}% de las ventas del equipo. "
-                "Identificar si hay oportunidades de prospección o cartera de clientes sin desarrollar."))
-        elif pct_participacion > 40:
-            acciones.append(("🟢", "Vendedor estratégico",
-                f"Genera el {pct_participacion:.1f}% de las ventas totales. "
-                "Asegurar retención. Revisar metas y esquema de comisiones para mantener motivación."))
-
-        # Días máximo vencido
-        if dias_max > 180:
-            acciones.append(("🔴", "Factura críticamente vencida",
-                f"Existe una factura con {int(dias_max)} días de antigüedad. "
-                f"Cliente: {cliente_mayor_deuda}. Evaluar acción legal o ajuste de cartera."))
-        elif dias_max > 90:
-            acciones.append(("🟠", "Factura con antigüedad alta",
-                f"Factura con {int(dias_max)} días. Gestionar cobro directamente con {cliente_mayor_deuda}."))
-
-        for emoji, titulo, descripcion in acciones:
-            st.markdown(
-                f"""<div style="border-left: 4px solid {'#4CAF50' if emoji=='🟢' else '#FFEB3B' if emoji=='🟡' else '#FF9800' if emoji=='🟠' else '#F44336'};
-                    padding: 8px 12px; margin-bottom: 8px; border-radius: 4px;">
-                    <strong>{emoji} {titulo}</strong><br>
-                    <span style="font-size:0.9em;">{descripcion}</span>
-                </div>""",
-                unsafe_allow_html=True,
-            )
-
     # ── Descarga CSV ──────────────────────────────────────────────────────────
     st.write("---")
-    
+
     user = get_current_user()
     puede_exportar = user and user.can_export()
-    
+
     if puede_exportar:
         csv_bytes = df_cruce.to_csv(index=False).encode("utf-8")
         st.download_button(
@@ -1277,3 +1259,5 @@ def run():
     else:
         st.warning("⚠️ Las funciones de exportación están disponibles solo para usuarios con rol **Analyst** o **Admin**")
         st.info("💡 Contacta al administrador para solicitar acceso")
+
+    
