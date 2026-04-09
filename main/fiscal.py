@@ -141,18 +141,297 @@ def _cargar_retenciones(empresa_id: str, neon_url: str) -> pd.DataFrame:
             conn.close()
 
 
-def run():
-    st.title("🧾 Desglose Fiscal")
-    st.caption("Base gravable, IVA trasladado y total — solo facturas de Ingreso vigentes")
+def _cargar_nomina(empresa_id: str, neon_url: str) -> pd.DataFrame:
+    """Carga CFDIs de nómina (tipo_comprobante = 'N')."""
+    query = """
+        SELECT
+            uuid_sat,
+            fecha_emision::date                                 AS fecha,
+            receptor_rfc                                        AS empleado_rfc,
+            receptor_nombre                                     AS empleado_nombre,
+            moneda,
+            ROUND(subtotal   * COALESCE(tipo_cambio,1), 2)    AS percepciones_mxn,
+            ROUND(descuento  * COALESCE(tipo_cambio,1), 2)    AS deducciones_mxn,
+            ROUND(isr_retenido * COALESCE(tipo_cambio,1), 2)  AS isr_retenido_mxn,
+            ROUND(total      * COALESCE(tipo_cambio,1), 2)    AS neto_pagado_mxn
+        FROM cfdi_ventas
+        WHERE empresa_id = %s
+          AND tipo_comprobante = 'N'
+          AND estatus = 'vigente'
+        ORDER BY fecha_emision DESC
+    """
+    conn = None
+    try:
+        conn = psycopg2.connect(neon_url)
+        cur = conn.cursor()
+        cur.execute(query, (empresa_id,))
+        rows = cur.fetchall()
+        cols = [d[0] for d in cur.description]
+        return pd.DataFrame(rows, columns=cols)
+    except Exception as e:
+        logger.error(f"Error cargando nómina: {e}")
+        return pd.DataFrame()
+    finally:
+        if conn:
+            conn.close()
 
-    empresa_id    = st.session_state.get("empresa_id")
-    empresa_nombre = st.session_state.get("empresa_nombre", "")
-    neon_url      = _get_neon_url()
 
-    if not empresa_id or not neon_url:
-        st.warning("⚠️ Debes iniciar sesión para ver este reporte.")
+def _cargar_tendencia_nomina(empresa_id: str, neon_url: str) -> pd.DataFrame:
+    """Tendencia mensual de nómina: percepciones, deducciones, ISR, neto."""
+    query = """
+        SELECT
+            DATE_TRUNC('month', fecha_emision)::date           AS mes,
+            COUNT(*)                                            AS num_recibos,
+            COUNT(DISTINCT receptor_rfc)                        AS num_empleados,
+            ROUND(SUM(subtotal   * COALESCE(tipo_cambio,1)), 2) AS percepciones_mxn,
+            ROUND(SUM(descuento  * COALESCE(tipo_cambio,1)), 2) AS deducciones_mxn,
+            ROUND(SUM(isr_retenido * COALESCE(tipo_cambio,1)), 2) AS isr_retenido_mxn,
+            ROUND(SUM(total      * COALESCE(tipo_cambio,1)), 2) AS neto_pagado_mxn
+        FROM cfdi_ventas
+        WHERE empresa_id = %s
+          AND tipo_comprobante = 'N'
+          AND estatus = 'vigente'
+        GROUP BY 1
+        ORDER BY 1 DESC
+    """
+    conn = None
+    try:
+        conn = psycopg2.connect(neon_url)
+        cur = conn.cursor()
+        cur.execute(query, (empresa_id,))
+        rows = cur.fetchall()
+        cols = [d[0] for d in cur.description]
+        return pd.DataFrame(rows, columns=cols)
+    except Exception as e:
+        logger.error(f"Error cargando tendencia nómina: {e}")
+        return pd.DataFrame()
+    finally:
+        if conn:
+            conn.close()
+
+
+def _run_nomina(empresa_id: str, empresa_nombre: str, neon_url: str):
+    """Vista de desglose fiscal — Nómina."""
+    with st.spinner("Consultando nómina..."):
+        df_nom = _cargar_nomina(empresa_id, neon_url)
+        df_tend = _cargar_tendencia_nomina(empresa_id, neon_url)
+
+    if df_nom.empty:
+        st.info(
+            "📭 No hay recibos de nómina registrados.\n\n"
+            "Asegúrate de haber subido XMLs con `TipoDeComprobante='N'` "
+            "mediante el módulo **📦 Ingesta CFDIs**."
+        )
         return
 
+    for col in ["percepciones_mxn", "deducciones_mxn", "isr_retenido_mxn", "neto_pagado_mxn"]:
+        df_nom[col] = pd.to_numeric(df_nom[col], errors="coerce").fillna(0)
+
+    # ── KPIs ─────────────────────────────────────────────────────────────────
+    num_recibos     = len(df_nom)
+    num_empleados   = df_nom["empleado_rfc"].nunique()
+    total_percepciones = df_nom["percepciones_mxn"].sum()
+    total_deducciones  = df_nom["deducciones_mxn"].sum()
+    total_isr       = df_nom["isr_retenido_mxn"].sum()
+    total_neto      = df_nom["neto_pagado_mxn"].sum()
+    pct_deduccion   = (total_deducciones / total_percepciones * 100) if total_percepciones else 0
+
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    c1.metric("Recibos",             f"{num_recibos:,}")
+    c2.metric("Empleados únicos",    f"{num_empleados:,}")
+    c3.metric("Percepciones (MXN)",  f"${total_percepciones:,.0f}",
+              help="Salario bruto total antes de deducciones")
+    c4.metric("Deducciones (MXN)",   f"${total_deducciones:,.0f}",
+              delta=f"{pct_deduccion:.1f}% de percepciones", delta_color="inverse")
+    c5.metric("ISR retenido (MXN)",  f"${total_isr:,.0f}",
+              help="ISR descontado al empleado según tabla SAT")
+    c6.metric("Neto pagado (MXN)",   f"${total_neto:,.0f}",
+              help="Percepciones − Deducciones = importe depositado")
+
+    st.markdown("---")
+
+    tab_tend, tab_emp, tab_det = st.tabs(
+        ["📅 Tendencia mensual", "👷 Por Empleado", "📄 Detalle recibos"]
+    )
+
+    # ── Tab 1: Tendencia mensual ──────────────────────────────────────────────
+    with tab_tend:
+        if df_tend.empty:
+            st.info("Sin datos de tendencia.")
+        else:
+            for col in ["percepciones_mxn", "deducciones_mxn", "isr_retenido_mxn", "neto_pagado_mxn"]:
+                df_tend[col] = pd.to_numeric(df_tend[col], errors="coerce").fillna(0)
+            df_tend["mes"] = pd.to_datetime(df_tend["mes"])
+            df_t = df_tend.sort_values("mes")
+
+            # Barras: percepciones vs deducciones vs neto
+            fig_bar = go.Figure()
+            fig_bar.add_trace(go.Bar(
+                x=df_t["mes"], y=df_t["percepciones_mxn"],
+                name="Percepciones (bruto)",
+                marker_color="#2196F3",
+                text=df_t["percepciones_mxn"].apply(lambda x: f"${x:,.0f}"),
+                textposition="inside",
+            ))
+            fig_bar.add_trace(go.Bar(
+                x=df_t["mes"], y=df_t["deducciones_mxn"],
+                name="Deducciones",
+                marker_color="#F44336",
+                text=df_t["deducciones_mxn"].apply(lambda x: f"${x:,.0f}"),
+                textposition="inside",
+            ))
+            fig_bar.add_trace(go.Bar(
+                x=df_t["mes"], y=df_t["isr_retenido_mxn"],
+                name="ISR retenido",
+                marker_color="#FF9800",
+            ))
+            fig_bar.update_layout(
+                barmode="group",
+                title="Nómina mensual: percepciones vs deducciones",
+                height=400, xaxis_tickformat="%b %Y", yaxis_title="MXN",
+                legend=dict(orientation="h", y=1.08),
+            )
+            st.plotly_chart(fig_bar, use_container_width=True)
+
+            # Línea: neto pagado + empleados
+            fig_neto = go.Figure()
+            fig_neto.add_trace(go.Scatter(
+                x=df_t["mes"], y=df_t["neto_pagado_mxn"],
+                name="Neto pagado", mode="lines+markers",
+                line=dict(color="#4CAF50", width=2), yaxis="y1",
+            ))
+            fig_neto.add_trace(go.Scatter(
+                x=df_t["mes"], y=df_t["num_empleados"],
+                name="Empleados", mode="lines+markers",
+                line=dict(color="#9C27B0", width=2, dash="dot"), yaxis="y2",
+            ))
+            fig_neto.update_layout(
+                title="Neto pagado y empleados por mes",
+                height=320, xaxis_tickformat="%b %Y",
+                yaxis=dict(title="Neto pagado (MXN)", side="left"),
+                yaxis2=dict(title="Empleados", side="right", overlaying="y"),
+                legend=dict(orientation="h", y=1.08),
+            )
+            st.plotly_chart(fig_neto, use_container_width=True)
+
+            # Tabla mensual
+            disp_t = df_t[[
+                "mes", "num_recibos", "num_empleados",
+                "percepciones_mxn", "deducciones_mxn", "isr_retenido_mxn", "neto_pagado_mxn"
+            ]].copy()
+            disp_t["mes"] = disp_t["mes"].dt.strftime("%b %Y")
+            disp_t.columns = [
+                "Mes", "Recibos", "Empleados",
+                "Percepciones", "Deducciones", "ISR retenido", "Neto pagado"
+            ]
+            for col in ["Percepciones", "Deducciones", "ISR retenido", "Neto pagado"]:
+                disp_t[col] = disp_t[col].apply(lambda x: f"${x:,.2f}")
+            st.dataframe(disp_t, use_container_width=True, hide_index=True)
+
+    # ── Tab 2: Por Empleado ───────────────────────────────────────────────────
+    with tab_emp:
+        df_emp = (
+            df_nom.groupby(["empleado_rfc", "empleado_nombre"], as_index=False)
+            .agg(
+                recibos=("uuid_sat", "count"),
+                percepciones=("percepciones_mxn", "sum"),
+                deducciones=("deducciones_mxn", "sum"),
+                isr=("isr_retenido_mxn", "sum"),
+                neto=("neto_pagado_mxn", "sum"),
+            )
+            .sort_values("percepciones", ascending=False)
+        )
+        df_emp["pct_deduccion"] = (df_emp["deducciones"] / df_emp["percepciones"] * 100).round(1)
+
+        top_n = min(15, len(df_emp))
+        df_top = df_emp.head(top_n).sort_values("percepciones", ascending=True)
+
+        col_g1, col_g2 = st.columns([3, 2])
+        with col_g1:
+            fig_emp = go.Figure()
+            fig_emp.add_trace(go.Bar(
+                y=df_top["empleado_nombre"], x=df_top["percepciones"],
+                name="Percepciones", orientation="h", marker_color="#2196F3",
+            ))
+            fig_emp.add_trace(go.Bar(
+                y=df_top["empleado_nombre"], x=df_top["neto"],
+                name="Neto pagado", orientation="h", marker_color="#4CAF50",
+            ))
+            fig_emp.update_layout(
+                barmode="overlay", height=max(350, top_n * 40),
+                title=f"Top {top_n} empleados — percepciones vs neto",
+                xaxis_title="MXN", yaxis_title="",
+                legend=dict(orientation="h", y=1.05),
+            )
+            st.plotly_chart(fig_emp, use_container_width=True)
+
+        with col_g2:
+            fig_isr = px.pie(
+                df_emp.head(10),
+                names="empleado_nombre", values="isr",
+                title="ISR retenido — top 10 empleados",
+                hole=0.4,
+                color_discrete_sequence=px.colors.sequential.Oranges_r,
+            )
+            fig_isr.update_traces(textinfo="percent+label")
+            fig_isr.update_layout(showlegend=False, height=350)
+            st.plotly_chart(fig_isr, use_container_width=True)
+
+        disp_emp = df_emp.copy()
+        for col in ["percepciones", "deducciones", "isr", "neto"]:
+            disp_emp[col] = disp_emp[col].apply(lambda x: f"${x:,.2f}")
+        disp_emp.columns = [
+            "RFC", "Empleado", "Recibos",
+            "Percepciones", "Deducciones", "ISR retenido", "Neto pagado", "% Deducción"
+        ]
+        st.dataframe(disp_emp, use_container_width=True, hide_index=True)
+
+    # ── Tab 3: Detalle recibos ────────────────────────────────────────────────
+    with tab_det:
+        buscar = st.text_input("Buscar empleado (nombre o RFC)", "")
+        df_det = df_nom.copy()
+        if buscar:
+            mask = (
+                df_det["empleado_nombre"].str.contains(buscar, case=False, na=False) |
+                df_det["empleado_rfc"].str.contains(buscar, case=False, na=False)
+            )
+            df_det = df_det[mask]
+
+        st.caption(f"**{len(df_det):,}** recibos")
+
+        disp_det = df_det[[
+            "fecha", "empleado_nombre", "empleado_rfc",
+            "percepciones_mxn", "deducciones_mxn", "isr_retenido_mxn",
+            "neto_pagado_mxn", "moneda", "uuid_sat"
+        ]].copy()
+        disp_det.columns = [
+            "Fecha", "Empleado", "RFC",
+            "Percepciones", "Deducciones", "ISR retenido",
+            "Neto pagado", "Moneda", "UUID SAT"
+        ]
+        st.dataframe(
+            disp_det.style.format({
+                "Percepciones":  "${:,.2f}",
+                "Deducciones":   "${:,.2f}",
+                "ISR retenido":  "${:,.2f}",
+                "Neto pagado":   "${:,.2f}",
+            }),
+            use_container_width=True, hide_index=True, height=480,
+        )
+        csv_n = df_det.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            "⬇️ Descargar CSV nómina",
+            data=csv_n,
+            file_name="nomina_fiscal.csv",
+            mime="text/csv",
+        )
+
+
+
+
+
+def _run_ventas(empresa_id: str, empresa_nombre: str, neon_url: str):
+    """Vista de desglose fiscal — Ventas / Ingresos (tipo_comprobante='I')."""
     with st.spinner("Consultando base de datos..."):
         df           = _cargar_fiscal(empresa_id, neon_url)
         df_tendencia = _cargar_tendencia_fiscal(empresa_id, neon_url)
@@ -538,3 +817,30 @@ def run():
                 file_name="retenciones.csv",
                 mime="text/csv",
             )
+
+
+def run():
+    """Punto de entrada del módulo Desglose Fiscal."""
+    empresa_id     = st.session_state.get("empresa_id")
+    empresa_nombre = st.session_state.get("empresa_nombre", "")
+    neon_url       = _get_neon_url()
+
+    if not empresa_id or not neon_url:
+        st.warning("⚠️ Debes iniciar sesión para ver este reporte.")
+        return
+
+    st.title("🧾 Desglose Fiscal")
+
+    modo = st.radio(
+        "Tipo de comprobante:",
+        ["🧾 Ventas / Ingresos", "💼 Nómina"],
+        horizontal=True,
+        key="fiscal_modo",
+    )
+
+    st.markdown("---")
+
+    if modo == "🧾 Ventas / Ingresos":
+        _run_ventas(empresa_id, empresa_nombre, neon_url)
+    else:
+        _run_nomina(empresa_id, empresa_nombre, neon_url)
