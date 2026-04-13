@@ -9,6 +9,7 @@ Métricas clave:
 - Ranking mixto: volumen de ventas vs calidad de cartera
 """
 
+import io
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -640,7 +641,126 @@ def run():
         fila = df_cruce[df_cruce["vendedor"] == vendedor_seleccionado_ficha].iloc[0]
 
         # --- Datos de ventas para este vendedor ---
-        df_v = df_ventas[df_ventas["vendedor"] == vendedor_seleccionado_ficha]
+        df_v_base = df_ventas[df_ventas["vendedor"] == vendedor_seleccionado_ficha].copy()
+
+        # ── Filtros dentro de la ficha ────────────────────────────────────────
+        with st.expander("🔎 Filtrar operaciones del vendedor", expanded=False):
+            _fcol1, _fcol2, _fcol3 = st.columns(3)
+
+            # Rango de fechas
+            _fecha_min = _fecha_max = None
+            if "fecha" in df_v_base.columns and not df_v_base.empty:
+                _fechas = pd.to_datetime(df_v_base["fecha"], errors="coerce").dropna()
+                if not _fechas.empty:
+                    _fecha_min_data = _fechas.min().date()
+                    _fecha_max_data = _fechas.max().date()
+                    with _fcol1:
+                        _fecha_min = st.date_input(
+                            "Desde",
+                            value=_fecha_min_data,
+                            min_value=_fecha_min_data,
+                            max_value=_fecha_max_data,
+                            key=f"ficha_fecha_desde_{vendedor_seleccionado_ficha}",
+                        )
+                    with _fcol2:
+                        _fecha_max = st.date_input(
+                            "Hasta",
+                            value=_fecha_max_data,
+                            min_value=_fecha_min_data,
+                            max_value=_fecha_max_data,
+                            key=f"ficha_fecha_hasta_{vendedor_seleccionado_ficha}",
+                        )
+
+            # Filtro por cliente
+            _clientes_filtro = []
+            if col_cliente_v and col_cliente_v in df_v_base.columns and not df_v_base.empty:
+                _clientes_unicos = sorted(df_v_base[col_cliente_v].dropna().unique().tolist())
+                with _fcol3:
+                    _clientes_filtro = st.multiselect(
+                        "Cliente(s)",
+                        options=_clientes_unicos,
+                        default=[],
+                        key=f"ficha_clientes_{vendedor_seleccionado_ficha}",
+                        placeholder="Todos",
+                    )
+
+            # Aplicar filtros
+            df_v = df_v_base.copy()
+            if "fecha" in df_v.columns and _fecha_min and _fecha_max:
+                df_v["fecha"] = pd.to_datetime(df_v["fecha"], errors="coerce")
+                df_v = df_v[
+                    (df_v["fecha"].dt.date >= _fecha_min) &
+                    (df_v["fecha"].dt.date <= _fecha_max)
+                ]
+            if _clientes_filtro and col_cliente_v and col_cliente_v in df_v.columns:
+                df_v = df_v[df_v[col_cliente_v].isin(_clientes_filtro)]
+
+            # Resumen del filtro activo
+            _total_base = len(df_v_base)
+            _total_filtrado = len(df_v)
+            _monto_filtrado = df_v["valor_usd"].sum() if not df_v.empty else 0
+            if _total_filtrado < _total_base:
+                st.info(
+                    f"📌 Mostrando **{_total_filtrado}** de {_total_base} operaciones · "
+                    f"Monto filtrado: **${_monto_filtrado:,.0f}**"
+                )
+
+            # ── Exportar Excel de operaciones filtradas ───────────────────────
+            st.write("")
+            if not df_v.empty:
+                _buf = io.BytesIO()
+                with pd.ExcelWriter(_buf, engine="xlsxwriter") as _wr:
+                    _wb = _wr.book
+                    _fh  = _wb.add_format({"bold": True, "bg_color": "#1F4E79",
+                                           "font_color": "white", "border": 1})
+                    _fm  = _wb.add_format({"num_format": "$#,##0.00", "border": 1})
+                    _ft  = _wb.add_format({"border": 1})
+                    _fd  = _wb.add_format({"num_format": "yyyy-mm-dd", "border": 1})
+                    _ftit = _wb.add_format({"bold": True, "font_size": 13,
+                                            "font_color": "#1F4E79"})
+                    _fsub = _wb.add_format({"italic": True, "font_color": "#666666"})
+
+                    _col_map = {
+                        "fecha":            ("Fecha",            14, _fd),
+                        "factura":          ("Factura",          14, _ft),
+                        col_cliente_v:      ("Cliente",          32, _ft),
+                        "linea_de_negocio": ("Línea de Negocio", 20, _ft),
+                        "producto":         ("Producto",         32, _ft),
+                        "valor_usd":        ("Monto ($)",        14, _fm),
+                        "ventas_usd":       ("Monto ($)",        14, _fm),
+                    }
+                    _cols_exp = [c for c in _col_map if c and c in df_v.columns]
+
+                    _ws = _wr.sheets.get("Operaciones") or None
+                    df_v[_cols_exp].to_excel(_wr, sheet_name="Operaciones",
+                                             startrow=3, index=False, header=False)
+                    _ws = _wr.sheets["Operaciones"]
+                    _ws.write(0, 0, f"Operaciones — {vendedor_seleccionado_ficha}", _ftit)
+                    _ws.write(1, 0,
+                              f"Período: {_fecha_min} al {_fecha_max} · "
+                              f"{_total_filtrado} registros · "
+                              f"Total: ${_monto_filtrado:,.0f}",
+                              _fsub)
+                    for _ci, _ck in enumerate(_cols_exp):
+                        _lbl, _ancho, _fmt_c = _col_map[_ck]
+                        _ws.write(2, _ci, _lbl, _fh)
+                        _ws.set_column(_ci, _ci, _ancho)
+                        for _ri, _val in enumerate(df_v[_ck]):
+                            _ws.write(_ri + 3, _ci, _val, _fmt_c)
+                    _ws.freeze_panes(3, 0)
+                    _ws.autofilter(2, 0, 2 + len(df_v), len(_cols_exp) - 1)
+
+                _nombre_vend = vendedor_seleccionado_ficha.replace(" ", "_")[:25]
+                st.download_button(
+                    label="📥 Exportar operaciones a Excel",
+                    data=_buf.getvalue(),
+                    file_name=f"ops_{_nombre_vend}_{now_mx().strftime('%Y%m%d')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                )
+            else:
+                st.warning("Sin operaciones con los filtros aplicados.")
+
         # Mejor cliente por ventas
         mejor_cliente = "—"
         if col_cliente_v and col_cliente_v in df_v.columns and not df_v.empty:
@@ -1339,19 +1459,209 @@ def run():
     if len(vendedores_alerta) == 0 and len(otras_alertas) == 0:
         st.success("✅ Todos los vendedores tienen indicadores dentro de rangos normales.")
 
-    # ── Descarga CSV ──────────────────────────────────────────────────────────
+    # ── Exportación ───────────────────────────────────────────────────────────
     st.write("---")
+    st.subheader("⬇️ Exportar Reporte")
 
     user = get_current_user()
     puede_exportar = user and user.can_export()
 
     if puede_exportar:
-        csv_bytes = df_cruce.to_csv(index=False).encode("utf-8")
-        st.download_button(
-            label="⬇️ Descargar tabla completa (.csv)",
-            data=csv_bytes,
-            file_name=f"vendedores_cxc_{now_mx().strftime('%Y%m%d')}.csv",
-            mime="text/csv",
+        # ── Opción de filtrar por vendedor ────────────────────────────────────
+        col_exp1, col_exp2 = st.columns([2, 1])
+        with col_exp1:
+            vendedores_opciones = ["Todos los vendedores"] + sorted(df_cruce["vendedor"].tolist())
+            vendedor_filtro_exp = st.selectbox(
+                "Filtrar exportación por vendedor:",
+                options=vendedores_opciones,
+                key="vendedor_exportacion_select",
+            )
+        with col_exp2:
+            st.write("")
+            st.write("")
+            st.caption("El Excel incluye: Resumen, Ventas y CxC")
+
+        # Filtrar según selección
+        if vendedor_filtro_exp == "Todos los vendedores":
+            df_ventas_exp  = df_ventas.copy()
+            df_cxc_exp     = df_cxc_vend.copy()
+            df_resumen_exp = df_cruce.copy()
+            sufijo_archivo = "todos"
+        else:
+            df_ventas_exp  = df_ventas[df_ventas["vendedor"] == vendedor_filtro_exp].copy()
+            df_cxc_exp     = df_cxc_vend[df_cxc_vend["vendedor"] == vendedor_filtro_exp].copy()
+            df_resumen_exp = df_cruce[df_cruce["vendedor"] == vendedor_filtro_exp].copy()
+            sufijo_archivo = vendedor_filtro_exp.replace(" ", "_")[:30]
+
+        # ── Generar Excel en memoria ──────────────────────────────────────────
+        def _generar_excel(df_resumen: pd.DataFrame, df_ventas_d: pd.DataFrame,
+                           df_cxc_d: pd.DataFrame) -> bytes:
+            buffer = io.BytesIO()
+            with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
+                wb = writer.book
+
+                # ── Formatos ──────────────────────────────────────────────────
+                fmt_header   = wb.add_format({"bold": True, "bg_color": "#1F4E79",
+                                              "font_color": "white", "border": 1})
+                fmt_money    = wb.add_format({"num_format": "$#,##0.00", "border": 1})
+                fmt_pct      = wb.add_format({"num_format": "0.00%", "border": 1})
+                fmt_num      = wb.add_format({"num_format": "#,##0", "border": 1})
+                fmt_text     = wb.add_format({"border": 1})
+                fmt_date     = wb.add_format({"num_format": "yyyy-mm-dd", "border": 1})
+                fmt_title    = wb.add_format({"bold": True, "font_size": 14,
+                                              "font_color": "#1F4E79"})
+                fmt_subtitle = wb.add_format({"italic": True, "font_color": "#666666"})
+
+                # ══════════════════════════════════════════════════════════════
+                # HOJA 1 — RESUMEN POR VENDEDOR
+                # ══════════════════════════════════════════════════════════════
+                hoja_resumen = "Resumen Vendedores"
+                cols_resumen = {
+                    "vendedor":           ("Vendedor",           20, "text"),
+                    "ventas_totales":     ("Ventas Totales ($)", 18, "money"),
+                    "num_operaciones":    ("# Operaciones",      14, "num"),
+                    "ticket_promedio":    ("Ticket Promedio ($)", 18, "money"),
+                    "cartera_total":      ("Cartera Total ($)",  18, "money"),
+                    "cartera_vigente":    ("Vigente ($)",        16, "money"),
+                    "cartera_vencida":    ("Vencida ($)",        16, "money"),
+                    "cartera_1_30":       ("1-30 días ($)",      15, "money"),
+                    "cartera_31_60":      ("31-60 días ($)",     15, "money"),
+                    "cartera_61_90":      ("61-90 días ($)",     15, "money"),
+                    "cartera_alto_riesgo":(">90 días ($)",       15, "money"),
+                    "pct_vencida":        ("% Vencida",          12, "pct"),
+                    "ratio_deuda_ventas": ("Ratio Deuda/Ventas", 18, "pct"),
+                    "score_calidad":      ("Score Calidad",      13, "num"),
+                    "nivel_calidad":      ("Nivel",              12, "text"),
+                    "dias_max":           ("Días Máx Vencido",   16, "num"),
+                }
+
+                cols_presentes = [c for c in cols_resumen if c in df_resumen.columns]
+                df_r = df_resumen[cols_presentes].copy()
+                # Convertir % a decimal para formato %
+                for col_p in ("pct_vencida", "ratio_deuda_ventas", "pct_vigente",
+                              "pct_1_30", "pct_31_60", "pct_61_90", "pct_mas_90"):
+                    if col_p in df_r.columns:
+                        df_r[col_p] = df_r[col_p] / 100
+
+                df_r.to_excel(writer, sheet_name=hoja_resumen, startrow=3, index=False, header=False)
+                ws_r = writer.sheets[hoja_resumen]
+                ws_r.write(0, 0, "Reporte de Vendedores + CxC", fmt_title)
+                ws_r.write(1, 0, f"Generado: {now_mx().strftime('%d/%m/%Y %H:%M')}", fmt_subtitle)
+
+                for col_i, col_key in enumerate(cols_presentes):
+                    label, ancho, tipo = cols_resumen[col_key]
+                    ws_r.write(2, col_i, label, fmt_header)
+                    ws_r.set_column(col_i, col_i, ancho)
+                    fmt_celda = {"text": fmt_text, "money": fmt_money,
+                                 "pct": fmt_pct, "num": fmt_num}.get(tipo, fmt_text)
+                    for row_i, val in enumerate(df_r[col_key]):
+                        ws_r.write(row_i + 3, col_i, val, fmt_celda)
+
+                ws_r.freeze_panes(3, 1)
+                ws_r.autofilter(2, 0, 2 + len(df_r), len(cols_presentes) - 1)
+
+                # ══════════════════════════════════════════════════════════════
+                # HOJA 2 — OPERACIONES DE VENTAS
+                # ══════════════════════════════════════════════════════════════
+                if not df_ventas_d.empty:
+                    cols_ventas_map = {
+                        "vendedor":         ("Vendedor",         22, "text"),
+                        "fecha":            ("Fecha",            14, "date"),
+                        "factura":          ("Factura",          14, "text"),
+                        "cliente":          ("Cliente",          30, "text"),
+                        "linea_de_negocio": ("Línea de Negocio", 20, "text"),
+                        "producto":         ("Producto",         30, "text"),
+                        "valor_usd":        ("Monto ($)",        14, "money"),
+                        "ventas_usd":       ("Monto ($)",        14, "money"),
+                    }
+                    cols_v_pres = [c for c in cols_ventas_map if c in df_ventas_d.columns]
+                    df_v = df_ventas_d[cols_v_pres].copy()
+
+                    df_v.to_excel(writer, sheet_name="Operaciones Ventas",
+                                  startrow=3, index=False, header=False)
+                    ws_v = writer.sheets["Operaciones Ventas"]
+                    ws_v.write(0, 0, "Detalle de Operaciones de Ventas", fmt_title)
+                    ws_v.write(1, 0, f"Total registros: {len(df_v)}", fmt_subtitle)
+
+                    for col_i, col_key in enumerate(cols_v_pres):
+                        label, ancho, tipo = cols_ventas_map[col_key]
+                        ws_v.write(2, col_i, label, fmt_header)
+                        ws_v.set_column(col_i, col_i, ancho)
+                        fmt_celda = {"text": fmt_text, "money": fmt_money,
+                                     "date": fmt_date, "num": fmt_num}.get(tipo, fmt_text)
+                        for row_i, val in enumerate(df_v[col_key]):
+                            ws_v.write(row_i + 3, col_i, val, fmt_celda)
+
+                    ws_v.freeze_panes(3, 1)
+                    ws_v.autofilter(2, 0, 2 + len(df_v), len(cols_v_pres) - 1)
+
+                # ══════════════════════════════════════════════════════════════
+                # HOJA 3 — CxC POR VENDEDOR
+                # ══════════════════════════════════════════════════════════════
+                if not df_cxc_d.empty:
+                    cols_cxc_map = {
+                        "vendedor":      ("Vendedor",       22, "text"),
+                        "deudor":        ("Cliente",        30, "text"),
+                        "factura":       ("Factura",        14, "text"),
+                        "fecha":         ("Fecha Emisión",  14, "date"),
+                        "vencimiento":   ("Vencimiento",    14, "date"),
+                        "saldo_adeudado":("Saldo ($)",      14, "money"),
+                        "dias_overdue":  ("Días Vencido",   14, "num"),
+                        "dias_vencido":  ("Días Vencido",   14, "num"),
+                        "_hoja_origen":  ("Hoja Origen",    14, "text"),
+                    }
+                    cols_c_pres = [c for c in cols_cxc_map if c in df_cxc_d.columns]
+                    df_c = df_cxc_d[cols_c_pres].copy()
+
+                    df_c.to_excel(writer, sheet_name="CxC por Vendedor",
+                                  startrow=3, index=False, header=False)
+                    ws_c = writer.sheets["CxC por Vendedor"]
+                    ws_c.write(0, 0, "Cuentas por Cobrar por Vendedor", fmt_title)
+                    ws_c.write(1, 0, f"Total registros: {len(df_c)}", fmt_subtitle)
+
+                    for col_i, col_key in enumerate(cols_c_pres):
+                        label, ancho, tipo = cols_cxc_map[col_key]
+                        ws_c.write(2, col_i, label, fmt_header)
+                        ws_c.set_column(col_i, col_i, ancho)
+                        fmt_celda = {"text": fmt_text, "money": fmt_money,
+                                     "date": fmt_date, "num": fmt_num}.get(tipo, fmt_text)
+                        for row_i, val in enumerate(df_c[col_key]):
+                            ws_c.write(row_i + 3, col_i, val, fmt_celda)
+
+                    ws_c.freeze_panes(3, 1)
+                    ws_c.autofilter(2, 0, 2 + len(df_c), len(cols_c_pres) - 1)
+
+            return buffer.getvalue()
+
+        # ── Botones de descarga ───────────────────────────────────────────────
+        col_btn1, col_btn2 = st.columns(2)
+
+        with col_btn1:
+            excel_bytes = _generar_excel(df_resumen_exp, df_ventas_exp, df_cxc_exp)
+            nombre_excel = f"reporte_vendedores_{sufijo_archivo}_{now_mx().strftime('%Y%m%d')}.xlsx"
+            st.download_button(
+                label="📊 Descargar Reporte Excel (Resumen + Ventas + CxC)",
+                data=excel_bytes,
+                file_name=nombre_excel,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
+
+        with col_btn2:
+            csv_bytes = df_resumen_exp.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                label="⬇️ Descargar solo resumen (.csv)",
+                data=csv_bytes,
+                file_name=f"vendedores_cxc_{sufijo_archivo}_{now_mx().strftime('%Y%m%d')}.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
+
+        st.caption(
+            "📋 **Excel incluye 3 hojas:** "
+            "**Resumen Vendedores** (KPIs y scores) · "
+            "**Operaciones Ventas** (detalle de cada venta) · "
+            "**CxC por Vendedor** (facturas pendientes con días vencidos)"
         )
     else:
         st.warning("⚠️ Las funciones de exportación están disponibles solo para usuarios con rol **Analyst** o **Admin**")
