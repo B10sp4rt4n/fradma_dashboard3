@@ -67,6 +67,25 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+
+# ── CSS global: corrige visibilidad de iconos en nav-link-selected ──────────
+st.markdown("""
+<style>
+/* Ítem seleccionado: texto e ícono siempre blancos */
+[data-testid="stSidebar"] .nav-link.active i,
+[data-testid="stSidebar"] .nav-link.active span {{
+    color: white !important;
+}}
+/* Ítem normal: texto oscuro para contraste en fondo claro */
+[data-testid="stSidebar"] .nav-link:not(.active) {{
+    color: #1a1a2e !important;
+}}
+[data-testid="stSidebar"] .nav-link:not(.active) i {{
+    color: #1F4E79 !important;
+}}
+</style>
+""", unsafe_allow_html=True)
+
 # =====================================================================
 # PANTALLA DE LOGIN — MULTI-USUARIO
 # =====================================================================
@@ -1114,9 +1133,10 @@ if OPTION_MENU_AVAILABLE:
             default_index=_menu_default,
             styles={
                 "container":        {"padding": "0 !important", "background-color": "transparent"},
-                "icon":             {"font-size": "14px"},
+                "icon":             {"font-size": "14px", "color": "#1F4E79"},
                 "nav-link":         {"font-size": "13px", "text-align": "left", "margin": "1px 0",
-                                     "padding": "6px 10px", "--hover-color": "#f0f4ff"},
+                                     "padding": "6px 10px", "--hover-color": "#dce8f7",
+                                     "color": "#1a1a2e"},
                 "nav-link-selected":{"background-color": "#1F4E79", "color": "white",
                                      "font-weight": "600"},
             },
