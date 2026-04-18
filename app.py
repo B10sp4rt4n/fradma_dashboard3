@@ -927,15 +927,45 @@ if archivo:
         columnas_ventas_usd = ["valor_usd", "ventas_usd", "ventas_usd_con_iva", "importe", "valor", "venta"]
         columna_encontrada = next((col for col in columnas_ventas_usd if col in df.columns), None)
 
-        st.sidebar.success(f"✅ Archivo cargado: **{archivo.name}**")
-        st.sidebar.info(f"📊 {len(df):,} registros | {len(df.columns)} columnas")
-        
-        if columna_encontrada:
-            st.session_state["columna_ventas"] = columna_encontrada
+        # ── Info del archivo + validación en un único expander ───────────
+        validacion = validar_columnas_requeridas(df)
+        total_errores    = sum(1 for m in validacion.values() for i in m if i["status"] == "❌")
+        total_advertencias = sum(1 for m in validacion.values() for i in m if i["status"] == "⚠️")
+
+        if total_errores > 0:
+            _info_icon = "🚨"
+        elif total_advertencias > 0:
+            _info_icon = "⚠️"
         else:
-            st.sidebar.warning("⚠️ No se detectó columna de ventas estándar")
-            with st.sidebar.expander("🔍 Ver columnas disponibles"):
+            _info_icon = "✅"
+
+        with st.sidebar.expander(f"{_info_icon} Info del archivo", expanded=False):
+            st.success(f"**{archivo.name}**")
+            st.info(f"📊 {len(df):,} registros | {len(df.columns)} columnas")
+
+            if not columna_encontrada:
+                st.warning("⚠️ No se detectó columna de ventas estándar")
                 st.write(df.columns.tolist())
+
+            st.markdown("---")
+            st.markdown("**📋 Validación de columnas**")
+
+            for modulo, checklist in validacion.items():
+                if not checklist:
+                    continue
+                errores_m = sum(1 for i in checklist if i["status"] == "❌")
+                advert_m  = sum(1 for i in checklist if i["status"] == "⚠️")
+                ok_m      = sum(1 for i in checklist if i["status"] == "✅")
+                icono_m   = "🔴" if errores_m > 0 else ("🟡" if advert_m > 0 else "🟢")
+                st.markdown(f"**{icono_m} {modulo}** — ✅{ok_m} ⚠️{advert_m} ❌{errores_m}")
+                items = checklist if modo_debug else [i for i in checklist if i["status"] != "✅"]
+                for item in items:
+                    st.caption(f"{item['status']} {item['col']}: {item['mensaje']}")
+
+            if total_errores == 0 and total_advertencias == 0:
+                st.success("✅ Todas las columnas críticas presentes")
+
+
 
         if "fecha" in df.columns:
             df["fecha"] = pd.to_datetime(df["fecha"], errors="coerce")
@@ -966,72 +996,11 @@ if archivo:
                     st.sidebar.info("💡 Edita config/aliases.json para unificar")
 
         st.session_state["df"] = df
-        st.session_state["_df_fuente"] = "excel"  # marcar fuente para no sobreescribir con CFDI auto
+        st.session_state["_df_fuente"] = "excel"
         st.session_state["archivo_path"] = archivo
 
-        # ================================================================
-        # CHECKLIST DE VALIDACIÓN DE COLUMNAS
-        # ================================================================
-        validacion = validar_columnas_requeridas(df)
-        
-        # Contar problemas
-        total_errores = sum(1 for modulo in validacion.values() for item in modulo if item["status"] == "❌")
-        total_advertencias = sum(1 for modulo in validacion.values() for item in modulo if item["status"] == "⚠️")
-        
-        # Mostrar resumen en sidebar
-        if total_errores > 0:
-            st.sidebar.error(f"🚨 {total_errores} columna(s) crítica(s) faltante(s)")
-        elif total_advertencias > 0:
-            st.sidebar.warning(f"⚠️ {total_advertencias} columna(s) con variantes detectadas")
-        else:
-            st.sidebar.success("✅ Todas las columnas críticas encontradas")
-        
-        # Panel expandible con detalle de validación
-        with st.sidebar.expander("📋 Validación de Columnas Requeridas"):
-            st.markdown("**Referencia:** Ver [docs/COLUMNAS_REQUERIDAS.md](docs/COLUMNAS_REQUERIDAS.md)")
-            st.markdown("---")
-            
-            for modulo, checklist in validacion.items():
-                if not checklist:  # Saltar si está vacío
-                    continue
-                
-                # Contar por tipo de status en este módulo
-                errores_modulo = sum(1 for item in checklist if item["status"] == "❌")
-                advertencias_modulo = sum(1 for item in checklist if item["status"] == "⚠️")
-                ok_modulo = sum(1 for item in checklist if item["status"] == "✅")
-                
-                # Color del header según problemas
-                if errores_modulo > 0:
-                    st.markdown(f"### 🔴 {modulo}")
-                elif advertencias_modulo > 0:
-                    st.markdown(f"### 🟡 {modulo}")
-                else:
-                    st.markdown(f"### 🟢 {modulo}")
-                
-                st.caption(f"✅ {ok_modulo} | ⚠️ {advertencias_modulo} | ❌ {errores_modulo}")
-                
-                # Mostrar solo problemas o todo si en modo debug
-                items_a_mostrar = checklist if modo_debug else [item for item in checklist if item["status"] != "✅"]
-                
-                if items_a_mostrar:
-                    for item in items_a_mostrar:
-                        st.markdown(f"{item['status']} **{item['col']}** ({item['tipo']}): {item['mensaje']}")
-                elif not modo_debug:
-                    st.success("Todas las columnas críticas presentes")
-                
-                st.markdown("---")
-            
-            # Link a documentación
-            st.info("💡 **Tip:** Consulta la guía completa en `docs/COLUMNAS_REQUERIDAS.md` para mapear desde CRMs/ERPs")
-
         if "año" in df.columns:
-            años_disponibles = sorted(df["año"].dropna().unique())
-            año_base = st.sidebar.selectbox(
-                "📅 Año base",
-                años_disponibles,
-                help="Selecciona el año principal para análisis comparativo"
-            )
-            st.session_state["año_base"] = año_base
+            st.session_state.setdefault("año_base", sorted(df["año"].dropna().unique())[-1] if not df["año"].dropna().empty else None)
         else:
             st.sidebar.warning("⚠️ No se encontró columna 'año'")
 
@@ -1049,222 +1018,10 @@ if archivo:
 # EXPORTACIÓN DE REPORTES (SPRINT 4)
 # =====================================================================
 
-if "df" in st.session_state and "archivo_excel" in st.session_state:
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### 📥 Exportar Reportes")
-    
-    # Intentar obtener datos de CxC primero
-    df_cxc = None
-    df_cxc_procesado = None
-    metricas = None
-    
-    try:
-        archivo_excel = st.session_state["archivo_excel"]
-        
-        # Leer todas las hojas disponibles directamente desde el archivo
-        xls = pd.ExcelFile(archivo_excel)
-        hojas_disponibles = xls.sheet_names
-        
-        # Prioridad 1: Usar hojas específicas CXC VIGENTES y CXC VENCIDAS
-        if "CXC VIGENTES" in hojas_disponibles and "CXC VENCIDAS" in hojas_disponibles:
-            df_vigentes = pd.read_excel(xls, sheet_name='CXC VIGENTES')
-            df_vencidas = pd.read_excel(xls, sheet_name='CXC VENCIDAS')
-            
-            df_vigentes = normalizar_columnas(df_vigentes)
-            df_vencidas = normalizar_columnas(df_vencidas)
-            
-            # Combinar ambas hojas
-            df_cxc = pd.concat([df_vigentes, df_vencidas], ignore_index=True, sort=False)
-            
-        # Prioridad 2: Buscar hoja genérica de CxC
-        else:
-            hoja_cxc = None
-            for nombre_hoja in hojas_disponibles:
-                if "cxc" in nombre_hoja.lower() or "cuenta" in nombre_hoja.lower():
-                    hoja_cxc = nombre_hoja
-                    break
-            
-            if hoja_cxc:
-                # Leer la hoja de CxC directamente
-                df_cxc_raw = pd.read_excel(xls, sheet_name=hoja_cxc)
-                df_cxc = normalizar_columnas(df_cxc_raw)
-            else:
-                df_cxc = None
-        
-        # Solo continuar si se encontró data de CxC
-        if df_cxc is not None:
-            # Asegurar que existe la columna saldo_adeudado
-            if "saldo_adeudado" not in df_cxc.columns:
-                for candidato in ["saldo", "saldo_adeudo", "adeudo", "importe", "monto", "total", "saldo_usd"]:
-                    if candidato in df_cxc.columns:
-                        df_cxc = df_cxc.rename(columns={candidato: "saldo_adeudado"})
-                        break
-            
-            # Limpiar y convertir columna de saldo
-            if "saldo_adeudado" in df_cxc.columns:
-                saldo_txt = df_cxc["saldo_adeudado"].astype(str)
-                saldo_txt = saldo_txt.str.replace(",", "", regex=False)
-                saldo_txt = saldo_txt.str.replace("$", "", regex=False)
-                df_cxc["saldo_adeudado"] = pd.to_numeric(saldo_txt, errors="coerce").fillna(0)
-            else:
-                df_cxc["saldo_adeudado"] = 0
-            
-            # DEBUG: Ver columnas y valores de dias
-            logger.info(f"=== DEBUG CxC COLUMNAS ===")
-            logger.info(f"Columnas disponibles: {list(df_cxc.columns)}")
-            if 'dias_restante' in df_cxc.columns:
-                logger.info(f"dias_restante - min: {df_cxc['dias_restante'].min()}, max: {df_cxc['dias_restante'].max()}, muestra: {df_cxc['dias_restante'].head(5).tolist()}")
-            if 'dias_restantes' in df_cxc.columns:
-                logger.info(f"dias_restantes - min: {df_cxc['dias_restantes'].min()}, max: {df_cxc['dias_restantes'].max()}, muestra: {df_cxc['dias_restantes'].head(5).tolist()}")
-            if 'dias_vencido' in df_cxc.columns:
-                logger.info(f"dias_vencido - min: {df_cxc['dias_vencido'].min()}, max: {df_cxc['dias_vencido'].max()}, muestra: {df_cxc['dias_vencido'].head(5).tolist()}")
-            
-            # Preparar métricas básicas para exportación
-            from utils.cxc_helper import calcular_metricas_basicas, preparar_datos_cxc
-            
-            # preparar_datos_cxc retorna una tupla: (df_prep, df_no_pagados, mask_pagado)
-            df_prep, df_cxc_procesado, _ = preparar_datos_cxc(df_cxc)
-            
-            # DEBUG: Ver dias_overdue calculado
-            logger.info(f"dias_overdue calculado - min: {df_cxc_procesado['dias_overdue'].min()}, max: {df_cxc_procesado['dias_overdue'].max()}")
-            logger.info(f"Registros vigentes (dias_overdue <= 0): {(df_cxc_procesado['dias_overdue'] <= 0).sum()}")
-            logger.info(f"Registros vencidos (dias_overdue > 0): {(df_cxc_procesado['dias_overdue'] > 0).sum()}")
-            
-            metricas = calcular_metricas_basicas(df_cxc_procesado)
-            
-    except KeyError as e:
-        logger.error(f"Columna requerida no encontrada en CxC: {e}")
-        df_cxc = None
-        df_cxc_procesado = None
-        metricas = None
-    except ValueError as e:
-        logger.error(f"Valor inválido en datos CxC: {e}")
-        df_cxc = None
-        df_cxc_procesado = None
-        metricas = None
-    except Exception as e:
-        logger.exception(f"Error inesperado cargando datos CxC para exportación: {e}")
-        df_cxc = None
-        df_cxc_procesado = None
-        metricas = None
-    
-    # Excel (arriba)
-    if df_cxc_procesado is not None and metricas is not None:
-        try:
-            # Generar Excel con métricas completas
-            excel_buffer = crear_excel_metricas_cxc(metricas, df_cxc_procesado)
-            st.sidebar.download_button(
-                label="📊 Excel",
-                data=excel_buffer,
-                file_name="reporte_cxc.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
-            )
-        except ImportError:
-            st.sidebar.warning("⚠️ Librería xlsxwriter no disponible. Instala con: pip install xlsxwriter")
-            logger.error("Falta dependencia xlsxwriter")
-        except MemoryError:
-            st.sidebar.warning("⚠️ Datos demasiado grandes para generar Excel")
-            logger.error("Memoria insuficiente para generar Excel")
-        except Exception as e:
-            st.sidebar.warning(f"⚠️ Excel no disponible: {str(e)}")
-            logger.exception(f"Error generando Excel: {e}")
-    else:
-        st.sidebar.caption("⚠️ Sin datos CxC")
-    
-    # HTML (abajo)
-    if df_cxc_procesado is not None and metricas is not None:
-        # Inicializar lista de secciones
-        secciones_seleccionadas = []
-        
-        # Configuración de secciones del reporte HTML
-        with st.sidebar.expander("⚙️ Configurar Reporte HTML", expanded=False):
-            st.caption("Selecciona las secciones a incluir:")
-            
-            incluir_resumen = st.checkbox("📈 Resumen Ejecutivo", value=True, 
-                                          help="KPIs consolidados (Ventas + CxC)")
-            incluir_ventas = st.checkbox("💼 Ventas Detalladas", value=True,
-                                        help="Métricas de desempeño de ventas")
-            incluir_cxc = st.checkbox("🏦 CxC Detallada", value=True,
-                                     help="Desglose de cuentas por cobrar")
-            incluir_antiguedad = st.checkbox("📅 Tabla Antigüedad", value=False,
-                                            help="Distribución detallada por rangos")
-            incluir_score = st.checkbox("🎯 Score de Salud", value=True,
-                                       help="Puntuación de salud financiera")
-            incluir_top = st.checkbox("👥 Top 5 Deudores", value=False,
-                                     help="Clientes con mayor adeudo")
-            
-            # Construir lista de secciones
-            if incluir_resumen:
-                secciones_seleccionadas.append('resumen_ejecutivo')
-            if incluir_ventas:
-                secciones_seleccionadas.append('ventas')
-            if incluir_cxc:
-                secciones_seleccionadas.append('cxc')
-            if incluir_antiguedad:
-                secciones_seleccionadas.append('antiguedad')
-            if incluir_score:
-                secciones_seleccionadas.append('score')
-            if incluir_top:
-                secciones_seleccionadas.append('top_clientes')
-            
-            if secciones_seleccionadas:
-                st.caption(f"✅ {len(secciones_seleccionadas)} sección(es) seleccionada(s)")
-            else:
-                st.warning("⚠️ Selecciona al menos una sección")
-        
-        try:
-            # Obtener df_ventas si está disponible
-            df_ventas_export = None
-            if "df" in st.session_state:
-                df_ventas_export = st.session_state["df"]
-            
-            # Generar HTML con configuración personalizada
-            if secciones_seleccionadas:
-                html_content = crear_reporte_html(
-                    metricas, 
-                    df_cxc_procesado,
-                    df_ventas=df_ventas_export,
-                    secciones=secciones_seleccionadas
-                )
-                
-                st.sidebar.download_button(
-                    label="🌐 Descargar HTML",
-                    data=html_content,
-                    file_name="reporte_ejecutivo.html",
-                    mime="text/html",
-                    use_container_width=True,
-                    help="Reporte ejecutivo configurable en formato HTML"
-                )
-            else:
-                st.sidebar.button(
-                    "🌐 Descargar HTML",
-                    disabled=True,
-                    use_container_width=True,
-                    help="Selecciona al menos una sección"
-                )
-        except KeyError as e:
-            st.sidebar.warning(f"⚠️ Falta columna requerida para HTML: {e}")
-            logger.error(f"Columna faltante en reporte HTML: {e}")
-        except MemoryError:
-            st.sidebar.warning("⚠️ Datos demasiado grandes para generar HTML")
-            logger.error("Memoria insuficiente para generar HTML")
-        except Exception as e:
-            st.sidebar.warning(f"⚠️ HTML no disponible: {str(e)}")
-            logger.exception(f"Error generando HTML: {e}")
-    else:
-        st.sidebar.caption("⚠️ Sin datos CxC")
 
 # =====================================================================
 # NAVEGACIÓN MEJORADA CON TABS Y TOOLTIPS
 # =====================================================================
-
-# =====================================================================
-# SISTEMA DE PASSKEY PREMIUM - ANÁLISIS CON IA
-# =====================================================================
-
-st.sidebar.markdown("---")
-st.sidebar.markdown("### 🤖 Análisis Premium con IA")
 
 # Inicializar estado de IA en session_state
 if "ia_premium_activada" not in st.session_state:
@@ -1274,69 +1031,8 @@ if "openai_api_key" not in st.session_state:
 if "passkey_valido" not in st.session_state:
     st.session_state["passkey_valido"] = False
 
-# Passkey desde variable de entorno con fallback a valor por defecto (desarrollo)
-# PRODUCCIÓN: Definir PASSKEY_PREMIUM en .env o variable de entorno del servidor
 PASSKEY_PREMIUM = os.getenv("PASSKEY_PREMIUM", "fradma2026")
 
-# Widget para ingresar passkey
-passkey_input = st.sidebar.text_input(
-    "🔑 Passkey Premium",
-    type="password",
-    placeholder="Ingresa tu passkey",
-    help="Activa funciones premium de análisis con IA"
-)
-
-if passkey_input == PASSKEY_PREMIUM:
-    if not st.session_state["passkey_valido"]:
-        st.session_state["passkey_valido"] = True
-        st.sidebar.success("✅ Passkey válido!")
-    
-    # Solicitar API key de OpenAI
-    st.sidebar.markdown("**Configuración de IA**")
-    
-    # Intentar obtener la API key de variable de entorno primero
-    api_key_env = os.getenv("OPENAI_API_KEY", "")
-    
-    if api_key_env:
-        st.session_state["openai_api_key"] = api_key_env
-        st.sidebar.success("🔑 API key detectada desde variable de entorno")
-        st.session_state["ia_premium_activada"] = True
-    else:
-        openai_api_key = st.sidebar.text_input(
-            "OpenAI API Key",
-            type="password",
-            placeholder="sk-...",
-            help="Ingresa tu API key de OpenAI para habilitar análisis con IA"
-        )
-        
-        if openai_api_key:
-            # Validar la API key
-            from utils.ai_helper import validar_api_key
-            
-            if validar_api_key(openai_api_key):
-                st.session_state["openai_api_key"] = openai_api_key
-                st.session_state["ia_premium_activada"] = True
-                st.sidebar.success("✅ API key válida")
-            else:
-                st.sidebar.error("❌ API key inválida")
-                st.session_state["ia_premium_activada"] = False
-        else:
-            st.session_state["ia_premium_activada"] = False
-    
-    if st.session_state["ia_premium_activada"]:
-        st.sidebar.success("✅ IA Premium activa — ve al Reporte Ejecutivo para usarla")
-    
-else:
-    st.session_state["passkey_valido"] = False
-    st.session_state["ia_premium_activada"] = False
-    st.session_state["openai_api_key"] = None
-    
-    if passkey_input:
-        st.sidebar.error("❌ Passkey incorrecto")
-    else:
-        st.sidebar.caption("🔐 Ingresa el passkey para acceder a funciones premium")
-
-st.sidebar.markdown("---")
 st.sidebar.markdown("### 🧭 Navegación")
 
 user = get_current_user()
@@ -1405,12 +1101,17 @@ _todos_iconos   = [icon for g in _grupos.values() for _, icon in g["items"]]
 
 if OPTION_MENU_AVAILABLE:
     with st.sidebar:
+        _menu_default = 0
+        if "_menu_navegar_a" in st.session_state:
+            _destino = st.session_state.pop("_menu_navegar_a")
+            if _destino in _todas_opciones:
+                _menu_default = _todas_opciones.index(_destino)
         menu = option_menu(
             menu_title=None,
             options=_todas_opciones,
             icons=_todos_iconos,
             menu_icon="cast",
-            default_index=0,
+            default_index=_menu_default,
             styles={
                 "container":        {"padding": "0 !important", "background-color": "transparent"},
                 "icon":             {"font-size": "14px"},
@@ -1432,7 +1133,7 @@ with st.sidebar:
     # Filtros de datos (se poblará más abajo, luego de definir _filtros_vista)
     # ─ placeholder ─
 
-    with st.expander("⚙️ Configuración", expanded=False):
+    with st.expander("🎨 Personalización CIMA", expanded=False):
         st.markdown("**🖼️ Logo de empresa**")
         logo_file = st.file_uploader(
             "Sube tu logo (PNG, JPG)",
@@ -1482,159 +1183,257 @@ with st.sidebar:
     try:
         roi_tracker = init_roi_tracker(st.session_state)
         roi_summary = roi_tracker.get_summary()
-    
-        with st.expander("💰 Tu ROI", expanded=True):
-            # Gauge circular para horas de hoy
-            st.markdown("**⏱️ Hoy**")
-        
-            if PLOTLY_AVAILABLE and roi_summary['today']['hrs'] > 0:
-                max_hours = max(4, roi_summary['today']['hrs'] * 1.5)
-            
-                fig = go.Figure(go.Indicator(
-                    mode="gauge+number",
-                    value=roi_summary['today']['hrs'],
-                    number={'suffix': " hrs", 'font': {'size': 20, 'color': '#2196F3'}},
-                    gauge={
-                        'axis': {'range': [0, max_hours], 'tickwidth': 1, 'tickcolor': "darkgray"},
-                        'bar': {'color': "#2196F3", 'thickness': 0.7},
-                        'bgcolor': "white",
-                        'borderwidth': 2,
-                        'bordercolor': "gray",
-                        'steps': [
-                            {'range': [0, max_hours * 0.33], 'color': '#E3F2FD'},
-                            {'range': [max_hours * 0.33, max_hours * 0.67], 'color': '#BBDEFB'},
-                            {'range': [max_hours * 0.67, max_hours], 'color': '#90CAF9'},
-                        ],
-                        'threshold': {
-                            'line': {'color': "#4CAF50", 'width': 3},
-                            'thickness': 0.75,
-                            'value': roi_summary['today']['hrs']
-                        }
-                    }
-                ))
-            
-                fig.update_layout(
-                    height=180,
-                    margin=dict(l=10, r=10, t=30, b=10),
-                    paper_bgcolor="rgba(0,0,0,0)",
-                    font={'color': "darkgray", 'family': "Arial", 'size': 10},
-                )
-            
-                st.plotly_chart(fig, use_container_width=True, key="roi_gauge_today")
-            
-                # Mostrar días laborales
-                if roi_summary['today']['workdays'] >= 0.1:
-                    st.caption(f"📅 {roi_summary['today']['workdays']:.1f} días laborales (8 hrs = 1 día)")
-            else:
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.metric(
-                        "Horas",
-                        f"{roi_summary['today']['hrs']:.1f}",
-                        delta=None,
-                        help="Tiempo ahorrado hoy"
-                    )
-                with col2:
-                    st.metric(
-                        "Valor",
-                        f"${roi_summary['today']['value']:,.0f}",
-                        delta=None,
-                        help="Valor generado hoy"
-                    )
-        
-            # Métricas del mes con días laborales
-            st.markdown("---")
-            st.markdown("**📅 Este mes**")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric(
-                    "💵 Valor",
-                    f"${roi_summary['month']['value']:,.0f}",
-                    help="Valor total generado este mes"
-                )
-            with col2:
-                st.metric(
-                    "⏱️ Horas",
-                    f"{roi_summary['month']['hrs']:.1f}",
-                    help="Horas ahorradas este mes"
-                )
-            with col3:
-                st.metric(
-                    "📅 Días",
-                    f"{roi_summary['month']['workdays']:.1f}",
-                    help="Días laborales ahorrados"
-                )
-        
-            # Justificación de inversión - SIEMPRE visible si hay horas
-            if roi_summary['month']['hrs'] > 0:
-                analyst_equiv = roi_summary['month']['analyst_equiv']
-            
+
+        with st.expander("💰 Tu ROI", expanded=False):
+
+            # ── Mini-tabla compacta con colores diferenciados ──────────
+            _hoy_hrs  = roi_summary['today']['hrs']
+            _hoy_val  = roi_summary['today']['value']
+            _mes_hrs  = roi_summary['month']['hrs']
+            _mes_val  = roi_summary['month']['value']
+            _mes_dias = roi_summary['month']['workdays']
+            _año_val  = roi_summary['year']['value']
+            _año_dias = roi_summary['year']['workdays']
+
+            # colores: clasificación=azul tenue, KPI resultante=verde tenue
+            _CL = "#1a3a5c"   # fondo clasificación (azul oscuro)
+            _KP = "#1a4a2a"   # fondo KPI resultante (verde oscuro)
+            _TC = "#90CAF9"   # texto clasificación (azul claro)
+            _TK = "#81C784"   # texto KPI resultante (verde claro)
+
+            st.markdown(f"""
+<style>
+.roi-mini-table {{
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    font-family: 'Segoe UI', Arial, sans-serif;
+}}
+.roi-mini-table td {{
+    padding: 4px 6px;
+    border-radius: 4px;
+}}
+.roi-cl {{ background:{_CL}; color:{_TC}; font-weight:600; }}
+.roi-kp {{ background:{_KP}; color:{_TK}; font-weight:700; text-align:right; }}
+.roi-sep {{ height: 4px; }}
+</style>
+<table class="roi-mini-table">
+  <tr><td class="roi-cl">⏱️ Hoy — horas</td><td class="roi-kp">{_hoy_hrs:.1f} h</td></tr>
+  <tr><td class="roi-cl">💵 Hoy — valor</td><td class="roi-kp">${_hoy_val:,.0f}</td></tr>
+  <tr class="roi-sep"><td colspan="2"></td></tr>
+  <tr><td class="roi-cl">📅 Mes — horas</td><td class="roi-kp">{_mes_hrs:.1f} h</td></tr>
+  <tr><td class="roi-cl">📅 Mes — días lab.</td><td class="roi-kp">{_mes_dias:.1f} d</td></tr>
+  <tr><td class="roi-cl">💵 Mes — valor</td><td class="roi-kp">${_mes_val:,.0f}</td></tr>
+  <tr class="roi-sep"><td colspan="2"></td></tr>
+  <tr><td class="roi-cl">📊 Año — valor</td><td class="roi-kp">${_año_val:,.0f}</td></tr>
+  <tr><td class="roi-cl">📊 Año — días lab.</td><td class="roi-kp">{_año_dias:.1f} d</td></tr>
+</table>
+""", unsafe_allow_html=True)
+
+            # ── Justificación compacta ─────────────────────────────────
+            if _mes_hrs > 0:
+                _ae = roi_summary['month']['analyst_equiv']
                 st.markdown("---")
-                st.markdown("#### 💼 Justificación de Inversión")
-            
-                # Mostrar equivalencia básica
-                st.info(
-                    f"📊 **Este mes has ahorrado:**\n\n"
-                    f"⏱️ {roi_summary['month']['hrs']:.1f} horas = {roi_summary['month']['workdays']:.2f} días laborales\n\n"
-                    f"👤 Equivalente a **{analyst_equiv['months_analyst']:.3f} mes(es)** de un analista\n\n"
-                    f"💰 Valor: **${roi_summary['month']['value']:,.0f}** MXN"
+                st.caption(
+                    f"👤 Equiv. **{_ae['months_analyst']:.3f} mes(es)** analista · "
+                    f"Ref. ${_ae['analyst_salary']:,}/mes"
                 )
-            
-                # Proyección anual (si hay suficientes datos)
-                if roi_summary['month']['workdays'] >= 0.5:
-                    st.success(
-                        f"🎯 **Proyección anual:**\n\n"
-                        f"📅 ~{roi_summary['month']['workdays'] * 12:.1f} días laborales/año\n\n"
-                        f"💵 Ahorro estimado: **${analyst_equiv['monthly_savings'] * 12:,.0f}** MXN/año\n\n"
-                        f"✨ ROI de la plataforma claramente justificado"
+                if _mes_dias >= 0.5:
+                    st.caption(
+                        f"🎯 Proy. anual: **${_ae['monthly_savings']*12:,.0f} MXN** · "
+                        f"{_mes_dias*12:.1f} días/año"
                     )
-            
-                # Referencia de sueldo
-                st.caption(f"📌 Referencia: Sueldo promedio de analista ${analyst_equiv['analyst_salary']:,} MXN/mes")
-        
-            # Métricas del año
-            st.markdown("---")
-            st.markdown("**📊 Este año**")
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric(
-                    "ROI Total",
-                    f"${roi_summary['year']['value']:,.0f}",
-                    help="Valor total generado este año"
-                )
-            with col2:
-                st.metric(
-                    "Días Ahorrados",
-                    f"{roi_summary['year']['workdays']:.1f}",
-                    help="Días laborales ahorrados este año"
-                )
-        
-            # Nota de actividad
+
+            # ── Actividad de hoy ───────────────────────────────────────
             if roi_summary['today']['actions'] > 0:
-                # Calcular consultas únicas del data assistant
-                all_actions = roi_tracker.session_state.roi_data.get("actions", [])
-                da_queries_today = len([
-                    a for a in all_actions 
-                    if a.get("module") == "data_assistant" 
+                _all_act = roi_tracker.session_state.roi_data.get("actions", [])
+                _da_q = len([
+                    a for a in _all_act
+                    if a.get("module") == "data_assistant"
                     and a.get("action") in ["nl2sql_query", "nl2sql_complex_query"]
                     and a.get("timestamp").date() == datetime.now().date()
                 ])
-            
-                if da_queries_today > 0:
-                    st.success(
-                        f"✨ **{da_queries_today} consulta(s)** realizadas hoy\n\n"
-                        f"Cada consulta incluye: SQL + interpretación IA + gráfica automática"
-                    )
+                if _da_q > 0:
+                    st.caption(f"✨ {_da_q} consulta(s) IA hoy")
                 else:
-                    st.success(f"✨ {roi_summary['today']['actions']} acción(es) completada(s) hoy")
+                    st.caption(f"✨ {roi_summary['today']['actions']} acción(es) hoy")
             else:
-                st.info("💡 Completa acciones para ver tu ROI crecer")
+                st.caption("💡 Completa acciones para ver tu ROI crecer")
+
     except Exception as e:
-        # Si hay error, no mostrar widget (modo silencioso)
         logger.warning(f"Error en widget ROI: {e}")
         pass
 
+    # Panel de administración — al fondo del sidebar
+    _user_for_admin = get_current_user()
+    if _user_for_admin and _user_for_admin.can_manage_users():
+        st.markdown("---")
+        with st.expander("⚙️ Administración", expanded=False):
+            if st.button("👥 Usuarios", use_container_width=True, key="admin_nav_usuarios"):
+                st.session_state["_menu_navegar_a"] = "⚙️ Gestión de Usuarios"
+                st.rerun()
+            if st.button("🔧 Configuración", use_container_width=True, key="admin_nav_config"):
+                st.session_state["_menu_navegar_a"] = "🔧 Configuración"
+                st.rerun()
 
+    # IA Premium — al fondo
+    st.markdown("---")
+    _ia_label = "🤖 IA Premium ✅" if st.session_state.get("ia_premium_activada") else "🤖 Análisis Premium con IA"
+    with st.expander(_ia_label, expanded=False):
+        passkey_input = st.text_input(
+            "🔑 Passkey Premium",
+            type="password",
+            placeholder="Ingresa tu passkey",
+            help="Activa funciones premium de análisis con IA"
+        )
+
+        if passkey_input == PASSKEY_PREMIUM:
+            if not st.session_state["passkey_valido"]:
+                st.session_state["passkey_valido"] = True
+                st.success("✅ Passkey válido!")
+
+            st.markdown("**Configuración de IA**")
+            api_key_env = os.getenv("OPENAI_API_KEY", "")
+
+            if api_key_env:
+                st.session_state["openai_api_key"] = api_key_env
+                st.success("🔑 API key detectada desde variable de entorno")
+                st.session_state["ia_premium_activada"] = True
+            else:
+                openai_api_key = st.text_input(
+                    "OpenAI API Key",
+                    type="password",
+                    placeholder="sk-...",
+                    help="Ingresa tu API key de OpenAI para habilitar análisis con IA"
+                )
+
+                if openai_api_key:
+                    from utils.ai_helper import validar_api_key
+                    if validar_api_key(openai_api_key):
+                        st.session_state["openai_api_key"] = openai_api_key
+                        st.session_state["ia_premium_activada"] = True
+                        st.success("✅ API key válida")
+                    else:
+                        st.error("❌ API key inválida")
+                        st.session_state["ia_premium_activada"] = False
+                else:
+                    st.session_state["ia_premium_activada"] = False
+
+            if st.session_state["ia_premium_activada"]:
+                st.success("✅ IA Premium activa — ve al Reporte Ejecutivo para usarla")
+
+        else:
+            st.session_state["passkey_valido"] = False
+            st.session_state["ia_premium_activada"] = False
+            st.session_state["openai_api_key"] = None
+
+            if passkey_input:
+                st.error("❌ Passkey incorrecto")
+            else:
+                st.caption("🔐 Ingresa el passkey para acceder a funciones premium")
+
+    # Exportar Reportes — al fondo
+    if "df" in st.session_state and "archivo_excel" in st.session_state:
+        st.markdown("---")
+        with st.expander("📥 Exportar Reportes", expanded=False):
+            # ── Cargar datos CxC ──────────────────────────────────────────
+            _exp_cxc = None
+            _exp_cxc_proc = None
+            _exp_metricas = None
+            try:
+                _xls = pd.ExcelFile(st.session_state["archivo_excel"])
+                _hojas = _xls.sheet_names
+                if "CXC VIGENTES" in _hojas and "CXC VENCIDAS" in _hojas:
+                    _df_vig = normalizar_columnas(pd.read_excel(_xls, sheet_name='CXC VIGENTES'))
+                    _df_ven = normalizar_columnas(pd.read_excel(_xls, sheet_name='CXC VENCIDAS'))
+                    _exp_cxc = pd.concat([_df_vig, _df_ven], ignore_index=True, sort=False)
+                else:
+                    for _h in _hojas:
+                        if "cxc" in _h.lower() or "cuenta" in _h.lower():
+                            _exp_cxc = normalizar_columnas(pd.read_excel(_xls, sheet_name=_h))
+                            break
+
+                if _exp_cxc is not None:
+                    if "saldo_adeudado" not in _exp_cxc.columns:
+                        for _c in ["saldo", "saldo_adeudo", "adeudo", "importe", "monto", "total", "saldo_usd"]:
+                            if _c in _exp_cxc.columns:
+                                _exp_cxc = _exp_cxc.rename(columns={_c: "saldo_adeudado"})
+                                break
+                    if "saldo_adeudado" in _exp_cxc.columns:
+                        _s = _exp_cxc["saldo_adeudado"].astype(str).str.replace(",", "", regex=False).str.replace("$", "", regex=False)
+                        _exp_cxc["saldo_adeudado"] = pd.to_numeric(_s, errors="coerce").fillna(0)
+                    else:
+                        _exp_cxc["saldo_adeudado"] = 0
+
+                    from utils.cxc_helper import calcular_metricas_basicas, preparar_datos_cxc
+                    _, _exp_cxc_proc, _ = preparar_datos_cxc(_exp_cxc)
+                    _exp_metricas = calcular_metricas_basicas(_exp_cxc_proc)
+            except Exception as _e:
+                logger.exception(f"Error cargando CxC para exportación: {_e}")
+
+            # ── Excel ─────────────────────────────────────────────────────
+            if _exp_cxc_proc is not None and _exp_metricas is not None:
+                try:
+                    _excel_buf = crear_excel_metricas_cxc(_exp_metricas, _exp_cxc_proc)
+                    st.download_button(
+                        label="📊 Excel",
+                        data=_excel_buf,
+                        file_name="reporte_cxc.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                    )
+                except Exception as _e:
+                    st.warning(f"⚠️ Excel no disponible: {_e}")
+            else:
+                st.caption("⚠️ Sin datos CxC para Excel")
+
+            # ── HTML ──────────────────────────────────────────────────────
+            if _exp_cxc_proc is not None and _exp_metricas is not None:
+                st.markdown("---")
+                st.caption("**Secciones del reporte HTML:**")
+                _inc_res = st.checkbox("📈 Resumen Ejecutivo", value=True, key="exp_inc_res")
+                _inc_ven = st.checkbox("💼 Ventas Detalladas",  value=True, key="exp_inc_ven")
+                _inc_cxc = st.checkbox("🏦 CxC Detallada",      value=True, key="exp_inc_cxc")
+                _inc_ant = st.checkbox("📅 Tabla Antigüedad",   value=False, key="exp_inc_ant")
+                _inc_scr = st.checkbox("🎯 Score de Salud",     value=True, key="exp_inc_scr")
+                _inc_top = st.checkbox("👥 Top 5 Deudores",     value=False, key="exp_inc_top")
+
+                _secciones = []
+                if _inc_res: _secciones.append('resumen_ejecutivo')
+                if _inc_ven: _secciones.append('ventas')
+                if _inc_cxc: _secciones.append('cxc')
+                if _inc_ant: _secciones.append('antiguedad')
+                if _inc_scr: _secciones.append('score')
+                if _inc_top: _secciones.append('top_clientes')
+
+                if _secciones:
+                    try:
+                        _html = crear_reporte_html(
+                            _exp_metricas, _exp_cxc_proc,
+                            df_ventas=st.session_state.get("df"),
+                            secciones=_secciones,
+                        )
+                        st.download_button(
+                            label="🌐 Descargar HTML",
+                            data=_html,
+                            file_name="reporte_ejecutivo.html",
+                            mime="text/html",
+                            use_container_width=True,
+                        )
+                    except Exception as _e:
+                        st.warning(f"⚠️ HTML no disponible: {_e}")
+                else:
+                    st.warning("⚠️ Selecciona al menos una sección")
+
+
+    # Toggle widgets flotantes — al fondo de todo
+    st.markdown("---")
+    st.toggle(
+        "📌 Widgets flotantes",
+        value=st.session_state.get("mostrar_widgets_flotantes", True),
+        key="mostrar_widgets_flotantes",
+        help="Muestra u oculta los indicadores fijos de ROI y filtros en la esquina de la pantalla",
+    )
 
     # =====================================================================
     # FILTROS AVANZADOS — contextuales por vista (SPRINT 4)
@@ -1669,11 +1468,12 @@ _FILTROS_POR_VISTA = {
         }
     },
     "📊 Comparativo Año vs Año": {
-        "filtros": ["cliente", "monto"],
+        "filtros": ["cliente", "monto", "año"],
         "descripcion": "Filtra qué operaciones entran en la comparación entre años. Las fechas se controlan directamente en la vista.",
         "ayuda": {
             "cliente": "Compara el desempeño año vs año solo para el cliente seleccionado.",
             "monto":   "Excluye operaciones de bajo/alto monto al comparar períodos.",
+            "año":     "Selecciona el año base para el análisis comparativo.",
         }
     },
     "📉 YTD por Línea de Negocio": {
@@ -1878,66 +1678,13 @@ with st.sidebar.expander("ℹ️ Acerca de esta vista"):
         - Ajustes generales
         """)
 
-# ── Filtros de datos — al fondo del sidebar ─────────────────────────
-if "df" in st.session_state and _filtros_vista:
-    _df_orig = st.session_state.get("df_original_pre_filtro", st.session_state["df"].copy())
-    st.session_state["df_original_pre_filtro"] = _df_orig
-    _df_filt = _df_orig.copy()
-
-    _n_activos = 0
-    if st.session_state.get("filtro_fecha_inicio") or st.session_state.get("filtro_fecha_fin"):
-        _n_activos += 1
-    if st.session_state.get("filtro_cliente_select"):
-        _n_activos += 1
-    if st.session_state.get("filtro_monto_tipo") and st.session_state.get("filtro_monto_tipo") not in ["Todos los montos", None]:
-        _n_activos += 1
-    if _n_activos:
-        _label_filtros = f"🔍 Filtrar datos · {_n_activos} activo{'s' if _n_activos > 1 else ''}"
-    else:
-        _label_filtros = "🔍 Filtrar datos"
-
-    with st.sidebar:
-        with st.expander(_label_filtros, expanded=False):
-            if _desc_vista:
-                st.caption(f"ℹ️ {_desc_vista}")
-            st.markdown("")
-
-            if "fecha" in _filtros_vista and "fecha" in _df_filt.columns:
-                st.markdown("**📅 Rango de fechas**")
-                st.caption(_ayuda_vista.get("fecha", "Restringe el período analizado."))
-                _df_filt = aplicar_filtro_fechas(_df_filt, "fecha")
-                st.markdown("---")
-
-            if "cliente" in _filtros_vista and "cliente" in _df_filt.columns:
-                st.markdown("**👤 Filtrar por cliente**")
-                st.caption(_ayuda_vista.get("cliente", "Muestra solo datos del cliente seleccionado."))
-                _df_filt = aplicar_filtro_cliente(_df_filt, "cliente")
-                st.markdown("---")
-
-            if "monto" in _filtros_vista:
-                _col_v = st.session_state.get("columna_ventas")
-                if _col_v and _col_v in _df_filt.columns:
-                    st.markdown("**💲 Filtrar por monto de venta**")
-                    st.caption(_ayuda_vista.get("monto", "Incluye solo operaciones dentro del rango de monto."))
-                    _df_filt = aplicar_filtro_monto(_df_filt, _col_v)
-                    st.markdown("---")
-
-            if st.button("🗑️ Quitar todos los filtros", use_container_width=True, key="sidebar_limpiar_filtros"):
-                for _k in list(st.session_state.keys()):
-                    if _k.startswith("filtro_") or _k.startswith("inline_filtro_"):
-                        del st.session_state[_k]
-                st.rerun()
-
-            if len(_df_filt) < len(_df_orig):
-                pct = len(_df_filt) / len(_df_orig) * 100
-                st.success(f"✅ Mostrando {len(_df_filt):,} de {len(_df_orig):,} registros ({pct:.0f}%)")
-
-    st.session_state["df"] = _df_filt
+# (filtros se aplican en el área de contenido, justo antes de cada vista)
 
 # =====================================================================
 # WIDGET ROI FLOTANTE — siempre visible al hacer scroll
 # =====================================================================
-try:
+if st.session_state.get("mostrar_widgets_flotantes", True):
+  try:
     _roi_tracker_float = init_roi_tracker(st.session_state)
     _roi_sum = _roi_tracker_float.get_summary()
 
@@ -2056,13 +1803,11 @@ try:
     </div>
     """, unsafe_allow_html=True)
 
-except Exception:
-    pass  # Widget silencioso si falla
+  except Exception:
+      pass  # Widget silencioso si falla
 
-# =====================================================================
-# WIDGET FILTROS FLOTANTE — estado de filtros activos siempre visible
-# =====================================================================
-try:
+if st.session_state.get("mostrar_widgets_flotantes", True):
+  try:
     if "df" in st.session_state and "df_original_pre_filtro" in st.session_state:
         _df_filt    = st.session_state["df"]
         _df_orig    = st.session_state["df_original_pre_filtro"]
@@ -2149,8 +1894,64 @@ try:
         </div>
         """, unsafe_allow_html=True)
 
-except Exception:
-    pass  # Widget silencioso si falla
+  except Exception:
+      pass  # Widget silencioso si falla
+
+# =====================================================================
+# FILTROS DE DATOS — área de contenido, encima de cada sección
+# =====================================================================
+if "df" in st.session_state and _filtros_vista:
+    _df_orig = st.session_state.get("df_original_pre_filtro", st.session_state["df"].copy())
+    st.session_state["df_original_pre_filtro"] = _df_orig
+    _df_filt = _df_orig.copy()
+
+    with st.expander("🔍 Filtrar datos", expanded=False):
+        col_izq, col_der = st.columns([3, 1])
+        with col_der:
+            if st.button("🗑️ Quitar filtros", use_container_width=True, key="content_limpiar_filtros"):
+                for _k in list(st.session_state.keys()):
+                    if _k.startswith("filtro_") or _k.startswith("inline_filtro_"):
+                        del st.session_state[_k]
+                st.rerun()
+
+        if "fecha" in _filtros_vista and "fecha" in _df_filt.columns:
+            st.markdown("**📅 Rango de fechas**")
+            _df_filt = aplicar_filtro_fechas(_df_filt, "fecha")
+            st.markdown("---")
+
+        if "cliente" in _filtros_vista and "cliente" in _df_filt.columns:
+            st.markdown("**👤 Filtrar por cliente**")
+            _df_filt = aplicar_filtro_cliente(_df_filt, "cliente")
+            st.markdown("---")
+
+        if "monto" in _filtros_vista:
+            _col_v = st.session_state.get("columna_ventas")
+            if _col_v and _col_v in _df_filt.columns:
+                st.markdown("**💲 Filtrar por monto de venta**")
+                _df_filt = aplicar_filtro_monto(_df_filt, _col_v)
+
+        if "año" in _filtros_vista and "año" in _df_filt.columns:
+            st.markdown("---")
+            st.markdown("**📅 Año base (comparativo)**")
+            _años_disp = sorted(_df_filt["año"].dropna().unique())
+            if _años_disp:
+                _año_actual = st.session_state.get("año_base", _años_disp[-1])
+                _idx_actual = _años_disp.index(_año_actual) if _año_actual in _años_disp else len(_años_disp) - 1
+                _año_sel = st.selectbox(
+                    "Año principal para análisis",
+                    _años_disp,
+                    index=_idx_actual,
+                    key="año_base_filtro",
+                    label_visibility="collapsed",
+                    help="Año de referencia en el comparativo Año vs Año",
+                )
+                st.session_state["año_base"] = _año_sel
+
+        if len(_df_filt) < len(_df_orig):
+            pct = len(_df_filt) / len(_df_orig) * 100
+            st.success(f"✅ Mostrando {len(_df_filt):,} de {len(_df_orig):,} registros ({pct:.0f}%)")
+
+    st.session_state["df"] = _df_filt
 
 # =====================================================================
 # RENDERIZADO DE VISTAS

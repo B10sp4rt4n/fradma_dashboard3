@@ -1555,6 +1555,9 @@ def run():
                     fmt_celda = {"text": fmt_text, "money": fmt_money,
                                  "pct": fmt_pct, "num": fmt_num}.get(tipo, fmt_text)
                     for row_i, val in enumerate(df_r[col_key]):
+                        import pandas as _pd
+                        if _pd.isnull(val):
+                            val = None
                         ws_r.write(row_i + 3, col_i, val, fmt_celda)
 
                 ws_r.freeze_panes(3, 1)
@@ -1590,6 +1593,9 @@ def run():
                         fmt_celda = {"text": fmt_text, "money": fmt_money,
                                      "date": fmt_date, "num": fmt_num}.get(tipo, fmt_text)
                         for row_i, val in enumerate(df_v[col_key]):
+                            import pandas as _pd
+                            if _pd.isnull(val):
+                                val = None
                             ws_v.write(row_i + 3, col_i, val, fmt_celda)
 
                     ws_v.freeze_panes(3, 1)
@@ -1626,6 +1632,9 @@ def run():
                         fmt_celda = {"text": fmt_text, "money": fmt_money,
                                      "date": fmt_date, "num": fmt_num}.get(tipo, fmt_text)
                         for row_i, val in enumerate(df_c[col_key]):
+                            import pandas as _pd
+                            if _pd.isnull(val):
+                                val = None
                             ws_c.write(row_i + 3, col_i, val, fmt_celda)
 
                     ws_c.freeze_panes(3, 1)
