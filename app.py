@@ -1242,82 +1242,181 @@ if archivo:
             st.sidebar.warning("⚠️ No se encontró columna 'año'")
 
 # =====================================================================
-# FILTROS AVANZADOS (SPRINT 4)
+# =====================================================================
+# FILTROS AVANZADOS — contextuales por vista (SPRINT 4)
 # =====================================================================
 
-if "df" in st.session_state:
+# Mapa: vista → filtros disponibles y descripción de impacto
+_FILTROS_POR_VISTA = {
+    "🎯 Reporte Ejecutivo": {
+        "filtros": ["fecha", "cliente", "monto"],
+        "descripcion": "Filtra los datos que alimentan los KPIs, tendencias y top clientes del reporte ejecutivo.",
+        "ayuda": {
+            "fecha":    "Restringe el período analizado en KPIs y gráfica de tendencias.",
+            "cliente":  "Muestra solo las métricas del cliente o clientes seleccionados.",
+            "monto":    "Excluye operaciones fuera del rango de monto definido.",
+        }
+    },
+    "📊 Reporte Consolidado": {
+        "filtros": ["fecha", "cliente", "monto"],
+        "descripcion": "Afecta todas las métricas, tablas y gráficas del reporte consolidado.",
+        "ayuda": {
+            "fecha":    "Define el período de análisis del reporte.",
+            "cliente":  "Consolida solo las operaciones del cliente seleccionado.",
+            "monto":    "Limita el análisis a operaciones dentro del rango de monto.",
+        }
+    },
+    "📈 KPIs Generales": {
+        "filtros": ["fecha", "cliente", "monto"],
+        "descripcion": "Filtra las ventas que se usan para calcular todos los KPIs de esta vista.",
+        "ayuda": {
+            "fecha":    "Cambia el período de los KPIs (ventas, ticket promedio, crecimiento).",
+            "cliente":  "Calcula los KPIs solo para el cliente o clientes seleccionados.",
+            "monto":    "Excluye ventas fuera del rango de monto al calcular KPIs.",
+        }
+    },
+    "📊 Comparativo Año vs Año": {
+        "filtros": ["cliente", "monto"],
+        "descripcion": "Filtra qué operaciones entran en la comparación entre años. Las fechas se controlan directamente en la vista.",
+        "ayuda": {
+            "cliente":  "Compara el desempeño año vs año solo para el cliente seleccionado.",
+            "monto":    "Excluye operaciones de bajo/alto monto al comparar períodos.",
+        }
+    },
+    "📉 YTD por Línea de Negocio": {
+        "filtros": ["fecha", "monto"],
+        "descripcion": "Filtra las ventas que alimentan las gráficas YTD de cada línea de negocio.",
+        "ayuda": {
+            "fecha":    "Acota el período YTD analizado por línea.",
+            "monto":    "Excluye operaciones pequeñas o grandes del análisis por línea.",
+        }
+    },
+    "🔷 YTD por Producto": {
+        "filtros": ["fecha", "cliente", "monto"],
+        "descripcion": "Filtra qué ventas se incluyen en el ranking y evolución de productos.",
+        "ayuda": {
+            "fecha":    "Define el período del análisis YTD por producto.",
+            "cliente":  "Muestra solo los productos comprados por el cliente seleccionado.",
+            "monto":    "Filtra productos por volumen de venta mínimo/máximo.",
+        }
+    },
+    "🔥 Heatmap Ventas": {
+        "filtros": ["fecha", "cliente"],
+        "descripcion": "Afecta qué celdas del heatmap se colorean (intensidad de ventas por período).",
+        "ayuda": {
+            "fecha":    "Restringe los meses/semanas visibles en el mapa de calor.",
+            "cliente":  "Muestra la concentración de ventas de un cliente específico.",
+        }
+    },
+    "📍 Mapa de Clientes": {
+        "filtros": ["cliente", "monto"],
+        "descripcion": "Controla qué clientes aparecen marcados en el mapa geográfico.",
+        "ayuda": {
+            "cliente":  "Selecciona clientes específicos para resaltar en el mapa.",
+            "monto":    "Muestra solo clientes con operaciones dentro del rango de monto.",
+        }
+    },
+    # Vistas sin filtros de ventas aplicables
+    "💳 KPI Cartera CxC":          {"filtros": [], "descripcion": ""},
+    "👥 Vendedores + CxC":         {"filtros": [], "descripcion": ""},
+    "🧰 Herramientas Financieras": {"filtros": [], "descripcion": ""},
+    "📂 Cargar mis facturas":      {"filtros": [], "descripcion": ""},
+    "📋 Universo de CFDIs":        {"filtros": [], "descripcion": ""},
+    "🧾 Desglose Fiscal":          {"filtros": [], "descripcion": ""},
+    "📚 Knowledge Base":           {"filtros": [], "descripcion": ""},
+    "🤖 Asistente de Datos":       {"filtros": [], "descripcion": ""},
+    "⚙️ Gestión de Usuarios":      {"filtros": [], "descripcion": ""},
+    "🔧 Configuración":            {"filtros": [], "descripcion": ""},
+}
+
+_cfg_vista     = _FILTROS_POR_VISTA.get(menu, {"filtros": [], "descripcion": ""})
+_filtros_vista = _cfg_vista["filtros"]
+_desc_vista    = _cfg_vista.get("descripcion", "")
+_ayuda_vista   = _cfg_vista.get("ayuda", {})
+
+if "df" in st.session_state and _filtros_vista:
     st.sidebar.markdown("---")
-    st.sidebar.markdown("### 🔍 Filtros Avanzados")
-    
+    st.sidebar.markdown("### 🔍 Filtros")
+
     df_original = st.session_state["df"].copy()
-    # Guardar referencia del original antes de filtrar (para el widget flotante)
+    # Guardar referencia original para el widget flotante
     st.session_state["df_original_pre_filtro"] = df_original
-    
-    # Inicializar estado de filtros si no existe
+
     if "filtros_aplicados" not in st.session_state:
         st.session_state["filtros_aplicados"] = {}
-    
-    # Inicializar botón de reset
     if "reset_filtros" not in st.session_state:
         st.session_state["reset_filtros"] = False
-    
-    # Opción para activar/desactivar filtros
+
+    # Qué modifica en esta vista
+    if _desc_vista:
+        st.sidebar.caption(f"ℹ️ {_desc_vista}")
+
     usar_filtros = st.sidebar.checkbox(
-        "Activar filtros avanzados",
-        value=st.session_state.get("reset_filtros", False) == False,
-        help="Activa esta opción para aplicar filtros por fecha y/o cliente"
+        "Activar filtros",
+        value=not st.session_state.get("reset_filtros", False),
+        help="Activa para aplicar filtros a esta vista"
     )
-    
+
     if usar_filtros:
         df_filtrado = df_original.copy()
-        
-        # Filtro por Fecha (sin expander)
-        st.sidebar.markdown("#### 📅 Filtro por Fecha")
-        if "fecha" in df_filtrado.columns:
-            df_filtrado = aplicar_filtro_fechas(df_filtrado, "fecha")
-        else:
-            st.sidebar.warning("⚠️ No hay columna 'fecha' disponible")
-        
-        st.sidebar.markdown("---")
-        
-        # Filtro por Cliente (sin expander)
-        st.sidebar.markdown("#### 👤 Filtro por Cliente")
-        if "cliente" in df_filtrado.columns:
-            df_filtrado = aplicar_filtro_cliente(df_filtrado, "cliente")
-        else:
-            st.sidebar.warning("⚠️ No hay columna 'cliente' disponible")
-        
-        st.sidebar.markdown("---")
-        
-        # Filtro por Monto
-        columna_ventas = st.session_state.get("columna_ventas", None)
-        if columna_ventas and columna_ventas in df_filtrado.columns:
-            df_filtrado = aplicar_filtro_monto(df_filtrado, columna_ventas)
-        else:
-            st.sidebar.warning("⚠️ No hay columna de ventas disponible")
-        
-        # Botón para limpiar filtros
-        st.sidebar.markdown("---")
-        if st.sidebar.button("🗑️ Limpiar todos los filtros", use_container_width=True):
+
+        if "fecha" in _filtros_vista:
+            st.sidebar.markdown(f"**📅 Fecha**")
+            if _ayuda_vista.get("fecha"):
+                st.sidebar.caption(_ayuda_vista["fecha"])
+            if "fecha" in df_filtrado.columns:
+                df_filtrado = aplicar_filtro_fechas(df_filtrado, "fecha")
+            else:
+                st.sidebar.warning("⚠️ Sin columna 'fecha'")
+            st.sidebar.markdown("---")
+
+        if "cliente" in _filtros_vista:
+            st.sidebar.markdown(f"**👤 Cliente**")
+            if _ayuda_vista.get("cliente"):
+                st.sidebar.caption(_ayuda_vista["cliente"])
+            if "cliente" in df_filtrado.columns:
+                df_filtrado = aplicar_filtro_cliente(df_filtrado, "cliente")
+            else:
+                st.sidebar.warning("⚠️ Sin columna 'cliente'")
+            st.sidebar.markdown("---")
+
+        if "monto" in _filtros_vista:
+            st.sidebar.markdown(f"**💲 Monto**")
+            if _ayuda_vista.get("monto"):
+                st.sidebar.caption(_ayuda_vista["monto"])
+            columna_ventas = st.session_state.get("columna_ventas", None)
+            if columna_ventas and columna_ventas in df_filtrado.columns:
+                df_filtrado = aplicar_filtro_monto(df_filtrado, columna_ventas)
+            else:
+                st.sidebar.warning("⚠️ Sin columna de ventas detectada")
+            st.sidebar.markdown("---")
+
+        if st.sidebar.button("🗑️ Limpiar filtros", use_container_width=True):
             st.session_state["filtros_aplicados"] = {}
             st.session_state["reset_filtros"] = True
-            # Limpiar las keys de los widgets de filtro
             for key in list(st.session_state.keys()):
                 if key.startswith("filtro_"):
                     del st.session_state[key]
             st.rerun()
-        
-        # Actualizar DataFrame filtrado en session_state
+
         st.session_state["df"] = df_filtrado
         st.session_state["reset_filtros"] = False
-        
-        # Mostrar resumen de filtros aplicados
+
         if len(df_filtrado) < len(df_original):
-            st.sidebar.success(f"✅ Filtros aplicados: {len(df_filtrado):,} de {len(df_original):,} registros")
+            st.sidebar.success(f"✅ {len(df_filtrado):,} de {len(df_original):,} registros")
             mostrar_resumen_filtros(df_original, df_filtrado)
-    else:
-        # Si no se activan filtros, usar DataFrame original
-        pass
+
+elif "df" in st.session_state:
+    # Vista sin filtros: guardar referencia igualmente para el widget flotante
+    st.session_state["df_original_pre_filtro"] = st.session_state["df"].copy()
+    if menu not in ("💳 KPI Cartera CxC", "👥 Vendedores + CxC",
+                    "📂 Cargar mis facturas", "📋 Universo de CFDIs",
+                    "🧾 Desglose Fiscal", "📚 Knowledge Base",
+                    "🤖 Asistente de Datos", "⚙️ Gestión de Usuarios",
+                    "🔧 Configuración", "🧰 Herramientas Financieras"):
+        st.sidebar.markdown("---")
+        st.sidebar.caption("ℹ️ Esta vista no tiene filtros de ventas disponibles.")
+
 
 # =====================================================================
 # EXPORTACIÓN DE REPORTES (SPRINT 4)
