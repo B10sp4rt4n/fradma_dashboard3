@@ -879,6 +879,9 @@ SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quart
         sql = re.sub(r'```\s*$', '', sql)
         sql = sql.strip()
 
+        # Normalizar operadores Unicode que el modelo puede generar
+        sql = sql.replace("≥", ">=").replace("≤", "<=").replace("≠", "<>")
+
         # --- FIX: PERCENTILE_CONT/MODE con OVER() no es válido en PostgreSQL ---
         # Detectar: PERCENTILE_CONT(...) WITHIN GROUP (...) OVER (...)
         # Esto es un "ordered-set aggregate" y no soporta window functions
@@ -993,47 +996,67 @@ SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quart
 
         El período soberano viene del slider de la UI y provee fechas absolutas
         (desde, hasta_excl), eliminando cualquier ambigüedad de parseo NL.
+        Detecta la tabla principal para usar la columna de fecha correcta:
+          - cfdi_ventas  → fecha_emision
+          - cfdi_pagos   → fecha_pago
+          - otras        → no inyecta filtro de fecha (evita errores de columna)
         """
         desde = periodo_soberano.get("desde")       # "YYYY-MM-DD"
         hasta_excl = periodo_soberano.get("hasta_excl")  # "YYYY-MM-DD"
         if not desde or not hasta_excl:
             return sql
 
-        range_clause = f"fecha_emision >= '{desde}' AND fecha_emision < '{hasta_excl}'"
+        # ── Normalizar operadores Unicode que el modelo pueda generar ───────
+        # ≥ → >=   ≤ → <=
+        sql = sql.replace("≥", ">=").replace("≤", "<=")
 
-        # Eliminar filtros EXTRACT (MONTH/YEAR) que el modelo pueda haber generado
+        # ── Detectar columna de fecha según tabla principal ─────────────────
+        sql_upper = sql.upper()
+        if "CFDI_PAGOS" in sql_upper and "CFDI_VENTAS" not in sql_upper:
+            fecha_col = "fecha_pago"
+        elif "CFDI_VENTAS" in sql_upper:
+            fecha_col = "fecha_emision"
+        else:
+            # Tabla desconocida — normalizar operadores y salir sin inyectar
+            logger.info("_apply_sovereign_filter: tabla no reconocida, omitiendo inyección de fecha")
+            return sql
+
+        range_clause = f"{fecha_col} >= '{desde}' AND {fecha_col} < '{hasta_excl}'"
+
+        # ── Limpiar EXTRACT generados por el modelo ──────────────────────────
         for _ in range(4):
             sql = re.sub(
-                r'\s*AND\s+EXTRACT\s*\(\s*(?:MONTH|YEAR)\s+FROM\s+fecha_emision\s*\)\s*=\s*(?:EXTRACT\s*\([^)]*\)(?:\s*-\s*\d+)?|\d+)',
+                r'\s*AND\s+EXTRACT\s*\(\s*(?:MONTH|YEAR)\s+FROM\s+' + fecha_col + r'\s*\)\s*=\s*(?:EXTRACT\s*\([^)]*\)(?:\s*-\s*\d+)?|\d+)',
                 '', sql, flags=re.IGNORECASE
             )
             sql = re.sub(
-                r'EXTRACT\s*\(\s*(?:MONTH|YEAR)\s+FROM\s+fecha_emision\s*\)\s*=\s*(?:EXTRACT\s*\([^)]*\)(?:\s*-\s*\d+)?|\d+)\s*AND\s*',
+                r'EXTRACT\s*\(\s*(?:MONTH|YEAR)\s+FROM\s+' + fecha_col + r'\s*\)\s*=\s*(?:EXTRACT\s*\([^)]*\)(?:\s*-\s*\d+)?|\d+)\s*AND\s*',
                 '', sql, flags=re.IGNORECASE
             )
             sql = re.sub(
-                r'EXTRACT\s*\(\s*(?:MONTH|YEAR)\s+FROM\s+fecha_emision\s*\)\s*=\s*(?:EXTRACT\s*\([^)]*\)(?:\s*-\s*\d+)?|\d+)',
+                r'EXTRACT\s*\(\s*(?:MONTH|YEAR)\s+FROM\s+' + fecha_col + r'\s*\)\s*=\s*(?:EXTRACT\s*\([^)]*\)(?:\s*-\s*\d+)?|\d+)',
                 '', sql, flags=re.IGNORECASE
             )
 
-        # Eliminar filtros fecha_emision >= / < / BETWEEN que haya generado el modelo
-        sql = re.sub(
-            r'fecha_emision\s*(?:>=|<=|>|<|=)\s*\'[^\']+\'\s*(?:AND\s*fecha_emision\s*(?:>=|<=|>|<|=)\s*\'[^\']+\')?',
-            '', sql, flags=re.IGNORECASE
-        )
-        sql = re.sub(
-            r'fecha_emision\s+BETWEEN\s+\'[^\']+\'\s+AND\s+\'[^\']+\'',
-            '', sql, flags=re.IGNORECASE
-        )
+        # ── Eliminar filtros de fecha del modelo (ambas columnas por seguridad)
+        for col in ("fecha_emision", "fecha_pago", "p\\.fecha_pago", "p\\.fecha_emision"):
+            sql = re.sub(
+                col + r'\s*(?:>=|<=|>|<|=)\s*\'[^\']+\'\s*(?:AND\s*' + col + r'\s*(?:>=|<=|>|<|=)\s*\'[^\']+\')?',
+                '', sql, flags=re.IGNORECASE
+            )
+            sql = re.sub(
+                col + r'\s+BETWEEN\s+\'[^\']+\'\s+AND\s+\'[^\']+\'',
+                '', sql, flags=re.IGNORECASE
+            )
 
-        # Limpiar WHERE vacío/malformado
+        # ── Reparar WHERE vacío/malformado resultante de la limpieza ─────────
         sql = re.sub(r'WHERE\s+(GROUP|ORDER|LIMIT|HAVING)', r'\1', sql, flags=re.IGNORECASE)
         sql = re.sub(r'WHERE\s+AND\b', 'WHERE', sql, flags=re.IGNORECASE)
         sql = re.sub(r'WHERE\s*;', ';', sql, flags=re.IGNORECASE)
         sql = re.sub(r'\bAND\s+AND\b', 'AND', sql, flags=re.IGNORECASE)
-        # AND colgante antes de GROUP/ORDER/LIMIT/HAVING
         sql = re.sub(r'\s+AND\s+(GROUP|ORDER|LIMIT|HAVING)\b', r' \1', sql, flags=re.IGNORECASE)
 
+        # ── Inyectar rango soberano ───────────────────────────────────────────
         sql_upper = sql.upper()
         if 'WHERE' in sql_upper:
             idx = sql_upper.index('WHERE') + len('WHERE')
