@@ -2220,7 +2220,10 @@ def _render_chat_interface():
                         type="primary" if _is_active else "secondary",
                     ):
                         st.session_state["sovereign_profile_key"] = _pkey
-                        # Reiniciar ajustes personalizados al cambiar perfil
+                        # Limpiar checkboxes del perfil anterior para que adopten los del nuevo
+                        for _k in list(st.session_state.keys()):
+                            if _k.startswith(("sc_tipo_", "sc_imp_", "sc_mp_", "sc_multi_moneda")):
+                                del st.session_state[_k]
                         st.session_state.pop("sovereign_profile_custom", None)
                         st.rerun()
 
