@@ -1012,10 +1012,14 @@ SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quart
         return None
 
     def _apply_sovereign_filter(self, sql: str, periodo_soberano: dict) -> str:
-        """Reemplaza cualquier filtro de fecha en el SQL por el rango soberano exacto.
+        """Garantiza que el SQL nunca consulte fuera del rango soberano.
 
-        El período soberano viene del slider de la UI y provee fechas absolutas
-        (desde, hasta_excl), eliminando cualquier ambigüedad de parseo NL.
+        Estrategia de «techo»:
+        1. Si el modelo ya generó filtros de fecha → clampea al rango soberano
+           (las fechas del modelo se respetan si caen dentro del rango).
+        2. Si el modelo NO generó filtros de fecha → inyecta el rango soberano
+           completo como safety net.
+
         Detecta la tabla principal para usar la columna de fecha correcta:
           - cfdi_ventas  → fecha_emision
           - cfdi_pagos   → fecha_pago
@@ -1027,8 +1031,7 @@ SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quart
             return sql
 
         # ── Normalizar operadores Unicode que el modelo pueda generar ───────
-        # ≥ → >=   ≤ → <=
-        sql = sql.replace("≥", ">=").replace("≤", "<=")
+        sql = sql.replace("≥", ">=").replace("≤", "<=").replace("≠", "<>")
 
         # ── Detectar columna de fecha según tabla principal ─────────────────
         sql_upper = sql.upper()
@@ -1037,63 +1040,81 @@ SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quart
         elif "CFDI_VENTAS" in sql_upper:
             fecha_col = "fecha_emision"
         else:
-            # Tabla desconocida — normalizar operadores y salir sin inyectar
             logger.info("_apply_sovereign_filter: tabla no reconocida, omitiendo inyección de fecha")
             return sql
 
-        range_clause = f"{fecha_col} >= '{desde}' AND {fecha_col} < '{hasta_excl}'"
+        # ── Extraer fechas literales que el modelo ya generó ────────────────
+        _date_pattern = re.compile(
+            fecha_col + r"\s*(?:>=|>|<=|<|=)\s*'(\d{4}-\d{2}-\d{2})'",
+            re.IGNORECASE,
+        )
+        model_dates = _date_pattern.findall(sql)
 
-        # ── Limpiar EXTRACT generados por el modelo ──────────────────────────
-        for _ in range(4):
-            sql = re.sub(
-                r'\s*AND\s+EXTRACT\s*\(\s*(?:MONTH|YEAR)\s+FROM\s+' + fecha_col + r'\s*\)\s*=\s*(?:EXTRACT\s*\([^)]*\)(?:\s*-\s*\d+)?|\d+)',
-                '', sql, flags=re.IGNORECASE
-            )
-            sql = re.sub(
-                r'EXTRACT\s*\(\s*(?:MONTH|YEAR)\s+FROM\s+' + fecha_col + r'\s*\)\s*=\s*(?:EXTRACT\s*\([^)]*\)(?:\s*-\s*\d+)?|\d+)\s*AND\s*',
-                '', sql, flags=re.IGNORECASE
-            )
-            sql = re.sub(
-                r'EXTRACT\s*\(\s*(?:MONTH|YEAR)\s+FROM\s+' + fecha_col + r'\s*\)\s*=\s*(?:EXTRACT\s*\([^)]*\)(?:\s*-\s*\d+)?|\d+)',
-                '', sql, flags=re.IGNORECASE
-            )
+        if model_dates:
+            # ── Clampear: ajustar fechas del modelo para que no salgan del rango soberano
+            def _clamp_date(d: str) -> str:
+                if d < desde:
+                    return desde
+                if d > hasta_excl:
+                    return hasta_excl
+                return d
 
-        # ── Eliminar filtros de fecha del modelo (ambas columnas por seguridad)
-        for col in ("fecha_emision", "fecha_pago", "p\\.fecha_pago", "p\\.fecha_emision"):
-            sql = re.sub(
-                col + r'\s*(?:>=|<=|>|<|=)\s*\'[^\']+\'\s*(?:AND\s*' + col + r'\s*(?:>=|<=|>|<|=)\s*\'[^\']+\')?',
-                '', sql, flags=re.IGNORECASE
-            )
-            sql = re.sub(
-                col + r'\s+BETWEEN\s+\'[^\']+\'\s+AND\s+\'[^\']+\'',
-                '', sql, flags=re.IGNORECASE
-            )
+            def _replace_date(m: re.Match) -> str:
+                original = m.group(0)
+                date_val = m.group(1)
+                clamped = _clamp_date(date_val)
+                if clamped != date_val:
+                    logger.info(f"Sovereign clamp: {date_val} → {clamped}")
+                return original.replace(date_val, clamped)
 
-        # ── Reparar WHERE vacío/malformado resultante de la limpieza ─────────
-        sql = re.sub(r'WHERE\s+(GROUP|ORDER|LIMIT|HAVING)', r'\1', sql, flags=re.IGNORECASE)
-        sql = re.sub(r'WHERE\s+AND\b', 'WHERE', sql, flags=re.IGNORECASE)
-        sql = re.sub(r'WHERE\s*;', ';', sql, flags=re.IGNORECASE)
-        sql = re.sub(r'\bAND\s+AND\b', 'AND', sql, flags=re.IGNORECASE)
-        sql = re.sub(r'\s+AND\s+(GROUP|ORDER|LIMIT|HAVING)\b', r' \1', sql, flags=re.IGNORECASE)
+            sql = _date_pattern.sub(_replace_date, sql)
+            logger.info(f"Filtro soberano (clamp): fechas del modelo ajustadas al rango {desde} → {hasta_excl}")
 
-        # ── Inyectar rango soberano ───────────────────────────────────────────
-        sql_upper = sql.upper()
-        if 'WHERE' in sql_upper:
-            idx = sql_upper.index('WHERE') + len('WHERE')
-            sql = sql[:idx] + f' {range_clause} AND' + sql[idx:]
-        elif 'GROUP BY' in sql_upper:
-            idx = sql_upper.index('GROUP BY')
-            sql = sql[:idx] + f'WHERE {range_clause} ' + sql[idx:]
-        elif 'ORDER BY' in sql_upper:
-            idx = sql_upper.index('ORDER BY')
-            sql = sql[:idx] + f'WHERE {range_clause} ' + sql[idx:]
-        elif 'LIMIT' in sql_upper:
-            idx = sql_upper.index('LIMIT')
-            sql = sql[:idx] + f'WHERE {range_clause} ' + sql[idx:]
         else:
-            sql = sql.rstrip(';') + f' WHERE {range_clause};'
+            # ── No hay filtros de fecha del modelo → inyectar rango completo ─
+            range_clause = f"{fecha_col} >= '{desde}' AND {fecha_col} < '{hasta_excl}'"
 
-        logger.info(f"Filtro soberano inyectado: {desde} → {hasta_excl}")
+            # Limpiar posibles EXTRACT temporales del modelo
+            for _ in range(4):
+                sql = re.sub(
+                    r'\s*AND\s+EXTRACT\s*\(\s*(?:MONTH|YEAR)\s+FROM\s+' + fecha_col + r'\s*\)\s*=\s*(?:EXTRACT\s*\([^)]*\)(?:\s*-\s*\d+)?|\d+)',
+                    '', sql, flags=re.IGNORECASE
+                )
+                sql = re.sub(
+                    r'EXTRACT\s*\(\s*(?:MONTH|YEAR)\s+FROM\s+' + fecha_col + r'\s*\)\s*=\s*(?:EXTRACT\s*\([^)]*\)(?:\s*-\s*\d+)?|\d+)\s*AND\s*',
+                    '', sql, flags=re.IGNORECASE
+                )
+                sql = re.sub(
+                    r'EXTRACT\s*\(\s*(?:MONTH|YEAR)\s+FROM\s+' + fecha_col + r'\s*\)\s*=\s*(?:EXTRACT\s*\([^)]*\)(?:\s*-\s*\d+)?|\d+)',
+                    '', sql, flags=re.IGNORECASE
+                )
+
+            # Reparar WHERE malformado
+            sql = re.sub(r'WHERE\s+(GROUP|ORDER|LIMIT|HAVING)', r'\1', sql, flags=re.IGNORECASE)
+            sql = re.sub(r'WHERE\s+AND\b', 'WHERE', sql, flags=re.IGNORECASE)
+            sql = re.sub(r'WHERE\s*;', ';', sql, flags=re.IGNORECASE)
+            sql = re.sub(r'\bAND\s+AND\b', 'AND', sql, flags=re.IGNORECASE)
+            sql = re.sub(r'\s+AND\s+(GROUP|ORDER|LIMIT|HAVING)\b', r' \1', sql, flags=re.IGNORECASE)
+
+            # Inyectar rango soberano
+            sql_upper = sql.upper()
+            if 'WHERE' in sql_upper:
+                idx = sql_upper.index('WHERE') + len('WHERE')
+                sql = sql[:idx] + f' {range_clause} AND' + sql[idx:]
+            elif 'GROUP BY' in sql_upper:
+                idx = sql_upper.index('GROUP BY')
+                sql = sql[:idx] + f'WHERE {range_clause} ' + sql[idx:]
+            elif 'ORDER BY' in sql_upper:
+                idx = sql_upper.index('ORDER BY')
+                sql = sql[:idx] + f'WHERE {range_clause} ' + sql[idx:]
+            elif 'LIMIT' in sql_upper:
+                idx = sql_upper.index('LIMIT')
+                sql = sql[:idx] + f'WHERE {range_clause} ' + sql[idx:]
+            else:
+                sql = sql.rstrip(';') + f' WHERE {range_clause};'
+
+            logger.info(f"Filtro soberano inyectado (sin fechas del modelo): {desde} → {hasta_excl}")
+
         return sql
 
     def _ensure_month_filter(self, question: str, sql: str) -> str:
