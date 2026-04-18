@@ -473,7 +473,47 @@ class NL2SQLEngine:
     # -----------------------------------------------------------------
     # 1. Generación de SQL
     # -----------------------------------------------------------------
-    def generate_sql(self, question: str, empresa_id: Optional[str] = None, sovereign_context: str = "") -> str:
+    def _normalize_question_dates(self, question: str) -> str:
+        """Usa la IA para normalizar expresiones de fecha abreviadas/compactas.
+
+        Convierte variantes como 'feb26', 'abr25 a nov25', 'febraur 26' a su
+        forma canónica 'febrero 2026', 'abril 2025 a noviembre 2025', etc.
+        Modelos pequeños como gpt-4o-mini son suficientes — la tarea es trivial.
+        Devuelve la pregunta original si la IA falla o no hay cambio.
+        """
+        _prompt = (
+            "Eres un normalizador de fechas en español. Reescribe ÚNICAMENTE las "
+            "expresiones de fecha/mes/año de la oración del usuario, expandiéndolas "
+            "a su forma completa (nombre de mes completo + año de 4 dígitos). "
+            "No cambies nada más de la oración. No expliques nada. Devuelve solo la "
+            "oración reescrita.\n\n"
+            "Ejemplos:\n"
+            "- 'feb26 a nov26' → 'febrero 2026 a noviembre 2026'\n"
+            "- 'abr25 a nov 25' → 'abril 2025 a noviembre 2025'\n"
+            "- 'ventas ene24 a dic24' → 'ventas enero 2024 a diciembre 2024'\n"
+            "- 'febraur26' → 'febrero 2026'\n"
+            "- 'ventas de 2025' → 'ventas de 2025'\n"
+        )
+        try:
+            resp = self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": _prompt},
+                    {"role": "user", "content": question},
+                ],
+                temperature=0.0,
+                max_tokens=150,
+            )
+            normalized = resp.choices[0].message.content.strip()
+            if normalized and normalized != question:
+                logger.info(f"Fecha normalizada por IA: '{question}' → '{normalized}'")
+            return normalized or question
+        except Exception:
+            return question
+
+    def generate_sql(self, question: str, empresa_id: Optional[str] = None,
+                       sovereign_context: str = "",
+                       periodo_soberano: Optional[dict] = None) -> str:
         """
         Genera SQL a partir de una pregunta en lenguaje natural.
 
@@ -481,18 +521,38 @@ class NL2SQLEngine:
             question: Pregunta en español
             empresa_id: UUID de empresa para filtrar (opcional)
             sovereign_context: Contexto temporal soberano pre-inyectado
+            periodo_soberano: Dict con desde/hasta_excl del slider soberano.
+                              Si se provee, se usa como filtro determinista y
+                              se omite _ensure_month_filter.
 
         Returns:
             Query SQL generado
         """
+        # Normalizar expresiones de fecha abreviadas/compactas con IA
+        # (ej: 'feb26 a nov26' → 'febrero 2026 a noviembre 2026')
+        question = self._normalize_question_dates(question)
+
         system_prompt = self._build_system_prompt(empresa_id, sovereign_context=sovereign_context)
+
+        # ── Cuando hay período soberano, forzar al modelo a usar fechas exactas ──
+        # Inyectamos instrucción en el mensaje del usuario para que el modelo
+        # NUNCA genere EXTRACT(MONTH/YEAR) y use siempre fecha_emision >= / <
+        user_message = question
+        if periodo_soberano:
+            _desde = periodo_soberano.get("desde", "")
+            _hasta = periodo_soberano.get("hasta_excl", "")
+            user_message = (
+                f"[FILTRO OBLIGATORIO: fecha_emision >= '{_desde}' AND fecha_emision < '{_hasta}'. "
+                f"NUNCA uses EXTRACT(MONTH FROM fecha_emision) ni EXTRACT(YEAR FROM fecha_emision). "
+                f"Usa SIEMPRE el rango de fechas exacto indicado.]\n\n{question}"
+            )
 
         try:
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": question},
+                    {"role": "user", "content": user_message},
                 ],
                 temperature=0.0,  # Determinístico para SQL
                 max_tokens=800,
@@ -503,8 +563,14 @@ class NL2SQLEngine:
             # Limpiar el SQL (remover markdown code blocks si existen)
             sql = self._clean_sql(raw_sql)
 
-            # Garantizar que si se mencionó un mes, el filtro esté en el SQL
-            sql = self._ensure_month_filter(question, sql)
+            # ── Filtro de fecha: soberano tiene prioridad absoluta ──────────
+            # _apply_sovereign_filter actúa como red de seguridad aunque el modelo
+            # ya debería haber usado el rango correcto por la instrucción de arriba
+            if periodo_soberano:
+                sql = self._apply_sovereign_filter(sql, periodo_soberano)
+            else:
+                # Garantizar que si se mencionó un mes, el filtro esté en el SQL
+                sql = self._ensure_month_filter(question, sql)
 
             try:
                 logger.info(f"SQL generado: {sql[:100]}...")
@@ -852,35 +918,106 @@ SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quart
         m = re.search(r'\b(20[2-3]\d)\b', question)
         return int(m.group(1)) if m else None
 
+    @staticmethod
+    def _normalize_year(y: str) -> int:
+        """Convierte año de 2 o 4 dígitos a entero de 4 dígitos. '25' → 2025, '2025' → 2025."""
+        n = int(y)
+        return 2000 + n if n < 100 else n
+
     def _detect_date_range(self, question: str) -> Optional[tuple]:
-        """Detecta rangos de meses como 'enero a diciembre 2025' o 'enero 2025 a dic 2025'."""
+        """Detecta rangos de meses como 'ene a dic 2025', 'abr 25 a nov 25'.
+        Acepta años de 2 dígitos ('25' → 2025) o 4 dígitos ('2025').
+        La pregunta ya llega normalizada por _normalize_question_dates.
+        """
         q = question.lower()
-        # Patrón 1: "enero a diciembre 2025" (año al final)
-        pattern1 = r'(\w+)\s+(?:a|al|hasta|-)\s+(\w+)\s+(20[2-3]\d)'
-        # Patrón 2: "enero 2025 a dic 2025" (año después de cada mes)
-        pattern2 = r'(\w+)\s+(20[2-3]\d)\s+(?:a|al|hasta|-)\s+(\w+)\s+(20[2-3]\d)'
-        # Patrón 3: "reporte 2025" o "ventas del 2025" (año completo sin meses)
-        pattern3 = r'\b(?:reporte|ventas|facturaci[oó]n|informe|resumen)\b.*?\b(20[2-3]\d)\b'
+        _yr = r'(20[2-3]\d|\d{2})'  # año 2-digit o 4-digit
+        # Patrón 1: "enero a diciembre 2025" o "abril a nov 25" (año al final, mismo para ambos)
+        pattern1 = rf'(\w+)\s+(?:a|al|hasta|-)\s+(\w+)\s+{_yr}(?!\d)'
+        # Patrón 2: "enero 2025 a dic 2025" o "abr 25 a nov 25" (año tras cada mes)
+        pattern2 = rf'(\w+)\s+{_yr}(?!\d)\s+(?:a|al|hasta|-)\s+(\w+)\s+{_yr}(?!\d)'
 
         m2 = re.search(pattern2, q)
         if m2:
-            start_name, year1, end_name, year2 = m2.group(1), int(m2.group(2)), m2.group(3), int(m2.group(4))
+            start_name, y1_raw, end_name, y2_raw = m2.group(1), m2.group(2), m2.group(3), m2.group(4)
             start_month = self._MONTH_MAP.get(start_name)
             end_month = self._MONTH_MAP.get(end_name)
             if start_month and end_month:
-                # Devolver 4 valores: (año_inicio, mes_inicio, año_fin, mes_fin)
-                return (year1, start_month, year2, end_month)
+                return (self._normalize_year(y1_raw), start_month,
+                        self._normalize_year(y2_raw), end_month)
 
         m1 = re.search(pattern1, q)
         if m1:
-            start_name, end_name, year = m1.group(1), m1.group(2), int(m1.group(3))
+            start_name, end_name, yr_raw = m1.group(1), m1.group(2), m1.group(3)
             start_month = self._MONTH_MAP.get(start_name)
             end_month = self._MONTH_MAP.get(end_name)
             if start_month and end_month:
-                # Mismo año para inicio y fin
+                year = self._normalize_year(yr_raw)
                 return (year, start_month, year, end_month)
 
         return None
+
+    def _apply_sovereign_filter(self, sql: str, periodo_soberano: dict) -> str:
+        """Reemplaza cualquier filtro de fecha en el SQL por el rango soberano exacto.
+
+        El período soberano viene del slider de la UI y provee fechas absolutas
+        (desde, hasta_excl), eliminando cualquier ambigüedad de parseo NL.
+        """
+        desde = periodo_soberano.get("desde")       # "YYYY-MM-DD"
+        hasta_excl = periodo_soberano.get("hasta_excl")  # "YYYY-MM-DD"
+        if not desde or not hasta_excl:
+            return sql
+
+        range_clause = f"fecha_emision >= '{desde}' AND fecha_emision < '{hasta_excl}'"
+
+        # Eliminar filtros EXTRACT (MONTH/YEAR) que el modelo pueda haber generado
+        for _ in range(4):
+            sql = re.sub(
+                r'\s*AND\s+EXTRACT\s*\(\s*(?:MONTH|YEAR)\s+FROM\s+fecha_emision\s*\)\s*=\s*(?:EXTRACT\s*\([^)]*\)(?:\s*-\s*\d+)?|\d+)',
+                '', sql, flags=re.IGNORECASE
+            )
+            sql = re.sub(
+                r'EXTRACT\s*\(\s*(?:MONTH|YEAR)\s+FROM\s+fecha_emision\s*\)\s*=\s*(?:EXTRACT\s*\([^)]*\)(?:\s*-\s*\d+)?|\d+)\s*AND\s*',
+                '', sql, flags=re.IGNORECASE
+            )
+            sql = re.sub(
+                r'EXTRACT\s*\(\s*(?:MONTH|YEAR)\s+FROM\s+fecha_emision\s*\)\s*=\s*(?:EXTRACT\s*\([^)]*\)(?:\s*-\s*\d+)?|\d+)',
+                '', sql, flags=re.IGNORECASE
+            )
+
+        # Eliminar filtros fecha_emision >= / < / BETWEEN que haya generado el modelo
+        sql = re.sub(
+            r'fecha_emision\s*(?:>=|<=|>|<|=)\s*\'[^\']+\'\s*(?:AND\s*fecha_emision\s*(?:>=|<=|>|<|=)\s*\'[^\']+\')?',
+            '', sql, flags=re.IGNORECASE
+        )
+        sql = re.sub(
+            r'fecha_emision\s+BETWEEN\s+\'[^\']+\'\s+AND\s+\'[^\']+\'',
+            '', sql, flags=re.IGNORECASE
+        )
+
+        # Limpiar WHERE vacío/malformado
+        sql = re.sub(r'WHERE\s+(GROUP|ORDER|LIMIT|HAVING)', r'\1', sql, flags=re.IGNORECASE)
+        sql = re.sub(r'WHERE\s+AND\b', 'WHERE', sql, flags=re.IGNORECASE)
+        sql = re.sub(r'WHERE\s*;', ';', sql, flags=re.IGNORECASE)
+        sql = re.sub(r'\bAND\s+AND\b', 'AND', sql, flags=re.IGNORECASE)
+
+        sql_upper = sql.upper()
+        if 'WHERE' in sql_upper:
+            idx = sql_upper.index('WHERE') + len('WHERE')
+            sql = sql[:idx] + f' {range_clause} AND' + sql[idx:]
+        elif 'GROUP BY' in sql_upper:
+            idx = sql_upper.index('GROUP BY')
+            sql = sql[:idx] + f'WHERE {range_clause} ' + sql[idx:]
+        elif 'ORDER BY' in sql_upper:
+            idx = sql_upper.index('ORDER BY')
+            sql = sql[:idx] + f'WHERE {range_clause} ' + sql[idx:]
+        elif 'LIMIT' in sql_upper:
+            idx = sql_upper.index('LIMIT')
+            sql = sql[:idx] + f'WHERE {range_clause} ' + sql[idx:]
+        else:
+            sql = sql.rstrip(';') + f' WHERE {range_clause};'
+
+        logger.info(f"Filtro soberano inyectado: {desde} → {hasta_excl}")
+        return sql
 
     def _ensure_month_filter(self, question: str, sql: str) -> str:
         """Si la pregunta menciona un mes pero el SQL no lo filtra, inyecta el WHERE.
@@ -1795,7 +1932,9 @@ Si el usuario pidió explícitamente una orientación (ej: "vertical", "horizont
 
         try:
             # Paso 1: Generar SQL
-            sql = self.generate_sql(question, empresa_id, sovereign_context=_sovereign_ctx)
+            sql = self.generate_sql(question, empresa_id,
+                                    sovereign_context=_sovereign_ctx,
+                                    periodo_soberano=periodo_soberano or None)
 
             # Paso 1b: Detectar uso incorrecto de tabla `empresas` para clientes
             # Si se detecta, regenerar con instrucción explícita de corrección

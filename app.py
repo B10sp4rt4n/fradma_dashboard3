@@ -812,6 +812,14 @@ if _empresa_id_actual and _neon_url:
                 if not _df_neon.empty:
                     st.session_state["df"] = _df_neon
                     st.session_state["_df_fuente"] = "cfdi"
+                    # Reconstruir índice soberano con datos de Neon
+                    _sov = build_sovereign_index(_df_neon)
+                    st.session_state["sovereign_index"] = _sov
+                    _sov_meses = _sov.get("meses", [])
+                    if _sov_meses:
+                        st.session_state["sovereign_desde"] = _sov_meses[0]
+                        st.session_state["sovereign_hasta"] = _sov_meses[-1]
+                        st.session_state.setdefault("sovereign_granularidad", "mensual")
                     empresa_badge = st.session_state.get("empresa_nombre", "")
                     st.sidebar.success(
                         f"✅ {len(_df_neon):,} facturas CFDI cargadas"
@@ -830,6 +838,13 @@ if _empresa_id_actual and _neon_url:
                         st.session_state["df"] = _df_neon
                         st.session_state["_df_fuente"] = "cfdi"
                         st.session_state.pop("archivo_path", None)
+                        # Reconstruir índice soberano con datos frescos de Neon
+                        _sov = build_sovereign_index(_df_neon)
+                        st.session_state["sovereign_index"] = _sov
+                        _sov_meses = _sov.get("meses", [])
+                        if _sov_meses:
+                            st.session_state["sovereign_desde"] = _sov_meses[0]
+                            st.session_state["sovereign_hasta"] = _sov_meses[-1]
                         st.sidebar.success(f"✅ {len(_df_neon):,} facturas actualizadas")
                         st.rerun()
                     else:
