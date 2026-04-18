@@ -611,10 +611,27 @@ REGLAS ESTRICTAS:
 9. Responde SOLO con la consulta SQL, sin explicación ni markdown. NO uses emojis ni caracteres especiales.
 10. SIEMPRE intenta generar una consulta SQL válida. NUNCA generes el fallback de "Pregunta no compatible". Si la pregunta es genérica (ej: "qué gráficas me ofreces", "qué estadísticas tienes", "qué puedes hacer", "muéstrame análisis"), genera un resumen estadístico completo de cfdi_ventas con COUNT, AVG, MIN, MAX, STDDEV, PERCENTILE_CONT(0.25), PERCENTILE_CONT(0.5), PERCENTILE_CONT(0.75) sobre el campo total. Si la pregunta es sobre capacidades o ayuda, genera igualmente ese resumen estadístico como demostración.
 11. Cuando pregunten por "empresas", "clientes" o "quién compró", busca en receptor_nombre de cfdi_ventas.
-12. Para meses por nombre, usa EXTRACT(MONTH FROM fecha_emision) = N. Mapeo COMPLETO:
-  enero/ene=1, febrero/feb=2, marzo/mar=3, abril/abr=4, mayo/may=5, junio/jun=6,
-  julio/jul=7, agosto/ago=8, septiembre/sep/sept=9, octubre/oct=10, noviembre/nov=11, diciembre/dic=12.
-  SIEMPRE aplica el filtro de mes cuando el usuario lo mencione, incluso si pide un tipo de gráfica (pie, dona, pay, pastel, barras, etc.). El filtro de mes NUNCA es opcional.
+12. Para filtros de fecha USA SIEMPRE fecha_emision >= 'YYYY-MM-DD' AND fecha_emision < 'YYYY-MM-DD'. NUNCA uses EXTRACT(MONTH FROM fecha_emision) ni EXTRACT(YEAR FROM fecha_emision) para filtrar rangos. EXTRACT solo se permite en el SELECT para agrupar (ej: DATE_TRUNC('month', fecha_emision)).
+  Mapeo de mes a número (solo para referencia interna): enero/ene=1, febrero/feb=2, marzo/mar=3, abril/abr=4, mayo/may=5, junio/jun=6, julio/jul=7, agosto/ago=8, septiembre/sep/sept=9, octubre/oct=10, noviembre/nov=11, diciembre/dic=12.
+
+**PATRÓN OBLIGATORIO — Porcentaje de ventas mes a mes:**
+Cuando el usuario pida "porcentaje de ventas mes a mes" o "distribución mensual" o "pay/pie por mes", usa EXACTAMENTE este patrón:
+```sql
+WITH ventas_mes AS (
+  SELECT DATE_TRUNC('month', fecha_emision) AS mes,
+         SUM(total * COALESCE(tipo_cambio, 1)) AS total_mxn
+  FROM cfdi_ventas
+  WHERE empresa_id = '<empresa_id>'
+    AND fecha_emision >= 'FECHA_INICIO' AND fecha_emision < 'FECHA_FIN'
+  GROUP BY 1
+)
+SELECT mes,
+       ROUND(total_mxn::numeric, 2) AS ventas,
+       ROUND(total_mxn * 100.0 / SUM(total_mxn) OVER (), 2) AS porcentaje
+FROM ventas_mes
+ORDER BY mes;
+```
+NUNCA pongas ORDER BY dentro de la CTE ventas_mes (PostgreSQL no lo permite en CTEs con window functions). El ORDER BY va solo en el SELECT final.
 13. Para estadísticas usa funciones de PostgreSQL: AVG() para promedio/media, PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY col) para mediana, STDDEV() o STDDEV_POP() para desviación estándar, VARIANCE() para varianza, MIN() y MAX() para rango, MODE() WITHIN GROUP (ORDER BY col) para moda.
 14. Cuando pidan "estadísticas", "resumen estadístico" o "análisis estadístico", genera una consulta que incluya COUNT, AVG, MIN, MAX, STDDEV y PERCENTILE_CONT(0.5) del campo numérico relevante.
 15. Para percentiles usa PERCENTILE_CONT(0.25/0.50/0.75) WITHIN GROUP (ORDER BY columna).
