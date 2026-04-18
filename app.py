@@ -1250,6 +1250,8 @@ if "df" in st.session_state:
     st.sidebar.markdown("### 🔍 Filtros Avanzados")
     
     df_original = st.session_state["df"].copy()
+    # Guardar referencia del original antes de filtrar (para el widget flotante)
+    st.session_state["df_original_pre_filtro"] = df_original
     
     # Inicializar estado de filtros si no existe
     if "filtros_aplicados" not in st.session_state:
@@ -1962,6 +1964,99 @@ try:
         </div>
     </div>
     """, unsafe_allow_html=True)
+
+except Exception:
+    pass  # Widget silencioso si falla
+
+# =====================================================================
+# WIDGET FILTROS FLOTANTE — estado de filtros activos siempre visible
+# =====================================================================
+try:
+    if "df" in st.session_state and "df_original_pre_filtro" in st.session_state:
+        _df_filt    = st.session_state["df"]
+        _df_orig    = st.session_state["df_original_pre_filtro"]
+        _n_filt     = len(_df_filt)
+        _n_orig     = len(_df_orig)
+        _activos    = _n_filt < _n_orig
+        _pct        = (_n_filt / _n_orig * 100) if _n_orig > 0 else 100
+
+        # Leer keys de filtro del session_state
+        _fi         = st.session_state.get("filtro_fecha_inicio", None)
+        _ff         = st.session_state.get("filtro_fecha_fin", None)
+        _clientes   = st.session_state.get("filtro_cliente_select", [])
+        _monto_tipo = st.session_state.get("filtro_monto_tipo", None)
+
+        _lineas_filtro = []
+        if _fi and _ff:
+            _lineas_filtro.append(f"📅 {_fi} → {_ff}")
+        if _clientes:
+            _lineas_filtro.append(f"👤 {len(_clientes)} cliente(s)")
+        if _monto_tipo and _monto_tipo != "Sin filtro de monto":
+            _lineas_filtro.append(f"💲 Monto filtrado")
+
+        _color_chip  = "#c0392b" if _activos else "#27ae60"
+        _bg_chip     = "linear-gradient(145deg, #5d1a1a, #922b21)" if _activos else "linear-gradient(145deg, #1a5d2d, #1e8449)"
+        _label_chip  = "FILTROS ACTIVOS" if _activos else "SIN FILTROS"
+        _dot_chip    = "#e74c3c" if _activos else "#2ecc71"
+
+        _detalles_html = "".join(
+            f'<div style="font-size:11px;opacity:0.85;margin-top:3px;">{l}</div>'
+            for l in _lineas_filtro
+        ) if _lineas_filtro else '<div style="font-size:11px;opacity:0.65;margin-top:3px;">Todos los registros</div>'
+
+        st.markdown(f"""
+        <style>
+        #filtros-float-widget {{
+            position: fixed;
+            bottom: 24px;
+            right: 250px;
+            z-index: 99999;
+            background: {_bg_chip};
+            color: white;
+            border-radius: 14px;
+            padding: 12px 16px;
+            box-shadow: 0 6px 24px rgba(0,0,0,0.35);
+            min-width: 170px;
+            max-width: 200px;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            border: 1px solid rgba(255,255,255,0.1);
+        }}
+        #filtros-float-title {{
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 1.2px;
+            text-transform: uppercase;
+            opacity: 0.65;
+            margin-bottom: 5px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }}
+        #filtros-float-dot {{
+            width: 7px; height: 7px;
+            border-radius: 50%;
+            background: {_dot_chip};
+            display: inline-block;
+        }}
+        #filtros-float-main {{
+            font-size: 18px;
+            font-weight: 700;
+        }}
+        #filtros-float-sub {{
+            font-size: 11px;
+            opacity: 0.7;
+            margin-top: 2px;
+        }}
+        </style>
+        <div id="filtros-float-widget">
+            <div id="filtros-float-title">
+                <span id="filtros-float-dot"></span> {_label_chip}
+            </div>
+            <div id="filtros-float-main">{_n_filt:,} <span style="font-size:13px;font-weight:400">regs.</span></div>
+            <div id="filtros-float-sub">de {_n_orig:,} · {_pct:.1f}%</div>
+            {_detalles_html}
+        </div>
+        """, unsafe_allow_html=True)
 
 except Exception:
     pass  # Widget silencioso si falla
