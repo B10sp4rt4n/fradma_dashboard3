@@ -1744,36 +1744,42 @@ if "df" in st.session_state and _filtros_vista:
     if usar_filtros:
         df_filtrado = df_original.copy()
 
-        if "fecha" in _filtros_vista:
-            st.sidebar.markdown("**📅 Fecha**")
-            if _ayuda_vista.get("fecha"):
-                st.sidebar.caption(_ayuda_vista["fecha"])
-            if "fecha" in df_filtrado.columns:
-                df_filtrado = aplicar_filtro_fechas(df_filtrado, "fecha")
-            else:
-                st.sidebar.warning("⚠️ Sin columna 'fecha'")
-            st.sidebar.markdown("---")
+        with st.sidebar:
+            if "fecha" in _filtros_vista:
+                # Detectar si hay filtro activo de fecha
+                _fi_act = st.session_state.get("filtro_fecha_inicio")
+                _ff_act = st.session_state.get("filtro_fecha_fin")
+                _fecha_label = "📅 Fecha" + (" ●" if _fi_act or _ff_act else "")
+                with st.expander(_fecha_label, expanded=False):
+                    if _ayuda_vista.get("fecha"):
+                        st.caption(_ayuda_vista["fecha"])
+                    if "fecha" in df_filtrado.columns:
+                        df_filtrado = aplicar_filtro_fechas(df_filtrado, "fecha")
+                    else:
+                        st.warning("⚠️ Sin columna 'fecha'")
 
-        if "cliente" in _filtros_vista:
-            st.sidebar.markdown("**👤 Cliente**")
-            if _ayuda_vista.get("cliente"):
-                st.sidebar.caption(_ayuda_vista["cliente"])
-            if "cliente" in df_filtrado.columns:
-                df_filtrado = aplicar_filtro_cliente(df_filtrado, "cliente")
-            else:
-                st.sidebar.warning("⚠️ Sin columna 'cliente'")
-            st.sidebar.markdown("---")
+            if "cliente" in _filtros_vista:
+                _cli_act = st.session_state.get("filtro_cliente_select", [])
+                _cli_label = "👤 Cliente" + (f" ● ({len(_cli_act)})" if _cli_act else "")
+                with st.expander(_cli_label, expanded=False):
+                    if _ayuda_vista.get("cliente"):
+                        st.caption(_ayuda_vista["cliente"])
+                    if "cliente" in df_filtrado.columns:
+                        df_filtrado = aplicar_filtro_cliente(df_filtrado, "cliente")
+                    else:
+                        st.warning("⚠️ Sin columna 'cliente'")
 
-        if "monto" in _filtros_vista:
-            st.sidebar.markdown("**💲 Monto**")
-            if _ayuda_vista.get("monto"):
-                st.sidebar.caption(_ayuda_vista["monto"])
-            columna_ventas = st.session_state.get("columna_ventas", None)
-            if columna_ventas and columna_ventas in df_filtrado.columns:
-                df_filtrado = aplicar_filtro_monto(df_filtrado, columna_ventas)
-            else:
-                st.sidebar.warning("⚠️ Sin columna de ventas detectada")
-            st.sidebar.markdown("---")
+            if "monto" in _filtros_vista:
+                _monto_act = st.session_state.get("filtro_monto_tipo")
+                _monto_label = "💲 Monto" + (" ●" if _monto_act and _monto_act != "Sin filtro de monto" else "")
+                columna_ventas = st.session_state.get("columna_ventas", None)
+                with st.expander(_monto_label, expanded=False):
+                    if _ayuda_vista.get("monto"):
+                        st.caption(_ayuda_vista["monto"])
+                    if columna_ventas and columna_ventas in df_filtrado.columns:
+                        df_filtrado = aplicar_filtro_monto(df_filtrado, columna_ventas)
+                    else:
+                        st.warning("⚠️ Sin columna de ventas detectada")
 
         if st.sidebar.button("🗑️ Limpiar filtros", use_container_width=True):
             st.session_state["filtros_aplicados"] = {}
