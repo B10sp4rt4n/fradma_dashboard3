@@ -116,8 +116,11 @@ PERFILES: dict[str, dict] = {
         "metodos_pago":       [],
         "multi_moneda":       False,
         "prompt_hint": (
-            "Analiza percepciones, deducciones e ISR retenido de nómina. "
-            "Agrupa por empleado, departamento o periodo según corresponda."
+            "IMPORTANTE: No existe tabla cfdi_nomina. Los comprobantes de nómina "
+            "están en cfdi_ventas con tipo_comprobante = 'N'. "
+            "Usa siempre FROM cfdi_ventas WHERE tipo_comprobante = 'N'. "
+            "Analiza totales, impuestos retenidos y tendencias de nómina. "
+            "Agrupa por receptor (empleado) o periodo según corresponda."
         ),
     },
 }

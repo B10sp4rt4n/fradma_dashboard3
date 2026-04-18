@@ -83,7 +83,6 @@ ALLOWED_TABLES = [
     'cfdi_ventas',
     'cfdi_conceptos',
     'cfdi_pagos',
-    'cfdi_nomina',
     'clientes_master',
     'benchmarks_industria',
     'v_cartera_clientes',
@@ -1018,10 +1017,9 @@ SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quart
         El período soberano viene del slider de la UI y provee fechas absolutas
         (desde, hasta_excl), eliminando cualquier ambigüedad de parseo NL.
         Detecta la tabla principal para usar la columna de fecha correcta:
-          - cfdi_ventas   → fecha_emision
-          - cfdi_pagos    → fecha_pago
-          - cfdi_nomina   → fecha_emision
-          - otras         → no inyecta filtro de fecha (evita errores de columna)
+          - cfdi_ventas  → fecha_emision
+          - cfdi_pagos   → fecha_pago
+          - otras        → no inyecta filtro de fecha (evita errores de columna)
         """
         desde = periodo_soberano.get("desde")       # "YYYY-MM-DD"
         hasta_excl = periodo_soberano.get("hasta_excl")  # "YYYY-MM-DD"
@@ -1036,7 +1034,7 @@ SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quart
         sql_upper = sql.upper()
         if "CFDI_PAGOS" in sql_upper and "CFDI_VENTAS" not in sql_upper:
             fecha_col = "fecha_pago"
-        elif "CFDI_VENTAS" in sql_upper or "CFDI_NOMINA" in sql_upper:
+        elif "CFDI_VENTAS" in sql_upper:
             fecha_col = "fecha_emision"
         else:
             # Tabla desconocida — normalizar operadores y salir sin inyectar
