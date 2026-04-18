@@ -1842,6 +1842,131 @@ with st.sidebar.expander("ℹ️ Acerca de esta vista"):
         """)
 
 # =====================================================================
+# WIDGET ROI FLOTANTE — siempre visible al hacer scroll
+# =====================================================================
+try:
+    _roi_tracker_float = init_roi_tracker(st.session_state)
+    _roi_sum = _roi_tracker_float.get_summary()
+
+    _hrs_hoy   = _roi_sum['today']['hrs']
+    _val_hoy   = _roi_sum['today']['value']
+    _hrs_mes   = _roi_sum['month']['hrs']
+    _val_mes   = _roi_sum['month']['value']
+    _dias_mes  = _roi_sum['month']['workdays']
+    _acciones  = _roi_sum['today']['actions']
+
+    # Color del indicador según actividad de hoy
+    _color_badge = "#27ae60" if _hrs_hoy > 0 else "#7f8c8d"
+    _dot_color   = "#2ecc71" if _hrs_hoy > 0 else "#bdc3c7"
+
+    st.markdown(f"""
+    <style>
+    #roi-float-widget {{
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        z-index: 99999;
+        background: linear-gradient(145deg, #1a3a5c, #1F4E79);
+        color: white;
+        border-radius: 14px;
+        padding: 14px 18px;
+        box-shadow: 0 6px 24px rgba(0,0,0,0.35);
+        min-width: 190px;
+        max-width: 220px;
+        font-family: 'Segoe UI', Arial, sans-serif;
+        font-size: 13px;
+        line-height: 1.4;
+        border: 1px solid rgba(255,255,255,0.1);
+        transition: box-shadow 0.2s;
+    }}
+    #roi-float-widget:hover {{
+        box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    }}
+    #roi-float-title {{
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 1.2px;
+        text-transform: uppercase;
+        opacity: 0.65;
+        margin-bottom: 6px;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+    }}
+    #roi-float-dot {{
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: {_dot_color};
+        display: inline-block;
+        animation: pulse-dot 2s infinite;
+    }}
+    @keyframes pulse-dot {{
+        0%   {{ opacity: 1; }}
+        50%  {{ opacity: 0.4; }}
+        100% {{ opacity: 1; }}
+    }}
+    #roi-float-main {{
+        font-size: 22px;
+        font-weight: 700;
+        letter-spacing: -0.5px;
+    }}
+    #roi-float-sub {{
+        font-size: 11px;
+        opacity: 0.7;
+        margin-top: 2px;
+    }}
+    #roi-float-divider {{
+        border: none;
+        border-top: 1px solid rgba(255,255,255,0.15);
+        margin: 9px 0;
+    }}
+    #roi-float-mes-label {{
+        font-size: 10px;
+        opacity: 0.6;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+    }}
+    #roi-float-mes-val {{
+        font-size: 15px;
+        font-weight: 600;
+        margin-top: 2px;
+    }}
+    #roi-float-mes-sub {{
+        font-size: 10px;
+        opacity: 0.6;
+        margin-top: 2px;
+    }}
+    #roi-float-acciones {{
+        margin-top: 8px;
+        font-size: 10px;
+        background: rgba(255,255,255,0.1);
+        border-radius: 6px;
+        padding: 4px 8px;
+        text-align: center;
+    }}
+    </style>
+
+    <div id="roi-float-widget">
+        <div id="roi-float-title">
+            <span id="roi-float-dot"></span> ROI en tiempo real
+        </div>
+        <div id="roi-float-main">{_hrs_hoy:.1f} hrs</div>
+        <div id="roi-float-sub">hoy · ${_val_hoy:,.0f} MXN</div>
+        <hr id="roi-float-divider">
+        <div id="roi-float-mes-label">📅 Este mes</div>
+        <div id="roi-float-mes-val">${_val_mes:,.0f}</div>
+        <div id="roi-float-mes-sub">{_hrs_mes:.1f} hrs · {_dias_mes:.1f} días lab.</div>
+        <div id="roi-float-acciones">
+            {'✨ ' + str(_acciones) + ' acción(es) hoy' if _acciones > 0 else '💡 Sin actividad aún hoy'}
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+except Exception:
+    pass  # Widget silencioso si falla
+
+# =====================================================================
 # RENDERIZADO DE VISTAS
 # =====================================================================
 
