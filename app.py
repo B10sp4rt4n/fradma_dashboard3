@@ -969,6 +969,9 @@ if archivo:
             st.markdown("---")
             st.markdown("**📋 Validación de columnas**")
 
+            # ── Tabla resumen alineada por columnas ────────────────────
+            _filas_html = ""
+            _detalles_html = ""
             for modulo, checklist in validacion.items():
                 if not checklist:
                     continue
@@ -976,10 +979,41 @@ if archivo:
                 advert_m  = sum(1 for i in checklist if i["status"] == "⚠️")
                 ok_m      = sum(1 for i in checklist if i["status"] == "✅")
                 icono_m   = "🔴" if errores_m > 0 else ("🟡" if advert_m > 0 else "🟢")
-                st.markdown(f"**{icono_m} {modulo}** — ✅{ok_m} ⚠️{advert_m} ❌{errores_m}")
+                _filas_html += (
+                    f"<tr>"
+                    f"<td style='padding:2px 6px'>{icono_m} <b>{modulo}</b></td>"
+                    f"<td style='padding:2px 6px;text-align:center'>✅ {ok_m}</td>"
+                    f"<td style='padding:2px 6px;text-align:center'>⚠️ {advert_m}</td>"
+                    f"<td style='padding:2px 6px;text-align:center'>❌ {errores_m}</td>"
+                    f"</tr>"
+                )
                 items = checklist if modo_debug else [i for i in checklist if i["status"] != "✅"]
                 for item in items:
-                    st.caption(f"{item['status']} {item['col']}: {item['mensaje']}")
+                    _detalles_html += (
+                        f"<tr>"
+                        f"<td style='padding:1px 4px'>{item['status']}</td>"
+                        f"<td style='padding:1px 4px;font-size:11px'><code>{item['col']}</code></td>"
+                        f"<td style='padding:1px 4px;font-size:11px;color:#aaa'>{item['mensaje']}</td>"
+                        f"</tr>"
+                    )
+            st.markdown(
+                f"<table style='width:100%;border-collapse:collapse;font-size:12px'>"
+                f"<thead><tr>"
+                f"<th style='text-align:left;padding:2px 6px'>Módulo</th>"
+                f"<th style='text-align:center;padding:2px 6px'>OK</th>"
+                f"<th style='text-align:center;padding:2px 6px'>Aviso</th>"
+                f"<th style='text-align:center;padding:2px 6px'>Error</th>"
+                f"</tr></thead>"
+                f"<tbody>{_filas_html}</tbody>"
+                f"</table>",
+                unsafe_allow_html=True
+            )
+            if _detalles_html:
+                st.markdown(
+                    f"<table style='width:100%;border-collapse:collapse;margin-top:6px;font-size:12px'>"
+                    f"<tbody>{_detalles_html}</tbody></table>",
+                    unsafe_allow_html=True
+                )
 
             if total_errores == 0 and total_advertencias == 0:
                 st.success("✅ Todas las columnas críticas presentes")
