@@ -2135,7 +2135,13 @@ Si el usuario pidió explícitamente una orientación (ej: "vertical", "horizont
             result.chart_spec = chart_spec
 
         except ValueError as e:
-            result.error = f"❌ Error generando SQL: {e}"
+            _e_str = str(e)
+            if _e_str.startswith("PERFIL_SCOPE:"):
+                _msg = _e_str[len("PERFIL_SCOPE:"):].strip()
+                result.interpretation = _msg
+                result.error = f"🎯 {_msg}"
+            else:
+                result.error = f"❌ Error generando SQL: {e}"
         except RuntimeError as e:
             result.error = f"⚠️ Error de ejecución: {e}"
         except Exception as e:
