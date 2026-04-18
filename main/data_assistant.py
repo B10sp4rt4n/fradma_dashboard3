@@ -2218,13 +2218,17 @@ def _render_chat_interface():
                         help=_p["descripcion"],
                         use_container_width=True,
                         type="primary" if _is_active else "secondary",
-                    ):
+):
                         st.session_state["sovereign_profile_key"] = _pkey
-                        # Limpiar checkboxes del perfil anterior para que adopten los del nuevo
-                        for _k in list(st.session_state.keys()):
-                            if _k.startswith(("sc_tipo_", "sc_imp_", "sc_mp_", "sc_multi_moneda")):
-                                del st.session_state[_k]
                         st.session_state.pop("sovereign_profile_custom", None)
+                        # Setear explícitamente cada checkbox con los valores del nuevo perfil
+                        for _tc in TIPOS_COMPROBANTE:
+                            st.session_state[f"sc_tipo_{_tc}"] = _tc in _p["tipos_comprobante"]
+                        for _ik in TIPOS_IMPUESTO:
+                            st.session_state[f"sc_imp_{_ik}"] = _ik in _p["impuestos"]
+                        for _mk in METODOS_PAGO:
+                            st.session_state[f"sc_mp_{_mk}"] = _mk in _p["metodos_pago"]
+                        st.session_state["sc_multi_moneda"] = _p.get("multi_moneda", False)
                         st.rerun()
 
             st.divider()

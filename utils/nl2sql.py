@@ -612,6 +612,9 @@ class NL2SQLEngine:
 
         except UnicodeEncodeError as e:
             raise ValueError(f"Error de codificación: {e}")
+        except ValueError:
+            # Re-lanzar ValueError tal cual (incluye PERFIL_SCOPE:) sin envolver
+            raise
         except Exception as e:
             try:
                 logger.error(f"Error generando SQL: {e}")
@@ -2136,8 +2139,8 @@ Si el usuario pidió explícitamente una orientación (ej: "vertical", "horizont
 
         except ValueError as e:
             _e_str = str(e)
-            if _e_str.startswith("PERFIL_SCOPE:"):
-                _msg = _e_str[len("PERFIL_SCOPE:"):].strip()
+            if "PERFIL_SCOPE:" in _e_str:
+                _msg = _e_str.split("PERFIL_SCOPE:", 1)[1].strip()
                 result.interpretation = _msg
                 result.error = f"🎯 {_msg}"
             else:
