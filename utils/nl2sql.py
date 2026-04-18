@@ -868,7 +868,8 @@ SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quart
             start_month = self._MONTH_MAP.get(start_name)
             end_month = self._MONTH_MAP.get(end_name)
             if start_month and end_month:
-                return (year1, start_month, end_month)
+                # Devolver 4 valores: (año_inicio, mes_inicio, año_fin, mes_fin)
+                return (year1, start_month, year2, end_month)
 
         m1 = re.search(pattern1, q)
         if m1:
@@ -876,7 +877,8 @@ SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quart
             start_month = self._MONTH_MAP.get(start_name)
             end_month = self._MONTH_MAP.get(end_name)
             if start_month and end_month:
-                return (year, start_month, end_month)
+                # Mismo año para inicio y fin
+                return (year, start_month, year, end_month)
 
         return None
 
@@ -893,14 +895,15 @@ SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quart
         explicit_year = self._detect_explicit_year(question)
         date_range = self._detect_date_range(question)
 
-        # --- Caso 1: Rango de meses con año ("enero a diciembre 2025") ---
+        # --- Caso 1: Rango de meses con año ("enero a diciembre 2025" o "ene 2024 a feb 2026") ---
         if date_range:
-            year, start_month, end_month = date_range
-            start_date = f"{year}-{start_month:02d}-01"
+            # Siempre 4 valores: (year_inicio, mes_inicio, year_fin, mes_fin)
+            year_start, start_month, year_end, end_month = date_range
+            start_date = f"{year_start}-{start_month:02d}-01"
             if end_month == 12:
-                end_date = f"{year + 1}-01-01"
+                end_date = f"{year_end + 1}-01-01"
             else:
-                end_date = f"{year}-{end_month + 1:02d}-01"
+                end_date = f"{year_end}-{end_month + 1:02d}-01"
             range_clause = f"fecha_emision >= '{start_date}' AND fecha_emision < '{end_date}'"
 
             # Remover todas las condiciones EXTRACT(MONTH/YEAR FROM fecha_emision) = ...
