@@ -49,6 +49,7 @@ from utils.auth import AuthManager, UserRole, get_current_user
 from utils.admin_panel import mostrar_info_usuario, mostrar_panel_usuarios, mostrar_panel_configuracion
 from utils.roi_tracker import init_roi_tracker
 from utils.neon_loader import cargar_cfdi_como_df
+from utils.sovereign_periods import build_sovereign_index
 
 # Configurar logger de la aplicación
 logger = configurar_logger("dashboard_app", nivel="INFO")
@@ -1051,6 +1052,16 @@ if archivo:
         st.session_state["df"] = df
         st.session_state["_df_fuente"] = "excel"
         st.session_state["archivo_path"] = archivo
+
+        # ── Índice soberano de períodos ──────────────────────────────
+        _sovereign = build_sovereign_index(df)
+        st.session_state["sovereign_index"] = _sovereign
+        # Inicializar período activo al rango completo del dataset
+        _meses = _sovereign.get("meses", [])
+        if _meses:
+            st.session_state.setdefault("sovereign_desde", _meses[0])
+            st.session_state.setdefault("sovereign_hasta", _meses[-1])
+            st.session_state.setdefault("sovereign_granularidad", "mensual")
 
         if "año" in df.columns:
             st.session_state.setdefault("año_base", sorted(df["año"].dropna().unique())[-1] if not df["año"].dropna().empty else None)

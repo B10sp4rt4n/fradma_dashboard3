@@ -2194,6 +2194,63 @@ def _render_chat_interface():
             with st.chat_message("assistant", avatar="🤖"):
                 _render_result_message(msg, msg_idx)
 
+    # ── Selector de período soberano ──────────────────────────────────────────
+    _sovereign = st.session_state.get("sovereign_index", {})
+    _meses = _sovereign.get("meses", [])
+
+    if _meses:
+        with st.expander("📅 Período de análisis", expanded=True):
+            _col_slider, _col_gran = st.columns([3, 1])
+
+            with _col_slider:
+                _desde_default = st.session_state.get("sovereign_desde", _meses[0])
+                _hasta_default = st.session_state.get("sovereign_hasta", _meses[-1])
+                # Asegurar que los defaults existen en la lista
+                if _desde_default not in _meses:
+                    _desde_default = _meses[0]
+                if _hasta_default not in _meses:
+                    _hasta_default = _meses[-1]
+
+                _rango = st.select_slider(
+                    "Selecciona el rango de meses",
+                    options=_meses,
+                    value=(_desde_default, _hasta_default),
+                    key="sovereign_slider",
+                    label_visibility="collapsed",
+                )
+                st.session_state["sovereign_desde"] = _rango[0]
+                st.session_state["sovereign_hasta"] = _rango[1]
+
+            with _col_gran:
+                _gran = st.radio(
+                    "Granularidad",
+                    options=["mensual", "trimestral", "anual", "total"],
+                    index=["mensual", "trimestral", "anual", "total"].index(
+                        st.session_state.get("sovereign_granularidad", "mensual")
+                    ),
+                    key="sovereign_granularidad",
+                    help="Cómo se agrupa el tiempo en las consultas",
+                )
+
+            # Construir y guardar el período activo
+            from utils.sovereign_periods import get_active_period
+            _periodo_activo = get_active_period(
+                _sovereign,
+                st.session_state["sovereign_desde"],
+                st.session_state["sovereign_hasta"],
+                st.session_state["sovereign_granularidad"],
+            )
+            st.session_state["sovereign_periodo_activo"] = _periodo_activo
+
+            if _periodo_activo:
+                st.caption(
+                    f"📌 **{_periodo_activo['label']}** · "
+                    f"{_periodo_activo['desde']} → {_periodo_activo['hasta']} · "
+                    f"granularidad: *{_periodo_activo['granularidad']}*"
+                )
+    else:
+        st.session_state["sovereign_periodo_activo"] = {}
+
     # Verificar si hay pregunta pendiente (de ejemplo)
     pending = st.session_state.pop("nl2sql_pending_question", None)
 
@@ -2208,6 +2265,27 @@ def _render_chat_interface():
         question = pending
 
     if question:
+        # ── Validador pre-vuelo ───────────────────────────────────────────
+        from utils.sovereign_periods import validate_question
+        _periodo_activo = st.session_state.get("sovereign_periodo_activo", {})
+        _val = validate_question(question, _periodo_activo, _sovereign)
+
+        if _val["nivel"] == "bloqueo":
+            with st.chat_message("assistant", avatar="🤖"):
+                st.error(_val["mensaje"])
+                if _val.get("sugerencia"):
+                    st.info(_val["sugerencia"])
+            st.session_state["nl2sql_messages"].append({
+                "role": "assistant",
+                "content": f"{_val['mensaje']}\n\n{_val.get('sugerencia', '')}",
+                "type": "error",
+            })
+            return
+
+        if _val["nivel"] == "aviso":
+            with st.chat_message("assistant", avatar="🤖"):
+                st.warning(_val["mensaje"])
+
         # Mostrar pregunta del usuario
         with st.chat_message("user", avatar="🧑‍💼"):
             st.markdown(question)
@@ -2225,7 +2303,12 @@ def _render_chat_interface():
                     st.session_state.get("empresa_id")          # seteado en login por usuario
                     or st.session_state.get("nl2sql_empresa_id")  # override manual (superadmin)
                 )
-                result = engine.ask(question, empresa_id=empresa_id)
+                result = engine.ask(
+                    question,
+                    empresa_id=empresa_id,
+                    periodo_soberano=st.session_state.get("sovereign_periodo_activo"),
+                    sovereign_index=st.session_state.get("sovereign_index"),
+                )
 
             # --- ROI Tracking ---
             _track_query_roi(result)

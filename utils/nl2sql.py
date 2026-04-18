@@ -41,6 +41,10 @@ except ImportError:
     OPENAI_AVAILABLE = False
 
 from utils.logger import configurar_logger
+try:
+    from utils.sovereign_periods import build_prompt_context as _sp_build_prompt
+except ImportError:
+    _sp_build_prompt = None
 
 logger = configurar_logger("nl2sql", nivel="INFO")
 
@@ -469,18 +473,19 @@ class NL2SQLEngine:
     # -----------------------------------------------------------------
     # 1. Generación de SQL
     # -----------------------------------------------------------------
-    def generate_sql(self, question: str, empresa_id: Optional[str] = None) -> str:
+    def generate_sql(self, question: str, empresa_id: Optional[str] = None, sovereign_context: str = "") -> str:
         """
         Genera SQL a partir de una pregunta en lenguaje natural.
 
         Args:
             question: Pregunta en español
             empresa_id: UUID de empresa para filtrar (opcional)
+            sovereign_context: Contexto temporal soberano pre-inyectado
 
         Returns:
             Query SQL generado
         """
-        system_prompt = self._build_system_prompt(empresa_id)
+        system_prompt = self._build_system_prompt(empresa_id, sovereign_context=sovereign_context)
 
         try:
             response = self.client.chat.completions.create(
@@ -516,7 +521,7 @@ class NL2SQLEngine:
                 logger.error("Error generando SQL (detalles no imprimibles)")
             raise ValueError(f"Error al generar SQL: {e}")
 
-    def _build_system_prompt(self, empresa_id: Optional[str] = None) -> str:
+    def _build_system_prompt(self, empresa_id: Optional[str] = None, sovereign_context: str = "") -> str:
         """Construye el system prompt para generación de SQL."""
         empresa_filter = ""
         if empresa_id:
@@ -524,7 +529,7 @@ class NL2SQLEngine:
 IMPORTANTE: Filtra SIEMPRE por empresa_id = '{empresa_id}' en las tablas que tengan empresa_id.
 """
 
-        return f"""Eres un experto en SQL PostgreSQL para un sistema de facturación electrónica CFDI de México.
+        return f"""{sovereign_context}Eres un experto en SQL PostgreSQL para un sistema de facturación electrónica CFDI de México.
 
 Tu ÚNICA tarea es generar una consulta SQL SELECT válida a partir de la pregunta del usuario.
 
@@ -1758,7 +1763,9 @@ Si el usuario pidió explícitamente una orientación (ej: "vertical", "horizont
     def ask(
         self,
         question: str,
-        empresa_id: Optional[str] = None
+        empresa_id: Optional[str] = None,
+        periodo_soberano: Optional[dict] = None,
+        sovereign_index: Optional[dict] = None,
     ) -> NL2SQLResult:
         """
         Pipeline completo: pregunta → SQL → ejecución → interpretación.
@@ -1766,6 +1773,8 @@ Si el usuario pidió explícitamente una orientación (ej: "vertical", "horizont
         Args:
             question: Pregunta en lenguaje natural (español)
             empresa_id: UUID de empresa para filtrar (opcional)
+            periodo_soberano: Dict con desde/hasta/hasta_excl/granularidad del slider soberano
+            sovereign_index: Índice completo de períodos del dataset
 
         Returns:
             NL2SQLResult con todos los datos
@@ -1773,9 +1782,17 @@ Si el usuario pidió explícitamente una orientación (ej: "vertical", "horizont
         start_time = time.time()
         result = NL2SQLResult(question=question, sql="")
 
+        # Construir contexto soberano para el prompt
+        _sovereign_ctx = ""
+        if periodo_soberano and _sp_build_prompt:
+            try:
+                _sovereign_ctx = _sp_build_prompt(periodo_soberano, sovereign_index or {})
+            except Exception:
+                _sovereign_ctx = ""
+
         try:
             # Paso 1: Generar SQL
-            sql = self.generate_sql(question, empresa_id)
+            sql = self.generate_sql(question, empresa_id, sovereign_context=_sovereign_ctx)
 
             # Paso 1b: Detectar uso incorrecto de tabla `empresas` para clientes
             # Si se detecta, regenerar con instrucción explícita de corrección
