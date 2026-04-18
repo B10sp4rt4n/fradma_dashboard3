@@ -2196,7 +2196,7 @@ def _render_chat_interface():
 
     # ── Selector de perfil soberano ───────────────────────────────────────────
     try:
-        from utils.sovereign_profiles import PERFILES, PERFIL_DEFAULT, get_perfil
+        from utils.sovereign_profiles import PERFILES, PERFIL_DEFAULT, get_perfil, TIPOS_COMPROBANTE, TIPOS_IMPUESTO, METODOS_PAGO
         _perfiles_disponibles = PERFILES
 
         # Inicializar perfil activo en session_state
@@ -2240,8 +2240,6 @@ def _render_chat_interface():
             # Recuperar ajuste personalizado si existe, o usar el perfil base
             _custom = st.session_state.get("sovereign_profile_custom", None)
             _perfil_edit = _custom if _custom is not None else _perfil_base.copy()
-
-            from utils.sovereign_profiles import TIPOS_COMPROBANTE, TIPOS_IMPUESTO, METODOS_PAGO
 
             _col_a, _col_b, _col_c = st.columns(3)
 
