@@ -186,7 +186,7 @@ Si la pregunta requiere datos fuera de este scope, responde:
 
 def apply_profile_sql_filter(sql: str, perfil: dict) -> str:
     """
-    Inyecta filtros de tipo_de_comprobante y metodo_pago en el SQL generado
+    Inyecta filtros de tipo_comprobante y metodo_pago en el SQL generado
     si el perfil restringe esos campos y el SQL no los incluye ya.
 
     Solo actúa sobre la tabla cfdi_ventas.
@@ -200,13 +200,13 @@ def apply_profile_sql_filter(sql: str, perfil: dict) -> str:
     if "CFDI_VENTAS" not in sql_upper:
         return sql
 
-    # ── Filtro tipo_de_comprobante ──────────────────────────────────────────
-    if tipos and "TIPO_DE_COMPROBANTE" not in sql_upper:
+    # ── Filtro tipo_comprobante ───────────────────────────────────────────
+    if tipos and "TIPO_COMPROBANTE" not in sql_upper:
         if len(tipos) == 1:
-            tipo_clause = f"tipo_de_comprobante = '{tipos[0]}'"
+            tipo_clause = f"tipo_comprobante = '{tipos[0]}'"
         else:
             lista = ", ".join(f"'{t}'" for t in tipos)
-            tipo_clause = f"tipo_de_comprobante IN ({lista})"
+            tipo_clause = f"tipo_comprobante IN ({lista})"
 
         sql = _inject_and_condition(sql, tipo_clause)
 
