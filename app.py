@@ -767,213 +767,6 @@ def validar_columnas_requeridas(df):
 with st.sidebar:
     mostrar_info_usuario()  # Muestra info del usuario + botón logout + panel admin
 
-    # ----------------------------------------------------------------
-    # CONFIGURACIÓN: logo de empresa
-    # ----------------------------------------------------------------
-    with st.expander("⚙️ Configuración", expanded=False):
-        st.markdown("**Logo de empresa**")
-        logo_file = st.file_uploader(
-            "Sube tu logo (PNG, JPG)",
-            type=["png", "jpg", "jpeg", "svg", "webp"],
-            key="logo_uploader",
-            label_visibility="collapsed",
-            help="Se mostrará en el encabezado del dashboard."
-        )
-        if logo_file is not None:
-            st.session_state["company_logo"] = logo_file.getvalue()
-            st.session_state["company_logo_name"] = logo_file.name
-            st.success("Logo actualizado ✓")
-        if st.session_state.get("company_logo"):
-            st.image(st.session_state["company_logo"], use_container_width=True)
-            if st.button("🗑️ Quitar logo", key="btn_remove_logo", use_container_width=True):
-                st.session_state.pop("company_logo", None)
-                st.session_state.pop("company_logo_name", None)
-                st.rerun()
-
-    st.markdown("---")
-    
-    # ----------------------------------------------------------------
-    # CONFIGURACIÓN ROI: Ajustar sueldo de referencia
-    # ----------------------------------------------------------------
-    with st.expander("⚙️ Configuración ROI", expanded=False):
-        st.markdown("**💼 Sueldo de Referencia**")
-        roi_tracker_config = init_roi_tracker(st.session_state)
-        current_salary = roi_tracker_config.get_analyst_salary()
-        
-        new_salary = st.number_input(
-            "Sueldo mensual de analista (MXN)",
-            min_value=5000,
-            max_value=100000,
-            value=int(current_salary),
-            step=1000,
-            help="Ajusta el sueldo de referencia para calcular equivalencias. Típico: $20k-$30k MXN/mes"
-        )
-        
-        if new_salary != current_salary:
-            roi_tracker_config.set_analyst_salary(new_salary)
-            st.success(f"✅ Sueldo actualizado a ${new_salary:,} MXN/mes")
-            st.info("💡 Los cálculos de ROI usarán este nuevo valor de referencia")
-    
-    # ----------------------------------------------------------------
-    # WIDGET ROI: Muestra el valor generado en tiempo real
-    # ----------------------------------------------------------------
-    try:
-        roi_tracker = init_roi_tracker(st.session_state)
-        roi_summary = roi_tracker.get_summary()
-        
-        with st.expander("💰 Tu ROI", expanded=True):
-            # Gauge circular para horas de hoy
-            st.markdown("**⏱️ Hoy**")
-            
-            if PLOTLY_AVAILABLE and roi_summary['today']['hrs'] > 0:
-                max_hours = max(4, roi_summary['today']['hrs'] * 1.5)
-                
-                fig = go.Figure(go.Indicator(
-                    mode="gauge+number",
-                    value=roi_summary['today']['hrs'],
-                    number={'suffix': " hrs", 'font': {'size': 20, 'color': '#2196F3'}},
-                    gauge={
-                        'axis': {'range': [0, max_hours], 'tickwidth': 1, 'tickcolor': "darkgray"},
-                        'bar': {'color': "#2196F3", 'thickness': 0.7},
-                        'bgcolor': "white",
-                        'borderwidth': 2,
-                        'bordercolor': "gray",
-                        'steps': [
-                            {'range': [0, max_hours * 0.33], 'color': '#E3F2FD'},
-                            {'range': [max_hours * 0.33, max_hours * 0.67], 'color': '#BBDEFB'},
-                            {'range': [max_hours * 0.67, max_hours], 'color': '#90CAF9'},
-                        ],
-                        'threshold': {
-                            'line': {'color': "#4CAF50", 'width': 3},
-                            'thickness': 0.75,
-                            'value': roi_summary['today']['hrs']
-                        }
-                    }
-                ))
-                
-                fig.update_layout(
-                    height=180,
-                    margin=dict(l=10, r=10, t=30, b=10),
-                    paper_bgcolor="rgba(0,0,0,0)",
-                    font={'color': "darkgray", 'family': "Arial", 'size': 10},
-                )
-                
-                st.plotly_chart(fig, use_container_width=True, key="roi_gauge_today")
-                
-                # Mostrar días laborales
-                if roi_summary['today']['workdays'] >= 0.1:
-                    st.caption(f"📅 {roi_summary['today']['workdays']:.1f} días laborales (8 hrs = 1 día)")
-            else:
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.metric(
-                        "Horas",
-                        f"{roi_summary['today']['hrs']:.1f}",
-                        delta=None,
-                        help="Tiempo ahorrado hoy"
-                    )
-                with col2:
-                    st.metric(
-                        "Valor",
-                        f"${roi_summary['today']['value']:,.0f}",
-                        delta=None,
-                        help="Valor generado hoy"
-                    )
-            
-            # Métricas del mes con días laborales
-            st.markdown("---")
-            st.markdown("**📅 Este mes**")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric(
-                    "💵 Valor",
-                    f"${roi_summary['month']['value']:,.0f}",
-                    help="Valor total generado este mes"
-                )
-            with col2:
-                st.metric(
-                    "⏱️ Horas",
-                    f"{roi_summary['month']['hrs']:.1f}",
-                    help="Horas ahorradas este mes"
-                )
-            with col3:
-                st.metric(
-                    "📅 Días",
-                    f"{roi_summary['month']['workdays']:.1f}",
-                    help="Días laborales ahorrados"
-                )
-            
-            # Justificación de inversión - SIEMPRE visible si hay horas
-            if roi_summary['month']['hrs'] > 0:
-                analyst_equiv = roi_summary['month']['analyst_equiv']
-                
-                st.markdown("---")
-                st.markdown("#### 💼 Justificación de Inversión")
-                
-                # Mostrar equivalencia básica
-                st.info(
-                    f"📊 **Este mes has ahorrado:**\n\n"
-                    f"⏱️ {roi_summary['month']['hrs']:.1f} horas = {roi_summary['month']['workdays']:.2f} días laborales\n\n"
-                    f"👤 Equivalente a **{analyst_equiv['months_analyst']:.3f} mes(es)** de un analista\n\n"
-                    f"💰 Valor: **${roi_summary['month']['value']:,.0f}** MXN"
-                )
-                
-                # Proyección anual (si hay suficientes datos)
-                if roi_summary['month']['workdays'] >= 0.5:
-                    st.success(
-                        f"🎯 **Proyección anual:**\n\n"
-                        f"📅 ~{roi_summary['month']['workdays'] * 12:.1f} días laborales/año\n\n"
-                        f"💵 Ahorro estimado: **${analyst_equiv['monthly_savings'] * 12:,.0f}** MXN/año\n\n"
-                        f"✨ ROI de la plataforma claramente justificado"
-                    )
-                
-                # Referencia de sueldo
-                st.caption(f"📌 Referencia: Sueldo promedio de analista ${analyst_equiv['analyst_salary']:,} MXN/mes")
-            
-            # Métricas del año
-            st.markdown("---")
-            st.markdown("**📊 Este año**")
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric(
-                    "ROI Total",
-                    f"${roi_summary['year']['value']:,.0f}",
-                    help="Valor total generado este año"
-                )
-            with col2:
-                st.metric(
-                    "Días Ahorrados",
-                    f"{roi_summary['year']['workdays']:.1f}",
-                    help="Días laborales ahorrados este año"
-                )
-            
-            # Nota de actividad
-            if roi_summary['today']['actions'] > 0:
-                # Calcular consultas únicas del data assistant
-                all_actions = roi_tracker.session_state.roi_data.get("actions", [])
-                da_queries_today = len([
-                    a for a in all_actions 
-                    if a.get("module") == "data_assistant" 
-                    and a.get("action") in ["nl2sql_query", "nl2sql_complex_query"]
-                    and a.get("timestamp").date() == datetime.now().date()
-                ])
-                
-                if da_queries_today > 0:
-                    st.success(
-                        f"✨ **{da_queries_today} consulta(s)** realizadas hoy\n\n"
-                        f"Cada consulta incluye: SQL + interpretación IA + gráfica automática"
-                    )
-                else:
-                    st.success(f"✨ {roi_summary['today']['actions']} acción(es) completada(s) hoy")
-            else:
-                st.info("💡 Completa acciones para ver tu ROI crecer")
-    except Exception as e:
-        # Si hay error, no mostrar widget (modo silencioso)
-        logger.warning(f"Error en widget ROI: {e}")
-        pass
-    
-    st.markdown("---")
-
 st.sidebar.markdown("### 📂 Carga de Datos")
 
 modo_debug = st.sidebar.checkbox(
@@ -1631,8 +1424,220 @@ else:
     # Fallback: radio simple si no está instalado option_menu
     menu = st.sidebar.radio("Selecciona una vista:", _todas_opciones)
 
-# =====================================================================
-# FILTROS AVANZADOS — contextuales por vista (SPRINT 4)
+
+# ─── Configuración y ajustes al fondo del sidebar ───────────────────────────
+with st.sidebar:
+    st.markdown("---")
+
+    # Filtros de datos (se poblará más abajo, luego de definir _filtros_vista)
+    # ─ placeholder ─
+
+    with st.expander("⚙️ Configuración", expanded=False):
+        st.markdown("**🖼️ Logo de empresa**")
+        logo_file = st.file_uploader(
+            "Sube tu logo (PNG, JPG)",
+            type=["png", "jpg", "jpeg", "svg", "webp"],
+            key="logo_uploader",
+            label_visibility="collapsed",
+            help="Se mostrará en el encabezado del dashboard."
+        )
+        if logo_file is not None:
+            st.session_state["company_logo"] = logo_file.getvalue()
+            st.session_state["company_logo_name"] = logo_file.name
+            st.success("Logo actualizado ✓")
+        if st.session_state.get("company_logo"):
+            st.image(st.session_state["company_logo"], use_container_width=True)
+            if st.button("🗑️ Quitar logo", key="btn_remove_logo", use_container_width=True):
+                st.session_state.pop("company_logo", None)
+                st.session_state.pop("company_logo_name", None)
+                st.rerun()
+
+with st.sidebar:
+    # ----------------------------------------------------------------
+    # CONFIGURACIÓN ROI: Ajustar sueldo de referencia
+    # ----------------------------------------------------------------
+    with st.expander("⚙️ Ajustes ROI", expanded=False):
+        st.markdown("**💼 Sueldo de Referencia**")
+        roi_tracker_config = init_roi_tracker(st.session_state)
+        current_salary = roi_tracker_config.get_analyst_salary()
+        
+        new_salary = st.number_input(
+            "Sueldo mensual de analista (MXN)",
+            min_value=5000,
+            max_value=100000,
+            value=int(current_salary),
+            step=1000,
+            help="Ajusta el sueldo de referencia para calcular equivalencias. Típico: $20k-$30k MXN/mes"
+        )
+        
+        if new_salary != current_salary:
+            roi_tracker_config.set_analyst_salary(new_salary)
+            st.success(f"✅ Sueldo actualizado a ${new_salary:,} MXN/mes")
+            st.info("💡 Los cálculos de ROI usarán este nuevo valor de referencia")
+
+with st.sidebar:
+    # ----------------------------------------------------------------
+    # WIDGET ROI: Muestra el valor generado en tiempo real
+    # ----------------------------------------------------------------
+    try:
+        roi_tracker = init_roi_tracker(st.session_state)
+        roi_summary = roi_tracker.get_summary()
+    
+        with st.expander("💰 Tu ROI", expanded=True):
+            # Gauge circular para horas de hoy
+            st.markdown("**⏱️ Hoy**")
+        
+            if PLOTLY_AVAILABLE and roi_summary['today']['hrs'] > 0:
+                max_hours = max(4, roi_summary['today']['hrs'] * 1.5)
+            
+                fig = go.Figure(go.Indicator(
+                    mode="gauge+number",
+                    value=roi_summary['today']['hrs'],
+                    number={'suffix': " hrs", 'font': {'size': 20, 'color': '#2196F3'}},
+                    gauge={
+                        'axis': {'range': [0, max_hours], 'tickwidth': 1, 'tickcolor': "darkgray"},
+                        'bar': {'color': "#2196F3", 'thickness': 0.7},
+                        'bgcolor': "white",
+                        'borderwidth': 2,
+                        'bordercolor': "gray",
+                        'steps': [
+                            {'range': [0, max_hours * 0.33], 'color': '#E3F2FD'},
+                            {'range': [max_hours * 0.33, max_hours * 0.67], 'color': '#BBDEFB'},
+                            {'range': [max_hours * 0.67, max_hours], 'color': '#90CAF9'},
+                        ],
+                        'threshold': {
+                            'line': {'color': "#4CAF50", 'width': 3},
+                            'thickness': 0.75,
+                            'value': roi_summary['today']['hrs']
+                        }
+                    }
+                ))
+            
+                fig.update_layout(
+                    height=180,
+                    margin=dict(l=10, r=10, t=30, b=10),
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    font={'color': "darkgray", 'family': "Arial", 'size': 10},
+                )
+            
+                st.plotly_chart(fig, use_container_width=True, key="roi_gauge_today")
+            
+                # Mostrar días laborales
+                if roi_summary['today']['workdays'] >= 0.1:
+                    st.caption(f"📅 {roi_summary['today']['workdays']:.1f} días laborales (8 hrs = 1 día)")
+            else:
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric(
+                        "Horas",
+                        f"{roi_summary['today']['hrs']:.1f}",
+                        delta=None,
+                        help="Tiempo ahorrado hoy"
+                    )
+                with col2:
+                    st.metric(
+                        "Valor",
+                        f"${roi_summary['today']['value']:,.0f}",
+                        delta=None,
+                        help="Valor generado hoy"
+                    )
+        
+            # Métricas del mes con días laborales
+            st.markdown("---")
+            st.markdown("**📅 Este mes**")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric(
+                    "💵 Valor",
+                    f"${roi_summary['month']['value']:,.0f}",
+                    help="Valor total generado este mes"
+                )
+            with col2:
+                st.metric(
+                    "⏱️ Horas",
+                    f"{roi_summary['month']['hrs']:.1f}",
+                    help="Horas ahorradas este mes"
+                )
+            with col3:
+                st.metric(
+                    "📅 Días",
+                    f"{roi_summary['month']['workdays']:.1f}",
+                    help="Días laborales ahorrados"
+                )
+        
+            # Justificación de inversión - SIEMPRE visible si hay horas
+            if roi_summary['month']['hrs'] > 0:
+                analyst_equiv = roi_summary['month']['analyst_equiv']
+            
+                st.markdown("---")
+                st.markdown("#### 💼 Justificación de Inversión")
+            
+                # Mostrar equivalencia básica
+                st.info(
+                    f"📊 **Este mes has ahorrado:**\n\n"
+                    f"⏱️ {roi_summary['month']['hrs']:.1f} horas = {roi_summary['month']['workdays']:.2f} días laborales\n\n"
+                    f"👤 Equivalente a **{analyst_equiv['months_analyst']:.3f} mes(es)** de un analista\n\n"
+                    f"💰 Valor: **${roi_summary['month']['value']:,.0f}** MXN"
+                )
+            
+                # Proyección anual (si hay suficientes datos)
+                if roi_summary['month']['workdays'] >= 0.5:
+                    st.success(
+                        f"🎯 **Proyección anual:**\n\n"
+                        f"📅 ~{roi_summary['month']['workdays'] * 12:.1f} días laborales/año\n\n"
+                        f"💵 Ahorro estimado: **${analyst_equiv['monthly_savings'] * 12:,.0f}** MXN/año\n\n"
+                        f"✨ ROI de la plataforma claramente justificado"
+                    )
+            
+                # Referencia de sueldo
+                st.caption(f"📌 Referencia: Sueldo promedio de analista ${analyst_equiv['analyst_salary']:,} MXN/mes")
+        
+            # Métricas del año
+            st.markdown("---")
+            st.markdown("**📊 Este año**")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric(
+                    "ROI Total",
+                    f"${roi_summary['year']['value']:,.0f}",
+                    help="Valor total generado este año"
+                )
+            with col2:
+                st.metric(
+                    "Días Ahorrados",
+                    f"{roi_summary['year']['workdays']:.1f}",
+                    help="Días laborales ahorrados este año"
+                )
+        
+            # Nota de actividad
+            if roi_summary['today']['actions'] > 0:
+                # Calcular consultas únicas del data assistant
+                all_actions = roi_tracker.session_state.roi_data.get("actions", [])
+                da_queries_today = len([
+                    a for a in all_actions 
+                    if a.get("module") == "data_assistant" 
+                    and a.get("action") in ["nl2sql_query", "nl2sql_complex_query"]
+                    and a.get("timestamp").date() == datetime.now().date()
+                ])
+            
+                if da_queries_today > 0:
+                    st.success(
+                        f"✨ **{da_queries_today} consulta(s)** realizadas hoy\n\n"
+                        f"Cada consulta incluye: SQL + interpretación IA + gráfica automática"
+                    )
+                else:
+                    st.success(f"✨ {roi_summary['today']['actions']} acción(es) completada(s) hoy")
+            else:
+                st.info("💡 Completa acciones para ver tu ROI crecer")
+    except Exception as e:
+        # Si hay error, no mostrar widget (modo silencioso)
+        logger.warning(f"Error en widget ROI: {e}")
+        pass
+
+
+
+    # =====================================================================
+    # FILTROS AVANZADOS — contextuales por vista (SPRINT 4)
 # =====================================================================
 
 _FILTROS_POR_VISTA = {
