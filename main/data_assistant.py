@@ -2237,9 +2237,18 @@ def _render_chat_interface():
             _pkey_activo = st.session_state["sovereign_profile_key"]
             _perfil_base = get_perfil(_pkey_activo)
 
-            # Recuperar ajuste personalizado si existe, o usar el perfil base
-            _custom = st.session_state.get("sovereign_profile_custom", None)
-            _perfil_edit = _custom if _custom is not None else _perfil_base.copy()
+            # Inicializar valores de checkboxes en session_state si no existen (primera carga)
+            for _tc in TIPOS_COMPROBANTE:
+                if f"sc_tipo_{_tc}" not in st.session_state:
+                    st.session_state[f"sc_tipo_{_tc}"] = _tc in _perfil_base.get("tipos_comprobante", [])
+            for _ik in TIPOS_IMPUESTO:
+                if f"sc_imp_{_ik}" not in st.session_state:
+                    st.session_state[f"sc_imp_{_ik}"] = _ik in _perfil_base.get("impuestos", [])
+            for _mk in METODOS_PAGO:
+                if f"sc_mp_{_mk}" not in st.session_state:
+                    st.session_state[f"sc_mp_{_mk}"] = _mk in _perfil_base.get("metodos_pago", [])
+            if "sc_multi_moneda" not in st.session_state:
+                st.session_state["sc_multi_moneda"] = _perfil_base.get("multi_moneda", False)
 
             _col_a, _col_b, _col_c = st.columns(3)
 
@@ -2248,31 +2257,27 @@ def _render_chat_interface():
                 _tipos_sel = []
                 for _tc, _tc_label in TIPOS_COMPROBANTE.items():
                     if _tc == "T":
-                        continue  # Traslados raramente útil en análisis
-                    _checked = _tc in _perfil_edit.get("tipos_comprobante", [])
-                    if st.checkbox(_tc_label, value=_checked, key=f"sc_tipo_{_tc}"):
+                        continue
+                    if st.checkbox(_tc_label, key=f"sc_tipo_{_tc}"):
                         _tipos_sel.append(_tc)
 
             with _col_b:
                 st.caption("**Impuestos**")
                 _imp_sel = []
                 for _ik, _il in TIPOS_IMPUESTO.items():
-                    _checked = _ik in _perfil_edit.get("impuestos", [])
-                    if st.checkbox(_il, value=_checked, key=f"sc_imp_{_ik}"):
+                    if st.checkbox(_il, key=f"sc_imp_{_ik}"):
                         _imp_sel.append(_ik)
 
             with _col_c:
                 st.caption("**Método de pago**")
                 _mp_sel = []
                 for _mk, _ml in METODOS_PAGO.items():
-                    _checked = _mk in _perfil_edit.get("metodos_pago", [])
-                    if st.checkbox(_ml, value=_checked, key=f"sc_mp_{_mk}"):
+                    if st.checkbox(_ml, key=f"sc_mp_{_mk}"):
                         _mp_sel.append(_mk)
 
                 st.caption("**Moneda**")
                 _multi_moneda = st.checkbox(
                     "Multi-moneda (USD/EUR → MXN)",
-                    value=_perfil_edit.get("multi_moneda", False),
                     key="sc_multi_moneda",
                 )
 
