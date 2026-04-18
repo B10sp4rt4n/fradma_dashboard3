@@ -1016,6 +1016,8 @@ SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quart
         sql = re.sub(r'WHERE\s+AND\b', 'WHERE', sql, flags=re.IGNORECASE)
         sql = re.sub(r'WHERE\s*;', ';', sql, flags=re.IGNORECASE)
         sql = re.sub(r'\bAND\s+AND\b', 'AND', sql, flags=re.IGNORECASE)
+        # AND colgante antes de GROUP/ORDER/LIMIT/HAVING
+        sql = re.sub(r'\s+AND\s+(GROUP|ORDER|LIMIT|HAVING)\b', r' \1', sql, flags=re.IGNORECASE)
 
         sql_upper = sql.upper()
         if 'WHERE' in sql_upper:
@@ -1076,9 +1078,10 @@ SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quart
                     '', sql, flags=re.IGNORECASE
                 )
             # Limpiar WHERE vacío o malformado
-            sql = re.sub(r'WHERE\s+(GROUP|ORDER|LIMIT)', r'\1', sql, flags=re.IGNORECASE)
+            sql = re.sub(r'WHERE\s+(GROUP|ORDER|LIMIT|HAVING)', r'\1', sql, flags=re.IGNORECASE)
             sql = re.sub(r'WHERE\s+AND\b', 'WHERE', sql, flags=re.IGNORECASE)
             sql = re.sub(r'WHERE\s*;', ';', sql, flags=re.IGNORECASE)
+            sql = re.sub(r'\s+AND\s+(GROUP|ORDER|LIMIT|HAVING)\b', r' \1', sql, flags=re.IGNORECASE)
 
             sql_upper = sql.upper()
             if 'WHERE' in sql_upper:
