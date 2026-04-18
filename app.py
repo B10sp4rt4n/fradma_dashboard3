@@ -1241,18 +1241,6 @@ with st.sidebar:
         logger.warning(f"Error en widget ROI: {e}")
         pass
 
-    # Panel de administración — al fondo del sidebar
-    _user_for_admin = get_current_user()
-    if _user_for_admin and _user_for_admin.can_manage_users():
-        st.markdown("---")
-        with st.expander("⚙️ Administración", expanded=False):
-            if st.button("👥 Usuarios", use_container_width=True, key="admin_nav_usuarios"):
-                st.session_state["_menu_navegar_a"] = "⚙️ Gestión de Usuarios"
-                st.rerun()
-            if st.button("🔧 Configuración", use_container_width=True, key="admin_nav_config"):
-                st.session_state["_menu_navegar_a"] = "🔧 Configuración"
-                st.rerun()
-
     # IA Premium — al fondo
     st.markdown("---")
     _ia_label = "🤖 IA Premium ✅" if st.session_state.get("ia_premium_activada") else "🤖 Análisis Premium con IA"
@@ -1404,6 +1392,15 @@ with st.sidebar:
 
 
     st.markdown("---")
+    _user_for_admin = get_current_user()
+    if _user_for_admin and _user_for_admin.can_manage_users():
+        with st.expander("⚙️ Administración", expanded=False):
+            if st.button("👥 Usuarios", use_container_width=True, key="admin_nav_usuarios"):
+                st.session_state["_menu_navegar_a"] = "⚙️ Gestión de Usuarios"
+                st.rerun()
+            if st.button("🔧 Configuración", use_container_width=True, key="admin_nav_config"):
+                st.session_state["_menu_navegar_a"] = "🔧 Configuración"
+                st.rerun()
     with st.expander("🎨 Personalización CIMA", expanded=False):
         st.markdown("**🖼️ Logo de empresa**")
         logo_file = st.file_uploader(
