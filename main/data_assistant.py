@@ -2635,7 +2635,11 @@ def _render_history():
                     f"📊 {result.chart_suggestion}"
                 )
             else:
-                st.error(result.error)
+                # Aviso de perfil soberano → naranja, no rojo
+                if result.error and result.error.startswith("🎯"):
+                    st.warning(result.error)
+                else:
+                    st.error(result.error)
                 if result.sql:
                     st.code(result.sql, language="sql")
 

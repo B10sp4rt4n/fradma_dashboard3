@@ -572,7 +572,24 @@ class NL2SQLEngine:
             # Limpiar el SQL (remover markdown code blocks si existen)
             sql = self._clean_sql(raw_sql)
 
-            # ── Filtro de fecha: soberano tiene prioridad absoluta ──────────
+            # ── Detectar respuesta de rechazo por perfil soberano ──────────
+            # El modelo puede anteponer el mensaje de fuera-de-perfil y luego
+            # generar SQL de todas formas. Detectamos esa frase y la propagamos
+            # como ValueError controlado para que ask() la muestre como aviso,
+            # no como error de seguridad.
+            _out_of_profile_markers = [
+                "fuera del perfil activo",
+                "fuera del scope",
+                "está fuera del perfil",
+                "out of scope",
+            ]
+            _sql_lower = sql.lower()
+            if any(m in _sql_lower for m in _out_of_profile_markers):
+                _active_profile = getattr(self, "_active_sovereign_profile", None)
+                _label = _active_profile.get("label", "activo") if _active_profile else "activo"
+                raise ValueError(f"PERFIL_SCOPE: Esa consulta está fuera del perfil activo ({_label}).")
+
+
             # _apply_sovereign_filter actúa como red de seguridad aunque el modelo
             # ya debería haber usado el rango correcto por la instrucción de arriba
             if periodo_soberano:
@@ -2003,9 +2020,21 @@ Si el usuario pidió explícitamente una orientación (ej: "vertical", "horizont
 
         try:
             # Paso 1: Generar SQL
-            sql = self.generate_sql(question, empresa_id,
-                                    sovereign_context=_sovereign_ctx,
-                                    periodo_soberano=periodo_soberano or None)
+            try:
+                sql = self.generate_sql(question, empresa_id,
+                                        sovereign_context=_sovereign_ctx,
+                                        periodo_soberano=periodo_soberano or None)
+            except ValueError as ve:
+                _ve_str = str(ve)
+                if _ve_str.startswith("PERFIL_SCOPE:"):
+                    # El modelo reconoció que la pregunta está fuera del perfil activo
+                    _msg = _ve_str[len("PERFIL_SCOPE:"):].strip()
+                    result.interpretation = _msg
+                    result.error = f"🎯 {_msg}"
+                    result.execution_time = time.time() - start_time
+                    self.history.append(result)
+                    return result
+                raise
 
             # Paso 1b: Detectar uso incorrecto de tabla `empresas` para clientes
             # Si se detecta, regenerar con instrucción explícita de corrección
