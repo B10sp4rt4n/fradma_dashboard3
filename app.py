@@ -1722,52 +1722,9 @@ _desc_vista    = _cfg_vista.get("descripcion", "")
 _ayuda_vista   = _cfg_vista.get("ayuda", {})
 
 # ── Filtros en sidebar (expander colapsable al final del menú) ────────────
-if "df" in st.session_state and _filtros_vista:
-    _df_orig = st.session_state.get("df_original_pre_filtro", st.session_state["df"].copy())
-    st.session_state["df_original_pre_filtro"] = _df_orig
-    _df_filt = _df_orig.copy()
-
-    with st.sidebar:
-        st.markdown("---")
-        with st.expander("🔍 Filtros", expanded=False):
-            if _desc_vista:
-                st.caption(f"ℹ️ {_desc_vista}")
-
-            if "fecha" in _filtros_vista and "fecha" in _df_filt.columns:
-                st.markdown("**📅 Fecha**")
-                if _ayuda_vista.get("fecha"):
-                    st.caption(_ayuda_vista["fecha"])
-                _df_filt = aplicar_filtro_fechas(_df_filt, "fecha")
-                st.markdown("---")
-
-            if "cliente" in _filtros_vista and "cliente" in _df_filt.columns:
-                st.markdown("**👤 Cliente**")
-                if _ayuda_vista.get("cliente"):
-                    st.caption(_ayuda_vista["cliente"])
-                _df_filt = aplicar_filtro_cliente(_df_filt, "cliente")
-                st.markdown("---")
-
-            if "monto" in _filtros_vista:
-                _col_v = st.session_state.get("columna_ventas")
-                if _col_v and _col_v in _df_filt.columns:
-                    st.markdown("**💲 Monto**")
-                    if _ayuda_vista.get("monto"):
-                        st.caption(_ayuda_vista["monto"])
-                    _df_filt = aplicar_filtro_monto(_df_filt, _col_v)
-                    st.markdown("---")
-
-            if st.button("🗑️ Limpiar filtros", use_container_width=True, key="sidebar_limpiar_filtros"):
-                for _k in list(st.session_state.keys()):
-                    if _k.startswith("filtro_") or _k.startswith("inline_filtro_"):
-                        del st.session_state[_k]
-                st.rerun()
-
-            if len(_df_filt) < len(_df_orig):
-                pct = len(_df_filt) / len(_df_orig) * 100
-                st.success(f"✅ {len(_df_filt):,} / {len(_df_orig):,} ({pct:.0f}%)")
-
-    st.session_state["df"] = _df_filt
-
+if "df" not in st.session_state or not _filtros_vista:
+    if "df" in st.session_state:
+        st.session_state["df_original_pre_filtro"] = st.session_state["df"].copy()
 elif "df" in st.session_state:
     st.session_state["df_original_pre_filtro"] = st.session_state["df"].copy()
 
@@ -1915,6 +1872,62 @@ with st.sidebar.expander("ℹ️ Acerca de esta vista"):
         - Configuración de reportes
         - Ajustes generales
         """)
+
+# ── Filtros de datos — al fondo del sidebar ─────────────────────────
+if "df" in st.session_state and _filtros_vista:
+    _df_orig = st.session_state.get("df_original_pre_filtro", st.session_state["df"].copy())
+    st.session_state["df_original_pre_filtro"] = _df_orig
+    _df_filt = _df_orig.copy()
+
+    _n_activos = 0
+    if st.session_state.get("filtro_fecha_inicio") or st.session_state.get("filtro_fecha_fin"):
+        _n_activos += 1
+    if st.session_state.get("filtro_cliente_select"):
+        _n_activos += 1
+    if st.session_state.get("filtro_monto_tipo") and st.session_state.get("filtro_monto_tipo") not in ["Todos los montos", None]:
+        _n_activos += 1
+    if _n_activos:
+        _label_filtros = f"🔍 Filtrar datos · {_n_activos} activo{'s' if _n_activos > 1 else ''}"
+    else:
+        _label_filtros = "🔍 Filtrar datos"
+
+    with st.sidebar:
+        with st.expander(_label_filtros, expanded=False):
+            if _desc_vista:
+                st.caption(f"ℹ️ {_desc_vista}")
+            st.markdown("")
+
+            if "fecha" in _filtros_vista and "fecha" in _df_filt.columns:
+                st.markdown("**📅 Rango de fechas**")
+                st.caption(_ayuda_vista.get("fecha", "Restringe el período analizado."))
+                _df_filt = aplicar_filtro_fechas(_df_filt, "fecha")
+                st.markdown("---")
+
+            if "cliente" in _filtros_vista and "cliente" in _df_filt.columns:
+                st.markdown("**👤 Filtrar por cliente**")
+                st.caption(_ayuda_vista.get("cliente", "Muestra solo datos del cliente seleccionado."))
+                _df_filt = aplicar_filtro_cliente(_df_filt, "cliente")
+                st.markdown("---")
+
+            if "monto" in _filtros_vista:
+                _col_v = st.session_state.get("columna_ventas")
+                if _col_v and _col_v in _df_filt.columns:
+                    st.markdown("**💲 Filtrar por monto de venta**")
+                    st.caption(_ayuda_vista.get("monto", "Incluye solo operaciones dentro del rango de monto."))
+                    _df_filt = aplicar_filtro_monto(_df_filt, _col_v)
+                    st.markdown("---")
+
+            if st.button("🗑️ Quitar todos los filtros", use_container_width=True, key="sidebar_limpiar_filtros"):
+                for _k in list(st.session_state.keys()):
+                    if _k.startswith("filtro_") or _k.startswith("inline_filtro_"):
+                        del st.session_state[_k]
+                st.rerun()
+
+            if len(_df_filt) < len(_df_orig):
+                pct = len(_df_filt) / len(_df_orig) * 100
+                st.success(f"✅ Mostrando {len(_df_filt):,} de {len(_df_orig):,} registros ({pct:.0f}%)")
+
+    st.session_state["df"] = _df_filt
 
 # =====================================================================
 # WIDGET ROI FLOTANTE — siempre visible al hacer scroll
