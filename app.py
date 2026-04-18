@@ -11,6 +11,12 @@ try:
 except ImportError:
     PLOTLY_AVAILABLE = False
 
+try:
+    from streamlit_option_menu import option_menu
+    OPTION_MENU_AVAILABLE = True
+except ImportError:
+    OPTION_MENU_AVAILABLE = False
+
 # Cargar variables de entorno desde .env (si existe)
 load_dotenv()
 
@@ -1605,42 +1611,90 @@ else:
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🧭 Navegación")
 
-# Opciones de menú base
-opciones_menu = [
-    "🎯 Reporte Ejecutivo",
-    "📊 Reporte Consolidado",
-    "📈 KPIs Generales",
-    "📊 Comparativo Año vs Año",
-    "📉 YTD por Línea de Negocio",
-    "🔷 YTD por Producto",
-    "🔥 Heatmap Ventas",
-    "💳 KPI Cartera CxC",
-    "👥 Vendedores + CxC",
-    "🧰 Herramientas Financieras",
-    "📂 Cargar mis facturas",
-    "📋 Universo de CFDIs",
-    "🧾 Desglose Fiscal",
-    "📍 Mapa de Clientes",
-    "📚 Knowledge Base"
-]
-
-# Si el usuario puede usar IA, agregar el asistente
 user = get_current_user()
+
+# ── Construir grupos y opciones dinámicamente ──────────────────────────────
+_grupos = {
+    "Resumen": {
+        "icon": "speedometer2",
+        "items": [
+            ("🎯 Reporte Ejecutivo",     "file-earmark-bar-chart"),
+            ("📊 Reporte Consolidado",   "grid-1x2"),
+        ]
+    },
+    "Ventas": {
+        "icon": "graph-up-arrow",
+        "items": [
+            ("📈 KPIs Generales",            "bar-chart-line"),
+            ("📊 Comparativo Año vs Año",    "arrow-left-right"),
+            ("📉 YTD por Línea de Negocio",  "diagram-3"),
+            ("🔷 YTD por Producto",          "box-seam"),
+            ("🔥 Heatmap Ventas",            "fire"),
+        ]
+    },
+    "Cartera": {
+        "icon": "credit-card",
+        "items": [
+            ("💳 KPI Cartera CxC",   "wallet2"),
+            ("👥 Vendedores + CxC",  "people"),
+        ]
+    },
+    "CFDI y Fiscal": {
+        "icon": "receipt",
+        "items": [
+            ("📂 Cargar mis facturas", "cloud-upload"),
+            ("📋 Universo de CFDIs",   "collection"),
+            ("🧾 Desglose Fiscal",     "journal-text"),
+        ]
+    },
+    "Herramientas": {
+        "icon": "tools",
+        "items": [
+            ("🧰 Herramientas Financieras", "calculator"),
+            ("📍 Mapa de Clientes",         "geo-alt"),
+            ("📚 Knowledge Base",           "book"),
+        ]
+    },
+}
+
+# Agregar IA si el usuario tiene acceso
 if user and user.can_use_ai():
-    opciones_menu.append("🤖 Asistente de Datos")
+    _grupos["Herramientas"]["items"].append(("🤖 Asistente de Datos", "robot"))
 
-# Si el usuario es admin, agregar opciones de administración
+# Agregar Admin si aplica
 if user and user.can_manage_users():
-    opciones_menu.extend([
-        "⚙️ Gestión de Usuarios",
-        "🔧 Configuración"
-    ])
+    _grupos["Admin"] = {
+        "icon": "shield-lock",
+        "items": [
+            ("⚙️ Gestión de Usuarios", "person-gear"),
+            ("🔧 Configuración",       "sliders"),
+        ]
+    }
 
-menu = st.sidebar.radio(
-    "Selecciona una vista:",
-    opciones_menu,
-    help="Selecciona el módulo de análisis que deseas visualizar"
-)
+# ── Ordenar grupo de opciones en una lista plana (para compatibilidad) ──────
+_todas_opciones = [item for g in _grupos.values() for item, _ in g["items"]]
+_todos_iconos   = [icon for g in _grupos.values() for _, icon in g["items"]]
+
+if OPTION_MENU_AVAILABLE:
+    with st.sidebar:
+        menu = option_menu(
+            menu_title=None,
+            options=_todas_opciones,
+            icons=_todos_iconos,
+            menu_icon="cast",
+            default_index=0,
+            styles={
+                "container":        {"padding": "0 !important", "background-color": "transparent"},
+                "icon":             {"font-size": "14px"},
+                "nav-link":         {"font-size": "13px", "text-align": "left", "margin": "1px 0",
+                                     "padding": "6px 10px", "--hover-color": "#f0f4ff"},
+                "nav-link-selected":{"background-color": "#1F4E79", "color": "white",
+                                     "font-weight": "600"},
+            },
+        )
+else:
+    # Fallback: radio simple si no está instalado option_menu
+    menu = st.sidebar.radio("Selecciona una vista:", _todas_opciones)
 
 # Información contextual según el menú seleccionado
 st.sidebar.markdown("---")
