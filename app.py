@@ -1403,15 +1403,6 @@ with st.sidebar:
                     st.warning("⚠️ Selecciona al menos una sección")
 
 
-    # Toggle widgets flotantes — al fondo de todo
-    st.markdown("---")
-    st.toggle(
-        "📌 Widgets flotantes",
-        value=st.session_state.get("mostrar_widgets_flotantes", True),
-        key="mostrar_widgets_flotantes",
-        help="Muestra u oculta los indicadores fijos de ROI y filtros en la esquina de la pantalla",
-    )
-
     st.markdown("---")
     with st.expander("🎨 Personalización CIMA", expanded=False):
         st.markdown("**🖼️ Logo de empresa**")
@@ -1449,6 +1440,14 @@ with st.sidebar:
             roi_tracker_config.set_analyst_salary(new_salary)
             st.success(f"✅ Sueldo actualizado a ${new_salary:,} MXN/mes")
             st.info("💡 Los cálculos de ROI usarán este nuevo valor de referencia")
+
+    st.markdown("---")
+    st.toggle(
+        "📌 Widgets flotantes",
+        value=st.session_state.get("mostrar_widgets_flotantes", True),
+        key="mostrar_widgets_flotantes",
+        help="Muestra u oculta los indicadores fijos de ROI y filtros en la esquina de la pantalla",
+    )
 
     # =====================================================================
     # FILTROS AVANZADOS — contextuales por vista (SPRINT 4)
