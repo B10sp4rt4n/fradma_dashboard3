@@ -1750,7 +1750,7 @@ if "df" in st.session_state and _filtros_vista:
                 _fi_act = st.session_state.get("filtro_fecha_inicio")
                 _ff_act = st.session_state.get("filtro_fecha_fin")
                 _fecha_label = "📅 Fecha" + (" ●" if _fi_act or _ff_act else "")
-                with st.expander(_fecha_label, expanded=False):
+                with st.expander(_fecha_label, expanded=True):
                     if _ayuda_vista.get("fecha"):
                         st.caption(_ayuda_vista["fecha"])
                     if "fecha" in df_filtrado.columns:
@@ -1761,7 +1761,7 @@ if "df" in st.session_state and _filtros_vista:
             if "cliente" in _filtros_vista:
                 _cli_act = st.session_state.get("filtro_cliente_select", [])
                 _cli_label = "👤 Cliente" + (f" ● ({len(_cli_act)})" if _cli_act else "")
-                with st.expander(_cli_label, expanded=False):
+                with st.expander(_cli_label, expanded=True):
                     if _ayuda_vista.get("cliente"):
                         st.caption(_ayuda_vista["cliente"])
                     if "cliente" in df_filtrado.columns:
@@ -1773,7 +1773,7 @@ if "df" in st.session_state and _filtros_vista:
                 _monto_act = st.session_state.get("filtro_monto_tipo")
                 _monto_label = "💲 Monto" + (" ●" if _monto_act and _monto_act != "Sin filtro de monto" else "")
                 columna_ventas = st.session_state.get("columna_ventas", None)
-                with st.expander(_monto_label, expanded=False):
+                with st.expander(_monto_label, expanded=True):
                     if _ayuda_vista.get("monto"):
                         st.caption(_ayuda_vista["monto"])
                     if columna_ventas and columna_ventas in df_filtrado.columns:
