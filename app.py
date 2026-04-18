@@ -1153,49 +1153,6 @@ with st.sidebar:
     # Filtros de datos (se poblará más abajo, luego de definir _filtros_vista)
     # ─ placeholder ─
 
-    with st.expander("🎨 Personalización CIMA", expanded=False):
-        st.markdown("**🖼️ Logo de empresa**")
-        logo_file = st.file_uploader(
-            "Sube tu logo (PNG, JPG)",
-            type=["png", "jpg", "jpeg", "svg", "webp"],
-            key="logo_uploader",
-            label_visibility="collapsed",
-            help="Se mostrará en el encabezado del dashboard."
-        )
-        if logo_file is not None:
-            st.session_state["company_logo"] = logo_file.getvalue()
-            st.session_state["company_logo_name"] = logo_file.name
-            st.success("Logo actualizado ✓")
-        if st.session_state.get("company_logo"):
-            st.image(st.session_state["company_logo"], use_container_width=True)
-            if st.button("🗑️ Quitar logo", key="btn_remove_logo", use_container_width=True):
-                st.session_state.pop("company_logo", None)
-                st.session_state.pop("company_logo_name", None)
-                st.rerun()
-
-with st.sidebar:
-    # ----------------------------------------------------------------
-    # CONFIGURACIÓN ROI: Ajustar sueldo de referencia
-    # ----------------------------------------------------------------
-    with st.expander("⚙️ Ajustes ROI", expanded=False):
-        st.markdown("**💼 Sueldo de Referencia**")
-        roi_tracker_config = init_roi_tracker(st.session_state)
-        current_salary = roi_tracker_config.get_analyst_salary()
-        
-        new_salary = st.number_input(
-            "Sueldo mensual de analista (MXN)",
-            min_value=5000,
-            max_value=100000,
-            value=int(current_salary),
-            step=1000,
-            help="Ajusta el sueldo de referencia para calcular equivalencias. Típico: $20k-$30k MXN/mes"
-        )
-        
-        if new_salary != current_salary:
-            roi_tracker_config.set_analyst_salary(new_salary)
-            st.success(f"✅ Sueldo actualizado a ${new_salary:,} MXN/mes")
-            st.info("💡 Los cálculos de ROI usarán este nuevo valor de referencia")
-
 with st.sidebar:
     # ----------------------------------------------------------------
     # WIDGET ROI: Muestra el valor generado en tiempo real
@@ -1454,6 +1411,44 @@ with st.sidebar:
         key="mostrar_widgets_flotantes",
         help="Muestra u oculta los indicadores fijos de ROI y filtros en la esquina de la pantalla",
     )
+
+    st.markdown("---")
+    with st.expander("🎨 Personalización CIMA", expanded=False):
+        st.markdown("**🖼️ Logo de empresa**")
+        logo_file = st.file_uploader(
+            "Sube tu logo (PNG, JPG)",
+            type=["png", "jpg", "jpeg", "svg", "webp"],
+            key="logo_uploader",
+            label_visibility="collapsed",
+            help="Se mostrará en el encabezado del dashboard."
+        )
+        if logo_file is not None:
+            st.session_state["company_logo"] = logo_file.getvalue()
+            st.session_state["company_logo_name"] = logo_file.name
+            st.success("Logo actualizado ✓")
+        if st.session_state.get("company_logo"):
+            st.image(st.session_state["company_logo"], use_container_width=True)
+            if st.button("🗑️ Quitar logo", key="btn_remove_logo", use_container_width=True):
+                st.session_state.pop("company_logo", None)
+                st.session_state.pop("company_logo_name", None)
+                st.rerun()
+
+    with st.expander("⚙️ Ajustes ROI", expanded=False):
+        st.markdown("**💼 Sueldo de Referencia**")
+        roi_tracker_config = init_roi_tracker(st.session_state)
+        current_salary = roi_tracker_config.get_analyst_salary()
+        new_salary = st.number_input(
+            "Sueldo mensual de analista (MXN)",
+            min_value=5000,
+            max_value=100000,
+            value=int(current_salary),
+            step=1000,
+            help="Ajusta el sueldo de referencia para calcular equivalencias. Típico: $20k-$30k MXN/mes"
+        )
+        if new_salary != current_salary:
+            roi_tracker_config.set_analyst_salary(new_salary)
+            st.success(f"✅ Sueldo actualizado a ${new_salary:,} MXN/mes")
+            st.info("💡 Los cálculos de ROI usarán este nuevo valor de referencia")
 
     # =====================================================================
     # FILTROS AVANZADOS — contextuales por vista (SPRINT 4)
