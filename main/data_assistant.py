@@ -2194,6 +2194,107 @@ def _render_chat_interface():
             with st.chat_message("assistant", avatar="🤖"):
                 _render_result_message(msg, msg_idx)
 
+    # ── Selector de perfil soberano ───────────────────────────────────────────
+    try:
+        from utils.sovereign_profiles import PERFILES, PERFIL_DEFAULT, get_perfil
+        _perfiles_disponibles = PERFILES
+
+        # Inicializar perfil activo en session_state
+        if "sovereign_profile_key" not in st.session_state:
+            st.session_state["sovereign_profile_key"] = PERFIL_DEFAULT
+
+        with st.expander("🎯 Modo de análisis", expanded=True):
+            # ── Botones de perfil predefinido ─────────────────────────────
+            st.caption("Selecciona un perfil o personaliza los parámetros:")
+            _cols = st.columns(3)
+            _profile_keys = list(_perfiles_disponibles.keys())
+            for _i, _pkey in enumerate(_profile_keys):
+                _p = _perfiles_disponibles[_pkey]
+                with _cols[_i % 3]:
+                    _is_active = st.session_state["sovereign_profile_key"] == _pkey
+                    if st.button(
+                        f"{_p['icono']} {_p['label']}",
+                        key=f"profile_btn_{_pkey}",
+                        help=_p["descripcion"],
+                        use_container_width=True,
+                        type="primary" if _is_active else "secondary",
+                    ):
+                        st.session_state["sovereign_profile_key"] = _pkey
+                        # Reiniciar ajustes personalizados al cambiar perfil
+                        st.session_state.pop("sovereign_profile_custom", None)
+                        st.rerun()
+
+            st.divider()
+
+            # ── Checkboxes de ajuste fino ─────────────────────────────────
+            _pkey_activo = st.session_state["sovereign_profile_key"]
+            _perfil_base = get_perfil(_pkey_activo)
+
+            # Recuperar ajuste personalizado si existe, o usar el perfil base
+            _custom = st.session_state.get("sovereign_profile_custom", None)
+            _perfil_edit = _custom if _custom is not None else _perfil_base.copy()
+
+            from utils.sovereign_profiles import TIPOS_COMPROBANTE, TIPOS_IMPUESTO, METODOS_PAGO
+
+            _col_a, _col_b, _col_c = st.columns(3)
+
+            with _col_a:
+                st.caption("**Tipo de comprobante**")
+                _tipos_sel = []
+                for _tc, _tc_label in TIPOS_COMPROBANTE.items():
+                    if _tc == "T":
+                        continue  # Traslados raramente útil en análisis
+                    _checked = _tc in _perfil_edit.get("tipos_comprobante", [])
+                    if st.checkbox(_tc_label, value=_checked, key=f"sc_tipo_{_tc}"):
+                        _tipos_sel.append(_tc)
+
+            with _col_b:
+                st.caption("**Impuestos**")
+                _imp_sel = []
+                for _ik, _il in TIPOS_IMPUESTO.items():
+                    _checked = _ik in _perfil_edit.get("impuestos", [])
+                    if st.checkbox(_il, value=_checked, key=f"sc_imp_{_ik}"):
+                        _imp_sel.append(_ik)
+
+            with _col_c:
+                st.caption("**Método de pago**")
+                _mp_sel = []
+                for _mk, _ml in METODOS_PAGO.items():
+                    _checked = _mk in _perfil_edit.get("metodos_pago", [])
+                    if st.checkbox(_ml, value=_checked, key=f"sc_mp_{_mk}"):
+                        _mp_sel.append(_mk)
+
+                st.caption("**Moneda**")
+                _multi_moneda = st.checkbox(
+                    "Multi-moneda (USD/EUR → MXN)",
+                    value=_perfil_edit.get("multi_moneda", False),
+                    key="sc_multi_moneda",
+                )
+
+            # Construir perfil activo con ajustes del usuario
+            _perfil_activo = {
+                **_perfil_base,
+                "tipos_comprobante": _tipos_sel,
+                "impuestos":         _imp_sel,
+                "metodos_pago":      _mp_sel,
+                "multi_moneda":      _multi_moneda,
+            }
+            st.session_state["sovereign_profile_custom"] = _perfil_activo
+            st.session_state["sovereign_profile_activo"] = _perfil_activo
+
+            # Badge de scope activo
+            _scope_parts = []
+            if _tipos_sel:
+                _scope_parts.append("Tipos: " + ", ".join(_tipos_sel))
+            if _imp_sel:
+                _scope_parts.append("Imp: " + ", ".join(_imp_sel))
+            if _mp_sel:
+                _scope_parts.append("Pago: " + ", ".join(_mp_sel))
+            st.caption("📌 Scope activo: " + (" · ".join(_scope_parts) if _scope_parts else "Sin restricciones"))
+
+    except ImportError:
+        st.session_state["sovereign_profile_activo"] = None
+
     # ── Selector de período soberano ──────────────────────────────────────────
     _sovereign = st.session_state.get("sovereign_index", {})
     _meses = _sovereign.get("meses", [])
@@ -2308,6 +2409,7 @@ def _render_chat_interface():
                     empresa_id=empresa_id,
                     periodo_soberano=st.session_state.get("sovereign_periodo_activo"),
                     sovereign_index=st.session_state.get("sovereign_index"),
+                    sovereign_profile=st.session_state.get("sovereign_profile_activo"),
                 )
 
             # --- ROI Tracking ---

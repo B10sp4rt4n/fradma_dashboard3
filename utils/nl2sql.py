@@ -46,6 +46,15 @@ try:
 except ImportError:
     _sp_build_prompt = None
 
+try:
+    from utils.sovereign_profiles import (
+        build_sovereign_profile_context as _sp_profile_ctx,
+        apply_profile_sql_filter as _apply_profile_filter,
+    )
+except ImportError:
+    _sp_profile_ctx = None
+    _apply_profile_filter = None
+
 logger = configurar_logger("nl2sql", nivel="INFO")
 
 # =====================================================================
@@ -571,6 +580,12 @@ class NL2SQLEngine:
             else:
                 # Garantizar que si se mencionó un mes, el filtro esté en el SQL
                 sql = self._ensure_month_filter(question, sql)
+
+            # ── Filtro de perfil soberano (tipo comprobante + método pago) ─
+            # Se aplica siempre que haya un perfil activo, como segunda red de seguridad
+            _active_profile = getattr(self, "_active_sovereign_profile", None)
+            if _active_profile and _apply_profile_filter:
+                sql = _apply_profile_filter(sql, _active_profile)
 
             try:
                 logger.info(f"SQL generado: {sql[:100]}...")
@@ -1926,6 +1941,7 @@ Si el usuario pidió explícitamente una orientación (ej: "vertical", "horizont
         empresa_id: Optional[str] = None,
         periodo_soberano: Optional[dict] = None,
         sovereign_index: Optional[dict] = None,
+        sovereign_profile: Optional[dict] = None,
     ) -> NL2SQLResult:
         """
         Pipeline completo: pregunta → SQL → ejecución → interpretación.
@@ -1935,6 +1951,7 @@ Si el usuario pidió explícitamente una orientación (ej: "vertical", "horizont
             empresa_id: UUID de empresa para filtrar (opcional)
             periodo_soberano: Dict con desde/hasta/hasta_excl/granularidad del slider soberano
             sovereign_index: Índice completo de períodos del dataset
+            sovereign_profile: Perfil soberano activo (de sovereign_profiles.PERFILES)
 
         Returns:
             NL2SQLResult con todos los datos
@@ -1942,13 +1959,24 @@ Si el usuario pidió explícitamente una orientación (ej: "vertical", "horizont
         start_time = time.time()
         result = NL2SQLResult(question=question, sql="")
 
-        # Construir contexto soberano para el prompt
-        _sovereign_ctx = ""
+        # Construir contexto soberano de perfil (semántico)
+        _profile_ctx = ""
+        if sovereign_profile and _sp_profile_ctx:
+            try:
+                _profile_ctx = _sp_profile_ctx(sovereign_profile)
+            except Exception:
+                _profile_ctx = ""
+
+        # Construir contexto soberano temporal
+        _sovereign_ctx = _profile_ctx
         if periodo_soberano and _sp_build_prompt:
             try:
-                _sovereign_ctx = _sp_build_prompt(periodo_soberano, sovereign_index or {})
+                _sovereign_ctx = _profile_ctx + _sp_build_prompt(periodo_soberano, sovereign_index or {})
             except Exception:
-                _sovereign_ctx = ""
+                _sovereign_ctx = _profile_ctx
+
+        # Guardar perfil activo en el engine para que generate_sql lo use como filtro post-generación
+        self._active_sovereign_profile = sovereign_profile
 
         try:
             # Paso 1: Generar SQL
