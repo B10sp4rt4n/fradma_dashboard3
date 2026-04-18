@@ -40,7 +40,8 @@ from utils.filters import (
     aplicar_filtro_cliente, 
     aplicar_filtro_monto,
     aplicar_filtro_categoria_riesgo,
-    mostrar_resumen_filtros
+    mostrar_resumen_filtros,
+    render_filtros_inline,
 )
 from utils.export_helper import crear_excel_metricas_cxc, crear_reporte_html
 from utils.cache_helper import GestorCache, decorador_medicion_tiempo
@@ -1720,84 +1721,6 @@ _filtros_vista = _cfg_vista["filtros"]
 _desc_vista    = _cfg_vista.get("descripcion", "")
 _ayuda_vista   = _cfg_vista.get("ayuda", {})
 
-if "df" in st.session_state and _filtros_vista:
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### 🔍 Filtros")
-
-    df_original = st.session_state["df"].copy()
-    st.session_state["df_original_pre_filtro"] = df_original
-
-    if "filtros_aplicados" not in st.session_state:
-        st.session_state["filtros_aplicados"] = {}
-    if "reset_filtros" not in st.session_state:
-        st.session_state["reset_filtros"] = False
-
-    if _desc_vista:
-        st.sidebar.caption(f"ℹ️ {_desc_vista}")
-
-    usar_filtros = st.sidebar.checkbox(
-        "Activar filtros",
-        value=not st.session_state.get("reset_filtros", False),
-        help="Activa para aplicar filtros a esta vista"
-    )
-
-    if usar_filtros:
-        df_filtrado = df_original.copy()
-
-        with st.sidebar:
-            if "fecha" in _filtros_vista:
-                # Detectar si hay filtro activo de fecha
-                _fi_act = st.session_state.get("filtro_fecha_inicio")
-                _ff_act = st.session_state.get("filtro_fecha_fin")
-                _fecha_label = "📅 Fecha" + (" ●" if _fi_act or _ff_act else "")
-                with st.expander(_fecha_label, expanded=True):
-                    if _ayuda_vista.get("fecha"):
-                        st.caption(_ayuda_vista["fecha"])
-                    if "fecha" in df_filtrado.columns:
-                        df_filtrado = aplicar_filtro_fechas(df_filtrado, "fecha")
-                    else:
-                        st.warning("⚠️ Sin columna 'fecha'")
-
-            if "cliente" in _filtros_vista:
-                _cli_act = st.session_state.get("filtro_cliente_select", [])
-                _cli_label = "👤 Cliente" + (f" ● ({len(_cli_act)})" if _cli_act else "")
-                with st.expander(_cli_label, expanded=True):
-                    if _ayuda_vista.get("cliente"):
-                        st.caption(_ayuda_vista["cliente"])
-                    if "cliente" in df_filtrado.columns:
-                        df_filtrado = aplicar_filtro_cliente(df_filtrado, "cliente")
-                    else:
-                        st.warning("⚠️ Sin columna 'cliente'")
-
-            if "monto" in _filtros_vista:
-                _monto_act = st.session_state.get("filtro_monto_tipo")
-                _monto_label = "💲 Monto" + (" ●" if _monto_act and _monto_act != "Sin filtro de monto" else "")
-                columna_ventas = st.session_state.get("columna_ventas", None)
-                with st.expander(_monto_label, expanded=True):
-                    if _ayuda_vista.get("monto"):
-                        st.caption(_ayuda_vista["monto"])
-                    if columna_ventas and columna_ventas in df_filtrado.columns:
-                        df_filtrado = aplicar_filtro_monto(df_filtrado, columna_ventas)
-                    else:
-                        st.warning("⚠️ Sin columna de ventas detectada")
-
-        if st.sidebar.button("🗑️ Limpiar filtros", use_container_width=True):
-            st.session_state["filtros_aplicados"] = {}
-            st.session_state["reset_filtros"] = True
-            for key in list(st.session_state.keys()):
-                if key.startswith("filtro_"):
-                    del st.session_state[key]
-            st.rerun()
-
-        st.session_state["df"] = df_filtrado
-        st.session_state["reset_filtros"] = False
-
-        if len(df_filtrado) < len(df_original):
-            st.sidebar.success(f"✅ {len(df_filtrado):,} de {len(df_original):,} registros")
-            mostrar_resumen_filtros(df_original, df_filtrado)
-
-elif "df" in st.session_state:
-    st.session_state["df_original_pre_filtro"] = st.session_state["df"].copy()
 
 # Información contextual según el menú seleccionado
 st.sidebar.markdown("---")
@@ -2161,6 +2084,22 @@ try:
 
 except Exception:
     pass  # Widget silencioso si falla
+
+# =====================================================================
+# FILTROS INTEGRADOS POR VISTA
+# =====================================================================
+
+if "df" in st.session_state and _filtros_vista:
+    _df_base = st.session_state.get("df_original_pre_filtro", st.session_state["df"].copy())
+    st.session_state["df_original_pre_filtro"] = _df_base
+    st.session_state["df"] = render_filtros_inline(
+        _df_base,
+        _filtros_vista,
+        ayuda=_ayuda_vista,
+        columna_monto=st.session_state.get("columna_ventas"),
+    )
+elif "df" in st.session_state:
+    st.session_state["df_original_pre_filtro"] = st.session_state["df"].copy()
 
 # =====================================================================
 # RENDERIZADO DE VISTAS

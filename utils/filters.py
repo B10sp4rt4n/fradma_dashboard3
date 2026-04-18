@@ -648,6 +648,147 @@ def mostrar_resumen_filtros(
         st.rerun()
 
 
+def render_filtros_inline(
+    df: pd.DataFrame,
+    filtros: list,
+    ayuda: dict = {},
+    columna_fecha: str = 'fecha',
+    columna_cliente: str = 'cliente',
+    columna_monto: str = None,
+) -> pd.DataFrame:
+    """
+    Renderiza controles de filtro compactos integrados en la zona de contenido
+    de cada vista (no en el sidebar). Devuelve el DataFrame filtrado.
+
+    Args:
+        df: DataFrame original a filtrar
+        filtros: Lista con los tipos de filtro a mostrar (["fecha","cliente","monto"])
+        ayuda: Diccionario con textos de ayuda por tipo de filtro
+        columna_fecha: Nombre de la columna de fechas
+        columna_cliente: Nombre de la columna de clientes
+        columna_monto: Nombre de la columna de montos (None = omitir)
+    """
+    if not filtros or df is None or df.empty:
+        return df
+
+    # Determinar qué filtros aplican con los datos disponibles
+    filtros_activos = []
+    if "fecha" in filtros and columna_fecha in df.columns:
+        filtros_activos.append("fecha")
+    if "cliente" in filtros and columna_cliente in df.columns:
+        filtros_activos.append("cliente")
+    if "monto" in filtros and columna_monto and columna_monto in df.columns:
+        filtros_activos.append("monto")
+
+    if not filtros_activos:
+        return df
+
+    df_filtrado = df.copy()
+
+    with st.container():
+        # Proporciones: 2 por filtro + 1 para el botón limpiar
+        widths = [2] * len(filtros_activos) + [1]
+        cols = st.columns(widths, gap="small")
+        col_idx = 0
+
+        # ── FECHA ─────────────────────────────────────────────────────
+        if "fecha" in filtros_activos:
+            with cols[col_idx]:
+                if not pd.api.types.is_datetime64_any_dtype(df_filtrado[columna_fecha]):
+                    df_filtrado[columna_fecha] = pd.to_datetime(df_filtrado[columna_fecha], errors='coerce')
+                df_f = df_filtrado.dropna(subset=[columna_fecha])
+                if not df_f.empty:
+                    f_min = df_f[columna_fecha].min().date()
+                    f_max = df_f[columna_fecha].max().date()
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        fi = st.date_input(
+                            "📅 Desde",
+                            value=f_min, min_value=f_min, max_value=f_max,
+                            key="inline_filtro_fecha_ini",
+                            help=ayuda.get("fecha", ""),
+                        )
+                    with c2:
+                        ff = st.date_input(
+                            "📅 Hasta",
+                            value=f_max, min_value=f_min, max_value=f_max,
+                            key="inline_filtro_fecha_fin",
+                        )
+                    if fi and ff and fi <= ff:
+                        mask = (
+                            (df_filtrado[columna_fecha].dt.date >= fi) &
+                            (df_filtrado[columna_fecha].dt.date <= ff)
+                        )
+                        df_filtrado = df_filtrado[mask]
+            col_idx += 1
+
+        # ── CLIENTE ───────────────────────────────────────────────────
+        if "cliente" in filtros_activos:
+            with cols[col_idx]:
+                clientes = sorted([
+                    str(c) for c in df[columna_cliente].dropna().unique()
+                    if str(c).strip()
+                ])
+                selecc = st.multiselect(
+                    "👤 Cliente",
+                    options=clientes[:500],
+                    key="inline_filtro_cliente",
+                    placeholder="Todos los clientes",
+                    help=ayuda.get("cliente", ""),
+                )
+                if selecc:
+                    df_filtrado = df_filtrado[df_filtrado[columna_cliente].isin(selecc)]
+            col_idx += 1
+
+        # ── MONTO ─────────────────────────────────────────────────────
+        if "monto" in filtros_activos:
+            with cols[col_idx]:
+                monto_series = pd.to_numeric(df[columna_monto], errors='coerce').dropna()
+                if not monto_series.empty:
+                    mn = float(monto_series.min())
+                    mx = float(monto_series.max())
+                    if mn >= mx:
+                        mx = mn + 1.0
+                    rango = st.slider(
+                        "💲 Monto",
+                        min_value=mn, max_value=mx, value=(mn, mx),
+                        format="$%.0f",
+                        key="inline_filtro_monto",
+                        help=ayuda.get("monto", ""),
+                    )
+                    mask_m = (
+                        (pd.to_numeric(df_filtrado[columna_monto], errors='coerce') >= rango[0]) &
+                        (pd.to_numeric(df_filtrado[columna_monto], errors='coerce') <= rango[1])
+                    )
+                    df_filtrado = df_filtrado[mask_m]
+            col_idx += 1
+
+        # ── LIMPIAR ───────────────────────────────────────────────────
+        with cols[-1]:
+            st.write("")
+            if st.button(
+                "🗑️ Limpiar",
+                key="inline_limpiar_filtros",
+                use_container_width=True,
+                help="Restablecer todos los filtros de esta vista",
+            ):
+                for k in list(st.session_state.keys()):
+                    if k.startswith("inline_filtro_"):
+                        del st.session_state[k]
+                st.rerun()
+
+        # Resumen si hay filtrado activo
+        if len(df_filtrado) < len(df):
+            pct = len(df_filtrado) / len(df) * 100
+            st.caption(
+                f"✅ **{len(df_filtrado):,}** de {len(df):,} registros ({pct:.0f}%)"
+            )
+
+        st.divider()
+
+    return df_filtrado
+
+
 if __name__ == "__main__":
     # Demo de filtros
     print("🧪 Demo de filters.py\n")
