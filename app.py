@@ -76,12 +76,12 @@ st.markdown("""
 [data-testid="stSidebar"] .nav-link.active span {{
     color: white !important;
 }}
-/* Ítem normal: texto oscuro para contraste en fondo claro */
+/* Ítem normal: texto naranja */
 [data-testid="stSidebar"] .nav-link:not(.active) {{
-    color: #1a1a2e !important;
+    color: #FF6B35 !important;
 }}
 [data-testid="stSidebar"] .nav-link:not(.active) i {{
-    color: #1F4E79 !important;
+    color: #FF6B35 !important;
 }}
 </style>
 """, unsafe_allow_html=True)
@@ -1136,7 +1136,7 @@ if OPTION_MENU_AVAILABLE:
                 "icon":             {"font-size": "14px", "color": "#1F4E79"},
                 "nav-link":         {"font-size": "13px", "text-align": "left", "margin": "1px 0",
                                      "padding": "6px 10px", "--hover-color": "#dce8f7",
-                                     "color": "#1a1a2e"},
+                                     "color": "#FF6B35"},
                 "nav-link-selected":{"background-color": "#1F4E79", "color": "white",
                                      "font-weight": "600"},
             },
