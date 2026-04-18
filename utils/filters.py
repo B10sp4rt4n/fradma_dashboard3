@@ -107,206 +107,77 @@ def aplicar_filtro_fechas(
 
         # ── MODO 2: PERIODO VS PERIODO ────────────────────────────────
         elif modo_filtro == "periodo_vs_periodo":
-            # Extraer años, meses, trimestres disponibles
             df_con_fechas['_año'] = df_con_fechas[columna_fecha].dt.year
             df_con_fechas['_mes'] = df_con_fechas[columna_fecha].dt.month
             df_con_fechas['_trimestre'] = df_con_fechas[columna_fecha].dt.quarter
-        
             años_disponibles = sorted(df_con_fechas['_año'].unique())
-        
-            # Selector de granularidad
+
             granularidad = st.selectbox(
-            "📊 Granularidad",
-            options=["mensual", "trimestral", "anual"],
-            format_func=lambda x: {
-                "mensual": "📆 Mensual",
-                "trimestral": "📈 Trimestral",
-                "anual": "📅 Anual"
-            }[x],
-            key="granularidad_periodo",
-            help="Selecciona la granularidad de los periodos a comparar"
-        )
-        
-        st.markdown("---")
-        
-        # ────────────────────────────────────────────────────────
-        # GRANULARIDAD MENSUAL
-        # ────────────────────────────────────────────────────────
-        if granularidad == "mensual":
-            meses_nombres = {
-                1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril",
-                5: "Mayo", 6: "Junio", 7: "Julio", 8: "Agosto",
-                9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"
-            }
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.markdown("**📅 Periodo 1**")
-                año_1 = st.selectbox(
-                    "Año",
-                    options=años_disponibles,
-                    index=len(años_disponibles)-1 if len(años_disponibles) > 0 else 0,
-                    key="periodo1_año",
-                    label_visibility="collapsed"
-                )
-                
-                meses_año_1 = sorted(df_con_fechas[df_con_fechas['_año'] == año_1]['_mes'].unique())
-                mes_1 = st.selectbox(
-                    "Mes",
-                    options=meses_año_1,
-                    format_func=lambda x: meses_nombres[x],
-                    key="periodo1_mes",
-                    label_visibility="collapsed"
-                )
-            
-            with col2:
-                st.markdown("**📅 Periodo 2**")
-                año_2 = st.selectbox(
-                    "Año",
-                    options=años_disponibles,
-                    index=max(0, len(años_disponibles)-2) if len(años_disponibles) > 1 else 0,
-                    key="periodo2_año",
-                    label_visibility="collapsed"
-                )
-                
-                meses_año_2 = sorted(df_con_fechas[df_con_fechas['_año'] == año_2]['_mes'].unique())
-                mes_2 = st.selectbox(
-                    "Mes",
-                    options=meses_año_2,
-                    format_func=lambda x: meses_nombres[x],
-                    key="periodo2_mes",
-                    label_visibility="collapsed"
-                )
-            
-            # Filtrar por ambos periodos
-            mask = (
-                ((df_con_fechas['_año'] == año_1) & (df_con_fechas['_mes'] == mes_1)) |
-                ((df_con_fechas['_año'] == año_2) & (df_con_fechas['_mes'] == mes_2))
+                "Granularidad",
+                options=["mensual", "trimestral", "anual"],
+                format_func=lambda x: {"mensual": "📆 Mensual", "trimestral": "📈 Trimestral", "anual": "📅 Anual"}[x],
+                key="granularidad_periodo",
             )
-            
-            df_filtrado = df_con_fechas[mask].copy()
-            
-            # Resumen
-            p1_count = len(df_con_fechas[(df_con_fechas['_año'] == año_1) & (df_con_fechas['_mes'] == mes_1)])
-            p2_count = len(df_con_fechas[(df_con_fechas['_año'] == año_2) & (df_con_fechas['_mes'] == mes_2)])
-            
-            st.success(
-                f"✅ Comparando:\n"
-                f"• {meses_nombres[mes_1]} {año_1}: {p1_count:,} reg.\n"
-                f"• {meses_nombres[mes_2]} {año_2}: {p2_count:,} reg."
-            )
-        
-        # ────────────────────────────────────────────────────────
-        # GRANULARIDAD TRIMESTRAL
-        # ────────────────────────────────────────────────────────
-        elif granularidad == "trimestral":
-            trimestres_nombres = {
-                1: "Q1 (Ene-Mar)",
-                2: "Q2 (Abr-Jun)",
-                3: "Q3 (Jul-Sep)",
-                4: "Q4 (Oct-Dic)"
-            }
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.markdown("**📅 Periodo 1**")
-                año_1 = st.selectbox(
-                    "Año",
-                    options=años_disponibles,
-                    index=len(años_disponibles)-1 if len(años_disponibles) > 0 else 0,
-                    key="periodo1_año_trim",
-                    label_visibility="collapsed"
-                )
-                
-                trimestres_año_1 = sorted(df_con_fechas[df_con_fechas['_año'] == año_1]['_trimestre'].unique())
-                trim_1 = st.selectbox(
-                    "Trimestre",
-                    options=trimestres_año_1,
-                    format_func=lambda x: trimestres_nombres[x],
-                    key="periodo1_trim",
-                    label_visibility="collapsed"
-                )
-            
-            with col2:
-                st.markdown("**📅 Periodo 2**")
-                año_2 = st.selectbox(
-                    "Año",
-                    options=años_disponibles,
-                    index=max(0, len(años_disponibles)-2) if len(años_disponibles) > 1 else 0,
-                    key="periodo2_año_trim",
-                    label_visibility="collapsed"
-                )
-                
-                trimestres_año_2 = sorted(df_con_fechas[df_con_fechas['_año'] == año_2]['_trimestre'].unique())
-                trim_2 = st.selectbox(
-                    "Trimestre",
-                    options=trimestres_año_2,
-                    format_func=lambda x: trimestres_nombres[x],
-                    key="periodo2_trim",
-                    label_visibility="collapsed"
-                )
-            
-            # Filtrar por ambos trimestres
-            mask = (
-                ((df_con_fechas['_año'] == año_1) & (df_con_fechas['_trimestre'] == trim_1)) |
-                ((df_con_fechas['_año'] == año_2) & (df_con_fechas['_trimestre'] == trim_2))
-            )
-            
-            df_filtrado = df_con_fechas[mask].copy()
-            
-            # Resumen
-            p1_count = len(df_con_fechas[(df_con_fechas['_año'] == año_1) & (df_con_fechas['_trimestre'] == trim_1)])
-            p2_count = len(df_con_fechas[(df_con_fechas['_año'] == año_2) & (df_con_fechas['_trimestre'] == trim_2)])
-            
-            st.success(
-                f"✅ Comparando:\n"
-                f"• {trimestres_nombres[trim_1]} {año_1}: {p1_count:,} reg.\n"
-                f"• {trimestres_nombres[trim_2]} {año_2}: {p2_count:,} reg."
-            )
-        
-        # ────────────────────────────────────────────────────────
-        # GRANULARIDAD ANUAL
-        # ────────────────────────────────────────────────────────
-        elif granularidad == "anual":
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.markdown("**📅 Año 1**")
-                año_1 = st.selectbox(
-                    "Selecciona año 1",
-                    options=años_disponibles,
-                    index=len(años_disponibles)-1 if len(años_disponibles) > 0 else 0,
-                    key="periodo1_año_anual",
-                    label_visibility="collapsed"
-                )
-            
-            with col2:
-                st.markdown("**📅 Año 2**")
-                año_2 = st.selectbox(
-                    "Selecciona año 2",
-                    options=años_disponibles,
-                    index=max(0, len(años_disponibles)-2) if len(años_disponibles) > 1 else 0,
-                    key="periodo2_año_anual",
-                    label_visibility="collapsed"
-                )
-            
-            # Filtrar por ambos años
-            mask = (df_con_fechas['_año'] == año_1) | (df_con_fechas['_año'] == año_2)
-            df_filtrado = df_con_fechas[mask].copy()
-            
-            # Resumen
-            p1_count = len(df_con_fechas[df_con_fechas['_año'] == año_1])
-            p2_count = len(df_con_fechas[df_con_fechas['_año'] == año_2])
-            
-            st.success(
-                f"✅ Comparando:\n"
-                f"• Año {año_1}: {p1_count:,} registros\n"
-                f"• Año {año_2}: {p2_count:,} registros"
-            )
-        
-        # Limpiar columnas temporales
+            st.markdown("---")
+
+            if granularidad == "mensual":
+                meses_nombres = {1:"Enero",2:"Febrero",3:"Marzo",4:"Abril",5:"Mayo",6:"Junio",
+                                 7:"Julio",8:"Agosto",9:"Septiembre",10:"Octubre",11:"Noviembre",12:"Diciembre"}
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown("**Periodo 1**")
+                    año_1 = st.selectbox("Año", años_disponibles, index=len(años_disponibles)-1, key="periodo1_año", label_visibility="collapsed")
+                    meses_año_1 = sorted(df_con_fechas[df_con_fechas['_año']==año_1]['_mes'].unique())
+                    mes_1 = st.selectbox("Mes", meses_año_1, format_func=lambda x: meses_nombres[x], key="periodo1_mes", label_visibility="collapsed")
+                with col2:
+                    st.markdown("**Periodo 2**")
+                    año_2 = st.selectbox("Año", años_disponibles, index=max(0,len(años_disponibles)-2), key="periodo2_año", label_visibility="collapsed")
+                    meses_año_2 = sorted(df_con_fechas[df_con_fechas['_año']==año_2]['_mes'].unique())
+                    mes_2 = st.selectbox("Mes", meses_año_2, format_func=lambda x: meses_nombres[x], key="periodo2_mes", label_visibility="collapsed")
+                mask = (((df_con_fechas['_año']==año_1)&(df_con_fechas['_mes']==mes_1))|
+                        ((df_con_fechas['_año']==año_2)&(df_con_fechas['_mes']==mes_2)))
+                df_filtrado = df_con_fechas[mask].copy()
+                p1 = len(df_con_fechas[(df_con_fechas['_año']==año_1)&(df_con_fechas['_mes']==mes_1)])
+                p2 = len(df_con_fechas[(df_con_fechas['_año']==año_2)&(df_con_fechas['_mes']==mes_2)])
+                st.success(f"✅ {meses_nombres[mes_1]} {año_1}: {p1:,} · {meses_nombres[mes_2]} {año_2}: {p2:,}")
+
+            elif granularidad == "trimestral":
+                trimestres_nombres = {1:"Q1 (Ene-Mar)",2:"Q2 (Abr-Jun)",3:"Q3 (Jul-Sep)",4:"Q4 (Oct-Dic)"}
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown("**Periodo 1**")
+                    año_1 = st.selectbox("Año", años_disponibles, index=len(años_disponibles)-1, key="periodo1_año_trim", label_visibility="collapsed")
+                    trims_1 = sorted(df_con_fechas[df_con_fechas['_año']==año_1]['_trimestre'].unique())
+                    trim_1 = st.selectbox("Trimestre", trims_1, format_func=lambda x: trimestres_nombres[x], key="periodo1_trim", label_visibility="collapsed")
+                with col2:
+                    st.markdown("**Periodo 2**")
+                    año_2 = st.selectbox("Año", años_disponibles, index=max(0,len(años_disponibles)-2), key="periodo2_año_trim", label_visibility="collapsed")
+                    trims_2 = sorted(df_con_fechas[df_con_fechas['_año']==año_2]['_trimestre'].unique())
+                    trim_2 = st.selectbox("Trimestre", trims_2, format_func=lambda x: trimestres_nombres[x], key="periodo2_trim", label_visibility="collapsed")
+                mask = (((df_con_fechas['_año']==año_1)&(df_con_fechas['_trimestre']==trim_1))|
+                        ((df_con_fechas['_año']==año_2)&(df_con_fechas['_trimestre']==trim_2)))
+                df_filtrado = df_con_fechas[mask].copy()
+                p1 = len(df_con_fechas[(df_con_fechas['_año']==año_1)&(df_con_fechas['_trimestre']==trim_1)])
+                p2 = len(df_con_fechas[(df_con_fechas['_año']==año_2)&(df_con_fechas['_trimestre']==trim_2)])
+                st.success(f"✅ {trimestres_nombres[trim_1]} {año_1}: {p1:,} · {trimestres_nombres[trim_2]} {año_2}: {p2:,}")
+
+            elif granularidad == "anual":
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown("**Año 1**")
+                    año_1 = st.selectbox("Año 1", años_disponibles, index=len(años_disponibles)-1, key="periodo1_año_anual", label_visibility="collapsed")
+                with col2:
+                    st.markdown("**Año 2**")
+                    año_2 = st.selectbox("Año 2", años_disponibles, index=max(0,len(años_disponibles)-2), key="periodo2_año_anual", label_visibility="collapsed")
+                mask = (df_con_fechas['_año']==año_1)|(df_con_fechas['_año']==año_2)
+                df_filtrado = df_con_fechas[mask].copy()
+                p1 = len(df_con_fechas[df_con_fechas['_año']==año_1])
+                p2 = len(df_con_fechas[df_con_fechas['_año']==año_2])
+                st.success(f"✅ Año {año_1}: {p1:,} · Año {año_2}: {p2:,}")
+
+            else:
+                df_filtrado = df_con_fechas.copy()
+
             df_filtrado = df_filtrado.drop(columns=['_año', '_mes', '_trimestre'], errors='ignore')
 
         else:
