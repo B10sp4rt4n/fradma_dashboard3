@@ -828,29 +828,7 @@ if _empresa_id_actual and _neon_url:
             except Exception as _e:
                 st.sidebar.warning(f"⚠️ No se pudo cargar CFDI: {_e}")
 
-    # Botón para recargar manualmente los CFDI
-    if _empresa_id_actual and _neon_url:
-        if st.sidebar.button("🔄 Recargar mis CFDI", help="Vuelve a cargar facturas desde la base de datos"):
-            with st.spinner("⏳ Recargando CFDI..."):
-                try:
-                    _df_neon = cargar_cfdi_como_df(_empresa_id_actual, _neon_url)
-                    if not _df_neon.empty:
-                        st.session_state["df"] = _df_neon
-                        st.session_state["_df_fuente"] = "cfdi"
-                        st.session_state.pop("archivo_path", None)
-                        # Reconstruir índice soberano con datos frescos de Neon
-                        _sov = build_sovereign_index(_df_neon)
-                        st.session_state["sovereign_index"] = _sov
-                        _sov_meses = _sov.get("meses", [])
-                        if _sov_meses:
-                            st.session_state["sovereign_desde"] = _sov_meses[0]
-                            st.session_state["sovereign_hasta"] = _sov_meses[-1]
-                        st.sidebar.success(f"✅ {len(_df_neon):,} facturas actualizadas")
-                        st.rerun()
-                    else:
-                        st.sidebar.warning("⚠️ No hay facturas CFDI para esta empresa")
-                except Exception as _e:
-                    st.sidebar.error(f"❌ Error al recargar: {_e}")
+    # (botón Recargar CFDI se muestra después del menú de navegación)
 
 st.sidebar.markdown("**— o sube un archivo —**")
 
@@ -1118,92 +1096,135 @@ user = get_current_user()
 
 # ── Construir grupos y opciones dinámicamente ──────────────────────────────
 _grupos = {
-    "Resumen": {
+    "Análisis Comercial CIMA": {
         "icon": "speedometer2",
         "items": [
-            ("🎯 Reporte Ejecutivo",     "file-earmark-bar-chart"),
-            ("📊 Reporte Consolidado",   "grid-1x2"),
-        ]
-    },
-    "Ventas": {
-        "icon": "graph-up-arrow",
-        "items": [
+            ("🎯 Reporte Ejecutivo",         "file-earmark-bar-chart"),
+            ("📊 Reporte Consolidado",       "grid-1x2"),
             ("📈 KPIs Generales",            "bar-chart-line"),
             ("📊 Comparativo Año vs Año",    "arrow-left-right"),
             ("📉 YTD por Línea de Negocio",  "diagram-3"),
             ("🔷 YTD por Producto",          "box-seam"),
             ("🔥 Heatmap Ventas",            "fire"),
+            ("💳 KPI Cartera CxC",           "wallet2"),
+            ("👥 Vendedores + CxC",          "people"),
+            ("🧰 Herramientas Financieras",  "calculator"),
         ]
     },
-    "Cartera": {
-        "icon": "credit-card",
-        "items": [
-            ("💳 KPI Cartera CxC",   "wallet2"),
-            ("👥 Vendedores + CxC",  "people"),
-        ]
-    },
-    "CFDI y Fiscal": {
+    "Análisis CFDI (XML)": {
         "icon": "receipt",
         "items": [
-            ("📂 Cargar mis facturas", "cloud-upload"),
-            ("📋 Universo de CFDIs",   "collection"),
-            ("🧾 Desglose Fiscal",     "journal-text"),
-        ]
-    },
-    "Herramientas": {
-        "icon": "tools",
-        "items": [
-            ("🧰 Herramientas Financieras", "calculator"),
-            ("📍 Mapa de Clientes",         "geo-alt"),
-            ("📚 Knowledge Base",           "book"),
+            ("📂 Cargar mis facturas",       "cloud-upload"),
+            ("📋 Universo de CFDIs",         "collection"),
+            ("🧾 Desglose Fiscal",           "journal-text"),
+            ("📍 Mapa de Clientes",          "geo-alt"),
         ]
     },
 }
 
 # Agregar IA si el usuario tiene acceso
 if user and user.can_use_ai():
-    _grupos["Herramientas"]["items"].append(("🤖 Asistente de Datos", "robot"))
+    _grupos["Análisis CFDI (XML)"]["items"].append(("🤖 Asistente de Datos", "robot"))
 
-# Agregar Admin si aplica
-if user and user.can_manage_users():
-    _grupos["Admin"] = {
-        "icon": "shield-lock",
-        "items": [
-            ("⚙️ Gestión de Usuarios", "person-gear"),
-            ("🔧 Configuración",       "sliders"),
-        ]
-    }
+# Agregar Admin si aplica — se gestiona en el expander de Administración más abajo
 
 # ── Ordenar grupo de opciones en una lista plana (para compatibilidad) ──────
 _todas_opciones = [item for g in _grupos.values() for item, _ in g["items"]]
 _todos_iconos   = [icon for g in _grupos.values() for _, icon in g["items"]]
 
+# Estilos compartidos para los menús de sección
+_menu_styles = {
+    "container":        {"padding": "0 !important", "background-color": "transparent"},
+    "icon":             {"font-size": "14px", "color": "#1F4E79"},
+    "nav-link":         {"font-size": "13px", "text-align": "left", "margin": "1px 0",
+                         "padding": "6px 10px", "--hover-color": "#dce8f7",
+                         "color": "#FF6B35"},
+    "nav-link-selected":{"background-color": "#1F4E79", "color": "white",
+                         "font-weight": "600"},
+}
+
 if OPTION_MENU_AVAILABLE:
     with st.sidebar:
-        _menu_default = 0
+        # Determinar destino de navegación si existe
+        _nav_destino = None
         if "_menu_navegar_a" in st.session_state:
-            _destino = st.session_state.pop("_menu_navegar_a")
-            if _destino in _todas_opciones:
-                _menu_default = _todas_opciones.index(_destino)
-        menu = option_menu(
-            menu_title=None,
-            options=_todas_opciones,
-            icons=_todos_iconos,
-            menu_icon="cast",
-            default_index=_menu_default,
-            styles={
-                "container":        {"padding": "0 !important", "background-color": "transparent"},
-                "icon":             {"font-size": "14px", "color": "#1F4E79"},
-                "nav-link":         {"font-size": "13px", "text-align": "left", "margin": "1px 0",
-                                     "padding": "6px 10px", "--hover-color": "#dce8f7",
-                                     "color": "#FF6B35"},
-                "nav-link-selected":{"background-color": "#1F4E79", "color": "white",
-                                     "font-weight": "600"},
-            },
-        )
+            _nav_destino = st.session_state.pop("_menu_navegar_a")
+
+        # Si es destino de admin (fuera del menú visual), asignar directo
+        _ADMIN_PAGES = {"⚙️ Gestión de Usuarios", "🔧 Configuración"}
+        if _nav_destino and _nav_destino in _ADMIN_PAGES:
+            menu = _nav_destino
+            st.session_state["_menu_seleccion"] = menu
+        else:
+            # Determinar en qué grupo está la selección actual o el destino
+            _seleccion_previa = st.session_state.get("_menu_seleccion", _todas_opciones[0])
+            if _nav_destino and _nav_destino in _todas_opciones:
+                _seleccion_previa = _nav_destino
+
+            menu = None
+            _grupo_names = list(_grupos.keys())
+            for _gi, _gname in enumerate(_grupo_names):
+                _gdata = _grupos[_gname]
+                _g_items  = [item for item, _ in _gdata["items"]]
+                _g_icons  = [icon for _, icon in _gdata["items"]]
+
+                # Calcular default_index para este grupo
+                _g_default = None
+                if _seleccion_previa in _g_items:
+                    _g_default = _g_items.index(_seleccion_previa)
+
+                _result = option_menu(
+                    menu_title=_gname,
+                    options=_g_items,
+                    icons=_g_icons,
+                    menu_icon=_gdata["icon"],
+                    default_index=_g_default if _g_default is not None else 0,
+                    key=f"menu_section_{_gi}",
+                    styles=_menu_styles,
+                )
+
+                # Si el usuario hizo clic en este grupo, usar su selección
+                if _result and _result in _g_items:
+                    if _g_default is not None:
+                        # Este grupo tenía la selección previa
+                        menu = _result
+                    elif _result != _g_items[0] or (_seleccion_previa not in _todas_opciones):
+                        # El usuario cambió a este grupo
+                        menu = _result
+
+            # Si no se asignó (primer render), usar la selección previa o el primero
+            if menu is None:
+                menu = _seleccion_previa if _seleccion_previa in _todas_opciones else _todas_opciones[0]
+
+            st.session_state["_menu_seleccion"] = menu
 else:
     # Fallback: radio simple si no está instalado option_menu
     menu = st.sidebar.radio("Selecciona una vista:", _todas_opciones)
+
+# ── Botón Recargar CFDI — debajo del menú de navegación ─────────────────
+if _empresa_id_actual and _neon_url:
+    with st.sidebar:
+        if st.button("🔄 Recargar mis CFDI", help="Vuelve a cargar facturas desde la base de datos",
+                     use_container_width=True):
+            with st.spinner("⏳ Recargando CFDI..."):
+                try:
+                    _df_neon = cargar_cfdi_como_df(_empresa_id_actual, _neon_url)
+                    if not _df_neon.empty:
+                        st.session_state["df"] = _df_neon
+                        st.session_state["_df_fuente"] = "cfdi"
+                        st.session_state.pop("archivo_path", None)
+                        _sov = build_sovereign_index(_df_neon)
+                        st.session_state["sovereign_index"] = _sov
+                        _sov_meses = _sov.get("meses", [])
+                        if _sov_meses:
+                            st.session_state["sovereign_desde"] = _sov_meses[0]
+                            st.session_state["sovereign_hasta"] = _sov_meses[-1]
+                        st.success(f"✅ {len(_df_neon):,} facturas actualizadas")
+                        st.rerun()
+                    else:
+                        st.warning("⚠️ No hay facturas CFDI para esta empresa")
+                except Exception as _e:
+                    st.error(f"❌ Error al recargar: {_e}")
 
 
 # ─── Configuración y ajustes al fondo del sidebar ───────────────────────────
