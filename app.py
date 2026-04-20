@@ -2050,7 +2050,7 @@ if "df" in st.session_state and _filtros_vista:
 # =====================================================================
 
 if menu == "🎯 Reporte Ejecutivo":
-    if "df" in st.session_state and "archivo_excel" in st.session_state:
+    if "df" in st.session_state:
         with st.spinner("📊 Generando reporte ejecutivo..."):
             try:
                 # Obtener datos de ventas
@@ -2179,8 +2179,8 @@ if menu == "🎯 Reporte Ejecutivo":
                 st.info("💡 Asegúrate de haber subido un archivo con datos de ventas y CxC")
                 logger.exception(f"Error inesperado en reporte ejecutivo: {e}")
     else:
-        st.warning("⚠️ Primero sube un archivo para visualizar el Reporte Ejecutivo.")
-        st.info("📂 Usa el menú lateral para cargar tu archivo de datos.")
+        st.warning("⚠️ Primero carga tus datos de ventas para visualizar el Reporte Ejecutivo.")
+        st.info("📂 Usa el menú lateral para cargar tu archivo o conectar con tus CFDIs.")
 
 elif menu == "📈 KPIs Generales":
     # Pasar parámetros de IA premium al módulo
