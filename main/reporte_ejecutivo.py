@@ -531,11 +531,57 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
                    help="0=crítico · 60=aceptable · 80=saludable · 100=excelente")
 
         st.markdown("---")
-        col_pie, col_bar = st.columns(2)
 
-        # Pie de composición
+        # ── FILA 1: Gauge score salud + Plan de cobro por segmento ────────
+        col_gauge, col_plan = st.columns([1, 2])
+
+        with col_gauge:
+            st.markdown("#### 🎯 Score de Salud")
+            color_gauge = "#2ecc71" if score_salud_cxc >= 80 else "#f39c12" if score_salud_cxc >= 60 else "#e74c3c"
+            fig_gauge = go.Figure(go.Indicator(
+                mode="gauge+number",
+                value=score_salud_cxc,
+                number={"suffix": "/100", "font": {"size": 28}},
+                gauge={
+                    "axis": {"range": [0, 100], "tickwidth": 1},
+                    "bar": {"color": color_gauge},
+                    "steps": [
+                        {"range": [0,  60], "color": "#fadbd8"},
+                        {"range": [60, 80], "color": "#fdebd0"},
+                        {"range": [80, 100], "color": "#d5f5e3"},
+                    ],
+                    "threshold": {"line": {"color": "white", "width": 3}, "value": score_salud_cxc},
+                },
+            ))
+            fig_gauge.update_layout(height=220, margin=dict(t=20, b=10, l=20, r=20))
+            st.plotly_chart(fig_gauge, use_container_width=True)
+
+        with col_plan:
+            st.markdown("#### 📆 Plan de Cobro por Segmento")
+            cobrable_semana = vigente * 0.3   # estimado conservador
+            cobrable_mes    = vencida_0_30
+            con_gestion     = max(0, float(critica) - float(alto_riesgo))
+            provisionable   = alto_riesgo
+            plan_df = pd.DataFrame({
+                "Horizonte":  ["Esta semana", "Este mes", "Con gestión (30-90d)", "Provisionable (>90d)"],
+                "Monto":      [cobrable_semana, cobrable_mes, con_gestion, provisionable],
+                "Acción":     ["Cobro rutinario", "Seguimiento activo", "Negociación / acuerdo", "Evaluar provisión"],
+                "Semáforo":   ["🟢", "🟡", "🟠", "🔴"],
+            })
+            plan_df["% Cartera"] = (plan_df["Monto"] / total_adeudado * 100).round(1) if total_adeudado else 0
+            plan_df_d = plan_df.copy()
+            plan_df_d["Monto"]     = plan_df_d["Monto"].apply(formato_moneda)
+            plan_df_d["% Cartera"] = plan_df_d["% Cartera"].apply(lambda x: f"{x}%")
+            st.dataframe(plan_df_d[["Semáforo", "Horizonte", "Monto", "% Cartera", "Acción"]],
+                         use_container_width=True, hide_index=True)
+
+        st.markdown("---")
+
+        # ── FILA 2: Pie antigüedad + Concentración de riesgo ──────────────
+        col_pie, col_conc = st.columns(2)
+
         with col_pie:
-            st.markdown("#### Composición por Antigüedad")
+            st.markdown("#### 🥧 Composición por Antigüedad")
             vencida_31_90_val = max(0, float(critica) - float(alto_riesgo))
             cartera_df = pd.DataFrame({
                 "Categoría": ["Vigente", "1-30 días", "31-90 días", ">90 días"],
@@ -546,50 +592,87 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
                 fig_pie = go.Figure(data=[go.Pie(
                     labels=cartera_df["Categoría"],
                     values=cartera_df["Monto"],
-                    marker=dict(colors=["#2ecc71","#3498db","#f39c12","#e74c3c"]),
+                    marker=dict(colors=["#2ecc71", "#3498db", "#f39c12", "#e74c3c"]),
                     textinfo="label+percent",
                     hovertemplate="<b>%{label}</b><br>$%{value:,.0f}<br>%{percent}<extra></extra>",
                 )])
-                fig_pie.update_layout(height=320)
+                fig_pie.update_layout(height=300, margin=dict(t=10, b=10))
                 st.plotly_chart(fig_pie, use_container_width=True)
             else:
                 st.info("Sin saldo pendiente para mostrar.")
 
-        # Top deudores bar
-        with col_bar:
-            st.markdown("#### Top 10 Deudores")
-            if _col_cliente_cxc:
-                top_deudores = df_cxc.groupby(_col_cliente_cxc)["saldo_adeudado"].sum().sort_values(ascending=False).head(10).reset_index()
-                top_deudores.columns = ["Cliente", "Adeudo"]
-                fig_bar = px.bar(
-                    top_deudores, x="Adeudo", y="Cliente", orientation="h",
-                    color="Adeudo", color_continuous_scale="Reds",
-                    labels={"Adeudo": "Saldo ($)", "Cliente": ""},
+        with col_conc:
+            st.markdown("#### ⚠️ Concentración de Riesgo")
+            if _col_cliente_cxc and total_adeudado > 0:
+                conc = df_cxc.groupby(_col_cliente_cxc)["saldo_adeudado"].sum().sort_values(ascending=False)
+                top3_pct  = conc.head(3).sum()  / total_adeudado * 100
+                top1_pct  = conc.head(1).sum()  / total_adeudado * 100
+                top10_pct = conc.head(10).sum() / total_adeudado * 100
+                r1, r2, r3 = st.columns(3)
+                r1.metric("Top 1 cliente",  f"{top1_pct:.1f}%",
+                          delta="⚠️ alto" if top1_pct > 30 else "✅ ok", delta_color="off")
+                r2.metric("Top 3 clientes", f"{top3_pct:.1f}%",
+                          delta="⚠️ alto" if top3_pct > 50 else "✅ ok", delta_color="off")
+                r3.metric("Top 10 clientes", f"{top10_pct:.1f}%")
+
+                fig_conc = px.bar(
+                    x=conc.head(10).values,
+                    y=conc.head(10).index,
+                    orientation="h",
+                    color=conc.head(10).values,
+                    color_continuous_scale="Reds",
+                    labels={"x": "Saldo ($)", "y": ""},
                 )
-                fig_bar.update_layout(height=320, showlegend=False, coloraxis_showscale=False)
-                st.plotly_chart(fig_bar, use_container_width=True)
+                fig_conc.update_layout(height=220, showlegend=False,
+                                       coloraxis_showscale=False, margin=dict(t=5, b=5))
+                st.plotly_chart(fig_conc, use_container_width=True)
+            else:
+                st.info("Sin datos de cliente para calcular concentración.")
+
+        st.markdown("---")
+
+        # ── FILA 3: Urgentes + Por vendedor ───────────────────────────────
+        col_urg, col_vend = st.columns(2)
+
+        with col_urg:
+            st.markdown("#### 🚨 Cobro Urgente (>60 días)")
+            if _col_cliente_cxc:
+                df_urgentes = df_cxc[mask_no_pagado & (days_ov > 60)].copy()
+                if not df_urgentes.empty:
+                    urg = df_urgentes.groupby(_col_cliente_cxc).agg(
+                        Adeudo=("saldo_adeudado", "sum"),
+                        Días=("dias_overdue", "max"),
+                    ).reset_index()
+                    urg.columns = ["Cliente", "Adeudo", "Días"]
+                    urg = urg.sort_values("Adeudo", ascending=False)
+                    urg["Nivel"] = urg["Días"].apply(lambda x: "🔴 >90d" if x > 90 else "🟠 60-90d")
+                    urg_d = urg.copy()
+                    urg_d["Adeudo"] = urg_d["Adeudo"].apply(formato_moneda)
+                    urg_d["Días"]   = urg_d["Días"].apply(lambda x: f"{x:.0f}")
+                    st.dataframe(urg_d, use_container_width=True, hide_index=True)
+                    st.caption(f"Total en riesgo: **{formato_moneda(df_urgentes['saldo_adeudado'].sum())}**")
+                else:
+                    st.success("✅ Sin facturas con más de 60 días vencidas.")
             else:
                 st.info("Sin columna de cliente disponible.")
 
-        st.markdown("---")
-        st.markdown("#### 📋 Detalle de Deudores")
-        if _col_cliente_cxc:
-            deudores_detalle = df_cxc[mask_no_pagado].groupby(_col_cliente_cxc).agg(
-                Adeudo=("saldo_adeudado", "sum"),
-                Días_Prom=("dias_overdue", "mean"),
-            ).reset_index()
-            deudores_detalle.columns = ["Cliente", "Adeudo", "Días Prom"]
-            deudores_detalle["% Total"] = (deudores_detalle["Adeudo"] / total_adeudado * 100).round(1) if total_adeudado else 0
-            deudores_detalle["Riesgo"]  = deudores_detalle["Días Prom"].apply(
-                lambda x: "🔴" if x > 90 else "🟡" if x > 30 else "🟢"
-            )
-            deudores_detalle = deudores_detalle.sort_values("Adeudo", ascending=False)
-            deudores_detalle["Adeudo"]    = deudores_detalle["Adeudo"].apply(formato_moneda)
-            deudores_detalle["% Total"]   = deudores_detalle["% Total"].apply(lambda x: f"{x}%")
-            deudores_detalle["Días Prom"] = deudores_detalle["Días Prom"].apply(lambda x: f"{x:.0f}")
-            st.dataframe(deudores_detalle, use_container_width=True, hide_index=True)
-        else:
-            st.info("Sin columna de cliente disponible.")
+        with col_vend:
+            st.markdown("#### 👤 Cartera Vencida por Vendedor")
+            col_vend_cxc = next((c for c in ["vendedor", "agente"] if c in df_cxc.columns), None)
+            if col_vend_cxc:
+                df_venc_vend = df_cxc[mask_no_pagado & (days_ov > 0)].groupby(col_vend_cxc).agg(
+                    Vencido=("saldo_adeudado", "sum"),
+                    Clientes=(_col_cliente_cxc, "nunique") if _col_cliente_cxc else ("saldo_adeudado", "count"),
+                ).reset_index()
+                df_venc_vend.columns = ["Vendedor", "Vencido", "Clientes"]
+                df_venc_vend["% Total"] = (df_venc_vend["Vencido"] / critica * 100).round(1) if critica else 0
+                df_venc_vend = df_venc_vend.sort_values("Vencido", ascending=False)
+                df_venc_vend_d = df_venc_vend.copy()
+                df_venc_vend_d["Vencido"]  = df_venc_vend_d["Vencido"].apply(formato_moneda)
+                df_venc_vend_d["% Total"]  = df_venc_vend_d["% Total"].apply(lambda x: f"{x}%")
+                st.dataframe(df_venc_vend_d, use_container_width=True, hide_index=True)
+            else:
+                st.info("Sin columna de vendedor/agente en los datos de CxC.")
 
     st.markdown("---")
     st.caption(f"📅 Reporte generado: {now_mx().strftime('%d/%m/%Y %H:%M')}")
