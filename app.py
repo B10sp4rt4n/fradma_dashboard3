@@ -2051,23 +2051,16 @@ if "df" in st.session_state and _filtros_vista:
 # =====================================================================
 
 if menu == "🎯 Reporte Ejecutivo":
-    if "df" in st.session_state:
+    if "df" in st.session_state and st.session_state.get("_df_fuente") == "excel":
         with st.spinner("📊 Generando reporte ejecutivo..."):
             try:
-                # Obtener datos de ventas
+                # Obtener datos de ventas (solo de Excel)
                 df_ventas = st.session_state["df"]
-                
-                # Obtener datos de CxC — solo desde Excel
                 archivo_excel = st.session_state.get("archivo_excel")
 
-                if not archivo_excel:
-                    df_cxc = pd.DataFrame(columns=['cliente', 'saldo_adeudado', 'dias_vencido'])
-                    ia_habilitada = st.session_state.get("ia_premium_activada", False)
-                    api_key = st.session_state.get("openai_api_key", None)
-                    reporte_ejecutivo.mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=ia_habilitada, openai_api_key=api_key)
-                else:
-                    xls = pd.ExcelFile(archivo_excel)
-                    hojas = xls.sheet_names
+                if True:
+                    xls = pd.ExcelFile(archivo_excel) if archivo_excel else None
+                    hojas = xls.sheet_names if xls else []
 
                     # Prioridad 1: Usar hojas específicas de CxC (igual que KPI CxC)
                     if "CXC VIGENTES" in hojas and "CXC VENCIDAS" in hojas:
@@ -2132,8 +2125,8 @@ if menu == "🎯 Reporte Ejecutivo":
                 st.info("💡 Asegúrate de haber subido un archivo con datos de ventas y CxC")
                 logger.exception(f"Error inesperado en reporte ejecutivo: {e}")
     else:
-        st.warning("⚠️ Primero carga tus datos de ventas para visualizar el Reporte Ejecutivo.")
-        st.info("📂 Usa el menú lateral para cargar tu archivo o conectar con tus CFDIs.")
+        st.warning("⚠️ Primero sube un archivo Excel para visualizar el Reporte Ejecutivo.")
+        st.info("📂 Usa el menú lateral para cargar tu archivo de datos.")
 
 elif menu == "📈 KPIs Generales":
     # Pasar parámetros de IA premium al módulo
