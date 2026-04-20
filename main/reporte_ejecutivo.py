@@ -169,7 +169,7 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
         periodo_sel = st.selectbox(
             "📅 Período de análisis",
             list(periodo_opciones.keys()),
-            index=2,
+            index=3,
             help="Filtra los datos de ventas que se usan en todo el reporte",
         )
     
@@ -424,6 +424,17 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
     with tab_comercial:
         st.subheader("📈 Desempeño Comercial")
 
+        # Banner de período activo
+        if fecha_min_datos and fecha_max_datos:
+            st.info(
+                f"📅 Mostrando datos del período: **{periodo_sel}** "
+                f"({fecha_min_datos.strftime('%d/%m/%Y')} → {fecha_max_datos.strftime('%d/%m/%Y')}) "
+                f"· **{len(df_v):,}** registros · "
+                f"Cambia el período en el selector de arriba ↑"
+            )
+        else:
+            st.warning("⚠️ Sin columna 'fecha' — mostrando todos los registros sin filtro de período.")
+
         # Tendencia de ventas
         if "fecha" in df_v.columns and not df_v.empty:
             df_v_tmp = df_v.copy()
@@ -503,6 +514,12 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
     with tab_cxc:
         st.subheader("🏦 Cuentas por Cobrar")
 
+        if fecha_min_datos and fecha_max_datos:
+            st.info(
+                f"📅 Ventas del período: **{periodo_sel}** "
+                f"({fecha_min_datos.strftime('%d/%m/%Y')} → {fecha_max_datos.strftime('%d/%m/%Y')}) "
+                f"· CxC: todos los saldos pendientes (sin filtro de fecha)"
+            )
         # KPIs CxC — fila 1
         cx1, cx2, cx3, cx4, cx5 = st.columns(5)
         cx1.metric("💰 Cartera Total",  formato_moneda(total_adeudado))
