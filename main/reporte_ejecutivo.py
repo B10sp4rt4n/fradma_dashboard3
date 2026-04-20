@@ -289,13 +289,20 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
     pct_vencida_total  = pct_vencida_0_30 + pct_critica
     pct_vencida        = pct_vencida_total
     pct_alto_riesgo    = (alto_riesgo  / total_adeudado * 100) if total_adeudado else 0
-    # DSO: días promedio que tarda en cobrarse la cartera
-    # DSO = Cartera total / (Ventas del periodo / días del periodo)
-    if "fecha" in df_v.columns and not df_v.empty and total_ventas > 0:
-        dias_periodo = max(1, (df_v["fecha"].max() - df_v["fecha"].min()).days + 1)
-        dso = total_adeudado / (total_ventas / dias_periodo)
+    # DSO estándar: (Cartera / Ventas_anualizadas) × 365
+    # Usa ventas de los últimos 12 meses para anualizar; si hay menos historial usa lo disponible
+    if total_adeudado > 0 and total_ventas > 0 and "fecha" in df_v.columns and not df_v.empty:
+        _hoy_dso = pd.Timestamp.today().normalize()
+        _hace_12m = _hoy_dso - pd.DateOffset(months=12)
+        _col_v = next((c for c in ["valor_usd", "ventas_usd", "ventas", "total"] if c in df_v.columns), None)
+        if _col_v:
+            _ventas_12m = df_v.loc[df_v["fecha"] >= _hace_12m, _col_v].sum()
+            _ventas_base = _ventas_12m if _ventas_12m > 0 else total_ventas
+        else:
+            _ventas_base = total_ventas
+        dso = round((total_adeudado / _ventas_base) * 365)
     elif total_ventas > 0:
-        dso = total_adeudado / (total_ventas / 30)
+        dso = round((total_adeudado / total_ventas) * 365)
     else:
         dso = 0
     eficiencia_ops     = (total_ventas / total_adeudado) if total_adeudado else 0

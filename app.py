@@ -390,6 +390,7 @@ if (
 
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("🚪 Cerrar sesión", key="btn_logout_selector", use_container_width=True):
+            st.cache_data.clear()
             st.session_state.clear()
             st.rerun()
 

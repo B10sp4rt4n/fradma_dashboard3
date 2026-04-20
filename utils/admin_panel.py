@@ -733,6 +733,7 @@ def mostrar_info_usuario():
     with col_logout:
         if st.button("🚪", help="Cerrar sesión", key="btn_logout_sidebar"):
             logger.info(f"Logout: {user.username}")
+            st.cache_data.clear()
             st.session_state.clear()
             st.rerun()
     
