@@ -289,7 +289,15 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
     pct_vencida_total  = pct_vencida_0_30 + pct_critica
     pct_vencida        = pct_vencida_total
     pct_alto_riesgo    = (alto_riesgo  / total_adeudado * 100) if total_adeudado else 0
-    indice_liquidez    = (vigente + ventas_mes_actual) / (critica + 1)
+    # DSO: días promedio que tarda en cobrarse la cartera
+    # DSO = Cartera total / (Ventas del periodo / días del periodo)
+    if "fecha" in df_v.columns and not df_v.empty and total_ventas > 0:
+        dias_periodo = max(1, (df_v["fecha"].max() - df_v["fecha"].min()).days + 1)
+        dso = total_adeudado / (total_ventas / dias_periodo)
+    elif total_ventas > 0:
+        dso = total_adeudado / (total_ventas / 30)
+    else:
+        dso = 0
     eficiencia_ops     = (total_ventas / total_adeudado) if total_adeudado else 0
 
     score_salud_cxc = calcular_score_salud(
@@ -324,8 +332,11 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
         c4.metric("🔴 Crítica >30d", formato_moneda(critica), delta=f"{pct_critica:.1f}%", delta_color="inverse")
         score_emoji = "🟢" if score_salud_cxc >= 80 else "🟡" if score_salud_cxc >= 60 else "🔴"
         c5.metric(f"{score_emoji} Salud CxC", f"{score_salud_cxc:.0f}/100")
-        c6.metric("💧 Índice Liquidez", f"{indice_liquidez:.2f}x",
-                  help="(Vigente + Ventas del mes) / (Crítica + 1)")
+        dso_delta = "🟢 saludable" if dso <= 30 else "🟡 atención" if dso <= 60 else "🔴 alto"
+        c6.metric("📆 DSO (días cobro)", f"{dso:.0f} días",
+                  delta=dso_delta,
+                  delta_color="off",
+                  help="Days Sales Outstanding: cuántos días tarda en promedio en cobrarse la cartera. <30d=saludable, 30-60d=atención, >60d=riesgo")
 
         st.markdown("---")
         st.subheader("🚨 Alertas")
