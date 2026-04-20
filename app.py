@@ -2057,65 +2057,18 @@ if menu == "🎯 Reporte Ejecutivo":
                 # Obtener datos de ventas
                 df_ventas = st.session_state["df"]
                 
-                # Obtener datos de CxC
+                # Obtener datos de CxC — solo desde Excel
                 archivo_excel = st.session_state.get("archivo_excel")
 
-                # ── Prioridad 0: v_cartera_clientes desde Neon ─────────────
-                df_cxc_neon = pd.DataFrame()
-                try:
-                    import os as _os
-                    import psycopg2 as _pg
-                    _neon_url = (
-                        _os.environ.get("NEON_DATABASE_URL")
-                        or st.secrets.get("NEON_DATABASE_URL")
-                        or st.secrets.get("neon_database_url", "")
-                    )
-                    if _neon_url:
-                        _empresa_id = st.session_state.get("empresa_id", "")
-                        _conn = _pg.connect(_neon_url)
-                        _sql = (
-                            "SELECT empresa_id, receptor_rfc, receptor_nombre, "
-                            "num_facturas, total_adeudado, saldo_pendiente, "
-                            "dias_credito_promedio, fecha_ultima_factura "
-                            "FROM v_cartera_clientes "
-                            "WHERE empresa_id = %s AND saldo_pendiente > 0"
-                        )
-                        df_cxc_neon = pd.read_sql(_sql, _conn, params=(_empresa_id,))
-                        _conn.close()
-                        # Normalizar para reporte_ejecutivo
-                        df_cxc_neon = df_cxc_neon.rename(columns={
-                            "receptor_nombre": "cliente",
-                            "saldo_pendiente": "saldo_adeudado",
-                        })
-                        # Calcular dias_vencido real:
-                        # fecha_vencimiento = fecha_ultima_factura + dias_credito_promedio
-                        df_cxc_neon["fecha_ultima_factura"] = pd.to_datetime(
-                            df_cxc_neon["fecha_ultima_factura"], errors="coerce"
-                        )
-                        df_cxc_neon["dias_credito_promedio"] = pd.to_numeric(
-                            df_cxc_neon["dias_credito_promedio"], errors="coerce"
-                        ).fillna(0)
-                        df_cxc_neon["fecha_vencimiento"] = (
-                            df_cxc_neon["fecha_ultima_factura"]
-                            + pd.to_timedelta(df_cxc_neon["dias_credito_promedio"], unit="D")
-                        )
-                        hoy = pd.Timestamp.today().normalize()
-                        df_cxc_neon["dias_vencido"] = (
-                            (hoy - df_cxc_neon["fecha_vencimiento"]).dt.days
-                        ).fillna(0).astype(int)
-                except Exception as _e:
-                    logger.warning(f"No se pudo cargar v_cartera_clientes: {_e}")
-
-                # Si no hay Excel, usar solo Neon y saltar al render
                 if not archivo_excel:
-                    df_cxc = df_cxc_neon if not df_cxc_neon.empty else pd.DataFrame(columns=['cliente', 'saldo_adeudado', 'dias_vencido'])
+                    df_cxc = pd.DataFrame(columns=['cliente', 'saldo_adeudado', 'dias_vencido'])
                     ia_habilitada = st.session_state.get("ia_premium_activada", False)
                     api_key = st.session_state.get("openai_api_key", None)
                     reporte_ejecutivo.mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=ia_habilitada, openai_api_key=api_key)
                 else:
                     xls = pd.ExcelFile(archivo_excel)
                     hojas = xls.sheet_names
-                
+
                     # Prioridad 1: Usar hojas específicas de CxC (igual que KPI CxC)
                     if "CXC VIGENTES" in hojas and "CXC VENCIDAS" in hojas:
                         df_vigentes = pd.read_excel(xls, sheet_name='CXC VIGENTES')
@@ -2160,8 +2113,7 @@ if menu == "🎯 Reporte Ejecutivo":
                                 nuevas_columnas.append(col_str)
                             df_cxc.columns = nuevas_columnas
                         else:
-                            # Si no hay hoja específica, usar Neon si está disponible
-                            df_cxc = df_cxc_neon if not df_cxc_neon.empty else pd.DataFrame(columns=['cliente', 'saldo_adeudado', 'dias_vencido'])
+                            df_cxc = pd.DataFrame(columns=['cliente', 'saldo_adeudado', 'dias_vencido'])
 
                     # Pasar parámetros de IA premium al módulo
                     ia_habilitada = st.session_state.get("ia_premium_activada", False)
