@@ -140,10 +140,27 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
     # =====================================================================
     # SELECTOR DE PERIODO (global, aplica a las 3 tabs)
     # =====================================================================
+    def _filtrar_periodo(df, modo):
+        if "fecha" not in df.columns or df.empty:
+            return df
+        df = df.copy()
+        df["fecha"] = pd.to_datetime(df["fecha"], errors="coerce")
+        df = df.dropna(subset=["fecha"])
+        if df.empty:
+            return df
+        fmax = df["fecha"].max()
+        if modo == "Último mes":
+            return df[df["fecha"] >= fmax.replace(day=1)]
+        elif modo == "Último trimestre":
+            return df[df["fecha"] >= (fmax - pd.DateOffset(months=3))]
+        elif modo == "Año actual":
+            return df[df["fecha"].dt.year == fmax.year]
+        return df
+
     periodo_opciones = {
-        "Último mes":       lambda df: df[df["fecha"] >= (df["fecha"].max().replace(day=1))] if "fecha" in df.columns and not df.empty else df,
-        "Último trimestre": lambda df: df[df["fecha"] >= (df["fecha"].max() - pd.DateOffset(months=3))] if "fecha" in df.columns and not df.empty else df,
-        "Año actual":       lambda df: df[df["fecha"].dt.year == df["fecha"].max().year] if "fecha" in df.columns and not df.empty else df,
+        "Último mes":        lambda df: _filtrar_periodo(df, "Último mes"),
+        "Último trimestre":  lambda df: _filtrar_periodo(df, "Último trimestre"),
+        "Año actual":        lambda df: _filtrar_periodo(df, "Año actual"),
         "Todo el historial": lambda df: df,
     }
 
@@ -221,6 +238,8 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
     col_estatus = next((c for c in ["estatus", "status", "pagado"] if c in df_cxc_local.columns), None)
     mask_pagado    = df_cxc_local[col_estatus].astype(str).str.strip().str.lower().str.contains("pagado") if col_estatus else pd.Series(False, index=df_cxc_local.index)
     mask_no_pagado = ~mask_pagado
+    # Guardar máscaras antes de reasignar df_cxc (evitar dependencia de índice posterior)
+    _mask_no_pagado_idx = mask_no_pagado.values
 
     if "saldo_adeudado" not in df_cxc_local.columns:
         for candidato in ["saldo_usd", "saldo", "adeudo", "importe", "monto", "total"]:
@@ -254,6 +273,8 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
     df_cxc_local["dias_overdue"] = days_ov = pd.to_numeric(dias_overdue, errors="coerce").fillna(0)
     col_dias = "dias_overdue"
     df_cxc = df_cxc_local
+    # Recalcular máscara sobre el df ya enriquecido con dias_overdue
+    mask_no_pagado = pd.Series(_mask_no_pagado_idx, index=df_cxc.index)
 
     vigente      = df_cxc.loc[mask_no_pagado & (days_ov <= 0), "saldo_adeudado"].sum()
     vencida_0_30 = df_cxc.loc[mask_no_pagado & (days_ov > 0)  & (days_ov <= 30),  "saldo_adeudado"].sum()
@@ -275,6 +296,9 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
         pct_vigente, pct_critica,
         pct_vencida_0_30, 0, 0, pct_alto_riesgo
     )
+    # Columna cliente normalizada (compartida entre tabs)
+    _col_cliente_cxc = next((c for c in ["cliente", "receptor_nombre", "razon_social"] if c in df_cxc.columns), None)
+    _col_cliente_v   = next((c for c in ["cliente", "receptor_nombre", "razon_social"] if c in df_v.columns), None)
 
     # ═════════════════════════════════════════════════════════════════════
     # TAB 1 — GENERAL
@@ -292,16 +316,16 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
 
         st.markdown("---")
 
-        # Segunda fila: CxC resumen
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("💰 Cartera Total", formato_moneda(total_adeudado),
-                  delta=f"{pct_vigente:.1f}% vigente")
-        c2.metric("✅ Vigente", formato_moneda(vigente),
-                  delta=f"{pct_vigente:.1f}%")
-        c3.metric("⚠️ Vencida 0-30d", formato_moneda(vencida_0_30),
-                  delta=f"{pct_vencida_0_30:.1f}%", delta_color="inverse")
-        c4.metric("🔴 Crítica >30d", formato_moneda(critica),
-                  delta=f"{pct_critica:.1f}%", delta_color="inverse")
+        # Segunda fila: CxC resumen + score salud + liquidez
+        c1, c2, c3, c4, c5, c6 = st.columns(6)
+        c1.metric("💰 Cartera Total", formato_moneda(total_adeudado))
+        c2.metric("✅ Vigente", formato_moneda(vigente), delta=f"{pct_vigente:.1f}%")
+        c3.metric("⚠️ 0-30d", formato_moneda(vencida_0_30), delta=f"{pct_vencida_0_30:.1f}%", delta_color="inverse")
+        c4.metric("🔴 Crítica >30d", formato_moneda(critica), delta=f"{pct_critica:.1f}%", delta_color="inverse")
+        score_emoji = "🟢" if score_salud_cxc >= 80 else "🟡" if score_salud_cxc >= 60 else "🔴"
+        c5.metric(f"{score_emoji} Salud CxC", f"{score_salud_cxc:.0f}/100")
+        c6.metric("💧 Índice Liquidez", f"{indice_liquidez:.2f}x",
+                  help="(Vigente + Ventas del mes) / (Crítica + 1)")
 
         st.markdown("---")
         st.subheader("🚨 Alertas")
@@ -315,8 +339,8 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
             alertas.append(("🔴 CRÍTICO", f"Alto riesgo de incobrabilidad: {formato_moneda(alto_riesgo)} (>{pct_alto_riesgo:.1f}%)", "Evaluar provisión e iniciar acciones legales"))
         if variacion_ventas < -10:
             alertas.append(("🟠 ALERTA",  f"Caída en ventas: {variacion_ventas:.1f}% vs mes anterior", "Revisar estrategia comercial"))
-        if "cliente" in df_cxc.columns and total_adeudado > 0:
-            top_deudor_pct = (df_cxc.groupby("cliente")["saldo_adeudado"].sum().max() / total_adeudado * 100)
+        if _col_cliente_cxc and total_adeudado > 0:
+            top_deudor_pct = (df_cxc.groupby(_col_cliente_cxc)["saldo_adeudado"].sum().max() / total_adeudado * 100)
             if top_deudor_pct > 30:
                 alertas.append(("🟡 PRECAUCIÓN", f"Concentración de cartera: un cliente representa {top_deudor_pct:.1f}%", "Diversificar cartera"))
 
@@ -431,9 +455,8 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
 
         with col_cli:
             st.markdown("#### 👥 Top 5 Clientes por Venta")
-            col_cliente = next((c for c in ["cliente", "receptor_nombre", "razon_social"] if c in df_v.columns), None)
-            if col_cliente:
-                top_cli = df_v.groupby(col_cliente).agg(Ventas=("valor_usd", "sum"), Ops=("valor_usd", "count")).reset_index()
+            if _col_cliente_v:
+                top_cli = df_v.groupby(_col_cliente_v).agg(Ventas=("valor_usd", "sum"), Ops=("valor_usd", "count")).reset_index()
                 top_cli.columns = ["Cliente", "Ventas", "Ops"]
                 top_cli = top_cli.sort_values("Ventas", ascending=False).head(5)
                 top_cli_d = top_cli.copy()
@@ -469,12 +492,15 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
     with tab_cxc:
         st.subheader("🏦 Cuentas por Cobrar")
 
-        # KPIs CxC
-        cx1, cx2, cx3, cx4 = st.columns(4)
+        # KPIs CxC — fila 1
+        cx1, cx2, cx3, cx4, cx5 = st.columns(5)
         cx1.metric("💰 Cartera Total",  formato_moneda(total_adeudado))
         cx2.metric("✅ Vigente",        formato_moneda(vigente),      delta=f"{pct_vigente:.1f}%")
         cx3.metric("⚠️ 0-30 días",     formato_moneda(vencida_0_30),  delta=f"{pct_vencida_0_30:.1f}%", delta_color="inverse")
         cx4.metric("🔴 Crítica >30d",  formato_moneda(critica),       delta=f"{pct_critica:.1f}%", delta_color="inverse")
+        score_emoji_cxc = "🟢" if score_salud_cxc >= 80 else "🟡" if score_salud_cxc >= 60 else "🔴"
+        cx5.metric(f"{score_emoji_cxc} Score Salud", f"{score_salud_cxc:.0f}/100",
+                   help="0=crítico · 60=aceptable · 80=saludable · 100=excelente")
 
         st.markdown("---")
         col_pie, col_bar = st.columns(2)
@@ -504,8 +530,8 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
         # Top deudores bar
         with col_bar:
             st.markdown("#### Top 10 Deudores")
-            if "cliente" in df_cxc.columns:
-                top_deudores = df_cxc.groupby("cliente")["saldo_adeudado"].sum().sort_values(ascending=False).head(10).reset_index()
+            if _col_cliente_cxc:
+                top_deudores = df_cxc.groupby(_col_cliente_cxc)["saldo_adeudado"].sum().sort_values(ascending=False).head(10).reset_index()
                 top_deudores.columns = ["Cliente", "Adeudo"]
                 fig_bar = px.bar(
                     top_deudores, x="Adeudo", y="Cliente", orientation="h",
@@ -519,13 +545,13 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
 
         st.markdown("---")
         st.markdown("#### 📋 Detalle de Deudores")
-        if "cliente" in df_cxc.columns:
-            deudores_detalle = df_cxc[mask_no_pagado].groupby("cliente").agg(
+        if _col_cliente_cxc:
+            deudores_detalle = df_cxc[mask_no_pagado].groupby(_col_cliente_cxc).agg(
                 Adeudo=("saldo_adeudado", "sum"),
-                Días_Prom=("dias_overdue", "mean") if col_dias else ("saldo_adeudado", "count"),
+                Días_Prom=("dias_overdue", "mean"),
             ).reset_index()
             deudores_detalle.columns = ["Cliente", "Adeudo", "Días Prom"]
-            deudores_detalle["% Total"] = (deudores_detalle["Adeudo"] / total_adeudado * 100).round(1)
+            deudores_detalle["% Total"] = (deudores_detalle["Adeudo"] / total_adeudado * 100).round(1) if total_adeudado else 0
             deudores_detalle["Riesgo"]  = deudores_detalle["Días Prom"].apply(
                 lambda x: "🔴" if x > 90 else "🟡" if x > 30 else "🟢"
             )
