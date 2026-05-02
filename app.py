@@ -77,12 +77,16 @@ st.markdown("""
 [data-testid="stSidebar"] .nav-link.active span {{
     color: white !important;
 }}
-/* Ítem normal: texto naranja */
+/* Ítem normal: texto amarillo oro */
 [data-testid="stSidebar"] .nav-link:not(.active) {{
-    color: #FF6B35 !important;
+    color: #FFD700 !important;
 }}
 [data-testid="stSidebar"] .nav-link:not(.active) i {{
-    color: #FF6B35 !important;
+    color: white !important;
+}}
+/* Hover: fondo azul */
+[data-testid="stSidebar"] .nav-link:hover {{
+    background-color: #1F4E79 !important;
 }}
 </style>
 """, unsafe_allow_html=True)
@@ -1136,10 +1140,10 @@ _todos_iconos   = [icon for g in _grupos.values() for _, icon in g["items"]]
 # Estilos compartidos para los menús de sección
 _menu_styles = {
     "container":        {"padding": "0 !important", "background-color": "transparent"},
-    "icon":             {"font-size": "14px", "color": "#1F4E79"},
+    "icon":             {"font-size": "14px", "color": "white"},
     "nav-link":         {"font-size": "13px", "text-align": "left", "margin": "1px 0",
-                         "padding": "6px 10px", "--hover-color": "#dce8f7",
-                         "color": "#FF6B35"},
+                         "padding": "6px 10px", "--hover-color": "#1F4E79",
+                         "color": "#FFD700"},
     "nav-link-selected":{"background-color": "#1F4E79", "color": "white",
                          "font-weight": "600"},
 }
