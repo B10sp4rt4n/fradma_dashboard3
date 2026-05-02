@@ -422,83 +422,89 @@ def run(df):
         st.pyplot(fig, clear_figure=True)
         plt.close(fig)
 
-        # Pie chart de líneas de negocio más vendidas
         st.write("---")
-        st.subheader("🥧 Ventas por Línea de Negocio")
-        
-        # Calcular ventas por línea de negocio (solo líneas seleccionadas)
-        df_pie = df[df[columna_linea].isin(selected_lineas)]
-        ventas_linea = df_pie.groupby(columna_linea)[columna_importe].sum().sort_values(ascending=False)
-        
-        # Top N + Otros (ajustar según líneas disponibles)
+        st.subheader("📊 Ranking y concentración de líneas")
+        st.caption(
+            "Esta vista complementa al heatmap con magnitud comparable entre líneas."
+            " Evita la distorsión visual del gráfico circular y mantiene el foco en el peso comercial real."
+        )
+
+        ventas_linea = df_filtered.sum(axis=0).sort_values(ascending=False)
         total_lineas_disponibles = len(ventas_linea)
-        
-        if total_lineas_disponibles == 0:
-            st.info("No hay datos de ventas para mostrar en el gráfico circular.")
+
+        if total_lineas_disponibles == 0 or ventas_linea.sum() == 0:
+            st.info("No hay datos visibles para construir el ranking comercial.")
         else:
-            # Configurar slider con rangos válidos
-            min_slider = min(5, total_lineas_disponibles)
-            max_slider = min(20, total_lineas_disponibles)
-            valor_inicial = min(10, total_lineas_disponibles)
-            
-            # Solo mostrar slider si tiene sentido (más de 1 opción)
-            if min_slider < max_slider:
+            max_lineas_ranking = min(15, total_lineas_disponibles)
+            valor_inicial_ranking = min(8, total_lineas_disponibles)
+
+            if total_lineas_disponibles > 3:
                 top_n_lineas = st.slider(
-                    "🔢 Número de líneas a mostrar:", 
-                    min_value=min_slider, 
-                    max_value=max_slider, 
-                    value=valor_inicial, 
-                    step=1, 
-                    key="heatmap_pie_top_n"
+                    "🔢 Número de líneas a mostrar:",
+                    min_value=3,
+                    max_value=max_lineas_ranking,
+                    value=max(3, valor_inicial_ranking),
+                    step=1,
+                    key="heatmap_ranking_top_n"
                 )
             else:
                 top_n_lineas = total_lineas_disponibles
-                st.caption(f"Mostrando todas las {total_lineas_disponibles} líneas disponibles")
-            
-            # Preparar datos para el pie chart
-            if total_lineas_disponibles > top_n_lineas:
-                # Tomar n-1 líneas para dejar espacio a "Otros" (total = n segmentos)
-                top_lineas_pie = ventas_linea.head(top_n_lineas - 1).copy()
-                otros = ventas_linea.iloc[top_n_lineas - 1:].sum()
-                # Agregar "Otros" como una nueva entrada
-                top_lineas_pie = pd.concat([top_lineas_pie, pd.Series({'Otros': otros})])
-            else:
-                top_lineas_pie = ventas_linea.copy()
-            
-            # Crear pie chart con Plotly
-            fig_pie = go.Figure(data=[go.Pie(
-                labels=top_lineas_pie.index.astype(str).tolist(),
-                values=top_lineas_pie.values.tolist(),
-                hole=0.4,
-                textinfo='label+percent',
-                textposition='auto',
-                hovertemplate='<b>%{label}</b><br>Ventas: $%{value:,.2f}<br>%{percent}<extra></extra>'
-            )])
-            
-            fig_pie.update_layout(
-                title=f"Top {min(top_n_lineas, total_lineas_disponibles)} Líneas de Negocio por Ventas",
-                height=500,
-                showlegend=True,
-                legend=dict(
-                    orientation="v",
-                    yanchor="middle",
-                    y=0.5,
-                    xanchor="left",
-                    x=1.05
+                st.caption(f"Mostrando las {total_lineas_disponibles} líneas visibles")
+
+            top_lineas_ranking = ventas_linea.head(top_n_lineas).sort_values(ascending=True)
+            participacion_linea = (top_lineas_ranking / ventas_linea.sum() * 100)
+            participacion_acumulada = participacion_linea.cumsum()
+
+            top_1_share = (ventas_linea.head(1).sum() / ventas_linea.sum()) * 100
+            top_3_share = (ventas_linea.head(min(3, total_lineas_disponibles)).sum() / ventas_linea.sum()) * 100
+            lineas_relevantes = int((ventas_linea / ventas_linea.sum() * 100 >= 10).sum())
+
+            conc1, conc2, conc3 = st.columns(3)
+            conc1.metric("Concentración Top 1", f"{top_1_share:.1f}%")
+            conc2.metric("Concentración Top 3", f"{top_3_share:.1f}%")
+            conc3.metric("Líneas con peso > 10%", f"{lineas_relevantes}")
+
+            fig_rank = go.Figure()
+            fig_rank.add_trace(go.Bar(
+                x=top_lineas_ranking.values.tolist(),
+                y=top_lineas_ranking.index.astype(str).tolist(),
+                orientation='h',
+                marker=dict(color=participacion_linea.values.tolist(), colorscale='Greens'),
+                text=[f"{value:,.0f}" for value in top_lineas_ranking.values.tolist()],
+                textposition='outside',
+                customdata=np.column_stack([
+                    participacion_linea.values,
+                    participacion_acumulada.values,
+                ]),
+                hovertemplate=(
+                    '<b>%{y}</b><br>'
+                    'Ventas: $%{x:,.2f}<br>'
+                    'Participación: %{customdata[0]:.1f}%<br>'
+                    'Participación acumulada: %{customdata[1]:.1f}%<extra></extra>'
                 )
+            ))
+
+            fig_rank.update_layout(
+                title=f"Top {top_n_lineas} líneas por ventas visibles",
+                height=max(420, top_n_lineas * 40),
+                xaxis_title="Ventas visibles ($)",
+                yaxis_title="Línea de negocio",
+                margin=dict(l=20, r=20, t=60, b=20),
+                coloraxis_showscale=False,
             )
-            
-            st.plotly_chart(fig_pie, use_container_width=True)
-            
-            # Mostrar tabla de resumen
-            with st.expander("📋 Ver tabla de líneas de negocio"):
+
+            st.plotly_chart(fig_rank, use_container_width=True)
+
+            with st.expander("📋 Ver tabla de concentración"):
                 df_lineas_tabla = pd.DataFrame({
-                    'Línea de Negocio': top_lineas_pie.index,
-                    'Ventas': top_lineas_pie.values
+                    'Línea de Negocio': ventas_linea.index,
+                    'Ventas': ventas_linea.values,
                 })
                 df_lineas_tabla['% del Total'] = (df_lineas_tabla['Ventas'] / ventas_linea.sum() * 100).round(2)
+                df_lineas_tabla['% Acumulado'] = df_lineas_tabla['% del Total'].cumsum().round(2)
                 df_lineas_tabla['Ventas'] = df_lineas_tabla['Ventas'].apply(lambda x: f"${x:,.2f}")
                 df_lineas_tabla['% del Total'] = df_lineas_tabla['% del Total'].apply(lambda x: f"{x:.2f}%")
+                df_lineas_tabla['% Acumulado'] = df_lineas_tabla['% Acumulado'].apply(lambda x: f"{x:.2f}%")
                 st.dataframe(df_lineas_tabla, use_container_width=True, hide_index=True)
 
         user = get_current_user()
