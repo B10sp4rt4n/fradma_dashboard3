@@ -475,3 +475,30 @@ class TestHeatmapHelpersReales:
 
         assert lineas_objetivo == 2
         assert cobertura_objetivo == pytest.approx(85.0, rel=0.01)
+
+    def test_resolver_columnas_clave_detecta_cliente_y_vendedor(self):
+        """Test: detecta columnas opcionales comerciales además de las obligatorias."""
+        from main.heatmap_ventas import resolver_columnas_clave
+
+        df = pd.DataFrame(columns=['linea_de_negocio', 'importe', 'producto', 'cliente', 'agente'])
+
+        columna_linea, columna_importe, columna_producto, columna_cliente, columna_vendedor = resolver_columnas_clave(df)
+
+        assert columna_linea == 'linea_de_negocio'
+        assert columna_importe == 'importe'
+        assert columna_producto == 'producto'
+        assert columna_cliente == 'cliente'
+        assert columna_vendedor == 'agente'
+
+    def test_aplicar_filtros_comerciales_sin_columnas_opcionales_retorna_mismo_df(self):
+        """Test: si no hay columnas opcionales, no modifica el dataframe."""
+        from main.heatmap_ventas import aplicar_filtros_comerciales
+
+        df = pd.DataFrame({
+            'fecha': pd.to_datetime(['2024-01-01', '2024-01-02']),
+            'importe': [100, 200],
+        })
+
+        resultado = aplicar_filtros_comerciales(df, columna_cliente=None, columna_vendedor=None)
+
+        pd.testing.assert_frame_equal(resultado, df)

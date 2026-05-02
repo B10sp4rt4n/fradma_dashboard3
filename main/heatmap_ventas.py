@@ -47,7 +47,9 @@ def obtener_mapa_columnas():
     return {
         "linea": ["linea_prodcucto", "linea_producto", "linea_de_negocio", "linea producto", "linea_de_producto"],
         "importe": ["valor_usd", "ventas_usd", "importe"],
-        "producto": ["producto", "articulo", "item", "descripcion", "producto_nombre"]
+        "producto": ["producto", "articulo", "item", "descripcion", "producto_nombre", "producto nombre"],
+        "cliente": ["cliente", "razon_social", "razon social", "deudor", "nombre_cliente", "nombre cliente"],
+        "vendedor": ["vendedor", "agente", "ejecutivo", "vendedor_asignado", "vendedor asignado", "seller", "rep"],
     }
 
 
@@ -74,7 +76,42 @@ def resolver_columnas_clave(df):
     columna_linea = detectar_columna(df, mapa_columnas["linea"])
     columna_importe = detectar_columna(df, mapa_columnas["importe"])
     columna_producto = detectar_columna(df, mapa_columnas["producto"])
-    return columna_linea, columna_importe, columna_producto
+    columna_cliente = detectar_columna(df, mapa_columnas["cliente"])
+    columna_vendedor = detectar_columna(df, mapa_columnas["vendedor"])
+    return columna_linea, columna_importe, columna_producto, columna_cliente, columna_vendedor
+
+
+def aplicar_filtros_comerciales(df, columna_cliente=None, columna_vendedor=None):
+    df_filtrado = df.copy()
+
+    with st.sidebar:
+        st.write("### Segmentación comercial")
+
+        if columna_vendedor is not None:
+            vendedores_disponibles = sorted(df_filtrado[columna_vendedor].dropna().astype(str).unique().tolist())
+            if vendedores_disponibles:
+                vendedores_seleccionados = st.multiselect(
+                    "👤 Filtrar por vendedor:",
+                    vendedores_disponibles,
+                    default=vendedores_disponibles,
+                    key="heatmap_filtro_vendedor"
+                )
+                if vendedores_seleccionados:
+                    df_filtrado = df_filtrado[df_filtrado[columna_vendedor].astype(str).isin(vendedores_seleccionados)]
+
+        if columna_cliente is not None:
+            clientes_disponibles = sorted(df_filtrado[columna_cliente].dropna().astype(str).unique().tolist())
+            if clientes_disponibles:
+                clientes_seleccionados = st.multiselect(
+                    "🏢 Filtrar por cliente:",
+                    clientes_disponibles,
+                    default=clientes_disponibles,
+                    key="heatmap_filtro_cliente"
+                )
+                if clientes_seleccionados:
+                    df_filtrado = df_filtrado[df_filtrado[columna_cliente].astype(str).isin(clientes_seleccionados)]
+
+    return df_filtrado
 
 
 def construir_periodo_y_lags(df, periodo_tipo):
@@ -255,11 +292,21 @@ def run(df):
             st.write(f"Columnas detectadas en tu archivo: {df.columns.tolist()}")
         return
 
-    columna_linea, columna_importe, columna_producto = resolver_columnas_clave(df)
+    columna_linea, columna_importe, columna_producto, columna_cliente, columna_vendedor = resolver_columnas_clave(df)
 
     if columna_linea is None or columna_importe is None:
         st.error("❌ No se encontraron las columnas clave necesarias para 'línea' e 'importe'.")
         st.write(f"Columnas detectadas en tu archivo: {df.columns.tolist()}")
+        return
+
+    df = aplicar_filtros_comerciales(
+        df,
+        columna_cliente=columna_cliente,
+        columna_vendedor=columna_vendedor,
+    )
+
+    if df.empty:
+        st.warning("⚠️ Los filtros comerciales dejaron la vista sin registros para analizar.")
         return
 
     with st.sidebar:
