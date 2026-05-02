@@ -5,41 +5,215 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 import io
+import logging
 import unicodedata
 from utils.auth import get_current_user
 
-def run(df):
-    st.title("📊 Heatmap de Ventas (Entrada Genérica)")
+logger = logging.getLogger(__name__)
 
-    def clean_columns(columns):
-        return (
-            columns.astype(str)
-            .str.strip()
-            .str.lower()
-            .map(lambda x: unicodedata.normalize('NFKD', x).encode('ascii', errors='ignore').decode('utf-8'))
-        )
 
-    def detectar_columna(df, posibles_nombres):
-        for posible in posibles_nombres:
-            for col in df.columns:
-                if unicodedata.normalize('NFKD', col.lower().strip()).encode('ascii', errors='ignore').decode('utf-8') == unicodedata.normalize('NFKD', posible.lower().strip()).encode('ascii', errors='ignore').decode('utf-8'):
-                    return col
-        return None
+def clean_columns(columns):
+    return (
+        columns.astype(str)
+        .str.strip()
+        .str.lower()
+        .map(lambda x: unicodedata.normalize('NFKD', x).encode('ascii', errors='ignore').decode('utf-8'))
+    )
 
-    mapa_columnas = {
+
+def detectar_columna(df, posibles_nombres):
+    for posible in posibles_nombres:
+        for col in df.columns:
+            if unicodedata.normalize('NFKD', col.lower().strip()).encode('ascii', errors='ignore').decode('utf-8') == unicodedata.normalize('NFKD', posible.lower().strip()).encode('ascii', errors='ignore').decode('utf-8'):
+                return col
+    return None
+
+
+def obtener_mapa_columnas():
+    return {
         "linea": ["linea_prodcucto", "linea_producto", "linea_de_negocio", "linea producto", "linea_de_producto"],
         "importe": ["valor_usd", "ventas_usd", "importe"],
         "producto": ["producto", "articulo", "item", "descripcion", "producto_nombre"]
     }
 
+
+def preparar_dataframe_base(df):
+    df = df.copy()
     df.columns = clean_columns(df.columns)
+
+    if 'fecha' not in df.columns:
+        return None, "❌ No se encontró la columna 'fecha' necesaria para construir el Heatmap de Ventas."
+
+    df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
+
+    if df['fecha'].isna().all():
+        return None, "❌ La columna 'fecha' no contiene valores válidos para construir el Heatmap de Ventas."
+
     df['mes_anio'] = df['fecha'].dt.strftime('%b-%Y')
     df['anio'] = df['fecha'].dt.year
     df['trimestre'] = df['fecha'].dt.to_period('Q').astype(str)
+    return df, None
 
+
+def resolver_columnas_clave(df):
+    mapa_columnas = obtener_mapa_columnas()
     columna_linea = detectar_columna(df, mapa_columnas["linea"])
     columna_importe = detectar_columna(df, mapa_columnas["importe"])
     columna_producto = detectar_columna(df, mapa_columnas["producto"])
+    return columna_linea, columna_importe, columna_producto
+
+
+def construir_periodo_y_lags(df, periodo_tipo):
+    df = df.copy()
+
+    if periodo_tipo == "Mensual":
+        df['periodo_inicio'] = df['fecha'].dt.to_period('M').dt.to_timestamp()
+        df['periodo_id'] = df['periodo_inicio'].dt.strftime('%y.%m')
+        df['periodo'] = df['mes_anio']
+        growth_lag_secuencial = 1
+        growth_lag_yoy = 12
+    elif periodo_tipo == "Trimestral":
+        df['periodo_inicio'] = df['fecha'].dt.to_period('Q').dt.start_time
+        df['periodo_id'] = (
+            df['periodo_inicio'].dt.strftime('%y')
+            + '.Q'
+            + df['periodo_inicio'].dt.quarter.astype(str)
+        )
+        df['periodo'] = df['trimestre']
+        growth_lag_secuencial = 1
+        growth_lag_yoy = 4
+    elif periodo_tipo == "Anual":
+        df['periodo_inicio'] = df['fecha'].dt.to_period('Y').dt.to_timestamp()
+        df['periodo_id'] = df['periodo_inicio'].dt.strftime('%y')
+        df['periodo'] = df['anio'].astype(str)
+        growth_lag_secuencial = 1
+        growth_lag_yoy = 1
+    else:
+        fecha_inicio_rango = df['fecha'].min().normalize()
+        df['periodo_inicio'] = fecha_inicio_rango
+        df['periodo_id'] = fecha_inicio_rango.strftime('%y.%m')
+        df['periodo'] = "Rango Personalizado"
+        growth_lag_secuencial = None
+        growth_lag_yoy = None
+
+    return df, growth_lag_secuencial, growth_lag_yoy
+
+
+def construir_tabla_pivot(df, columna_linea, columna_importe):
+    pivot_table = df.pivot_table(
+        index='periodo_etiqueta',
+        columns=columna_linea,
+        values=columna_importe,
+        aggfunc='sum',
+        fill_value=0
+    )
+
+    period_order_lookup = df.drop_duplicates('periodo_etiqueta').set_index('periodo_etiqueta')['periodo_inicio']
+    df_period_order = period_order_lookup.reindex(pivot_table.index)
+    return pivot_table, df_period_order
+
+
+def obtener_offset_comparacion(periodo_tipo, tipo_comparacion):
+    if tipo_comparacion == "Período anterior":
+        if periodo_tipo == "Mensual":
+            return pd.DateOffset(months=1), "vs período anterior"
+        if periodo_tipo == "Trimestral":
+            return pd.DateOffset(months=3), "vs período anterior"
+        return pd.DateOffset(years=1), "vs período anterior"
+
+    return pd.DateOffset(years=1), "vs mismo período año anterior"
+
+
+def calcular_tabla_crecimiento(df_filtered, df_period_order, periodo_tipo, tipo_comparacion):
+    offset, comparacion_label = obtener_offset_comparacion(periodo_tipo, tipo_comparacion)
+
+    periodos_ordenados = df_period_order.loc[df_filtered.index].sort_values()
+    etiquetas_ordenadas = periodos_ordenados.index.tolist()
+    etiqueta_por_periodo = {periodo: etiqueta for etiqueta, periodo in periodos_ordenados.items()}
+
+    growth_table = pd.DataFrame(index=etiquetas_ordenadas, columns=df_filtered.columns, dtype=float)
+    status_table = pd.DataFrame(index=etiquetas_ordenadas, columns=df_filtered.columns, dtype=object)
+
+    for etiqueta_actual in etiquetas_ordenadas:
+        periodo_actual = df_period_order.loc[etiqueta_actual]
+        if pd.isna(periodo_actual):
+            continue
+
+        periodo_base = periodo_actual - offset
+        etiqueta_base = etiqueta_por_periodo.get(periodo_base)
+
+        if etiqueta_base is None:
+            status_table.loc[etiqueta_actual] = 'sin_comparable'
+            continue
+
+        valores_actuales = df_filtered.loc[etiqueta_actual]
+        valores_base = df_filtered.loc[etiqueta_base]
+
+        base_limpia = valores_base.replace(0, np.nan)
+        crecimiento = ((valores_actuales - valores_base) / base_limpia) * 100
+
+        crecimiento[(valores_base == 0) & (valores_actuales > 0)] = np.inf
+        crecimiento[(valores_base == 0) & (valores_actuales == 0)] = np.nan
+        growth_table.loc[etiqueta_actual] = crecimiento
+
+        estados = pd.Series('comparable', index=df_filtered.columns, dtype=object)
+        estados[(valores_base == 0) & (valores_actuales > 0)] = 'nuevo'
+        estados[(valores_base == 0) & (valores_actuales == 0)] = 'sin_actividad'
+        status_table.loc[etiqueta_actual] = estados
+
+    return growth_table.reindex(df_filtered.index), status_table.reindex(df_filtered.index), comparacion_label
+
+
+def construir_resumen_heatmap(df_filtered, growth_table=None):
+    total_visible = np.nansum(df_filtered.to_numpy(dtype=float))
+    periodos_visibles = len(df_filtered.index)
+    lineas_visibles = len(df_filtered.columns)
+    ultimo_periodo = df_filtered.index[-1] if periodos_visibles else None
+
+    ventas_por_linea = df_filtered.sum(axis=0).sort_values(ascending=False)
+    linea_lider = ventas_por_linea.index[0] if not ventas_por_linea.empty else None
+    ventas_linea_lider = ventas_por_linea.iloc[0] if not ventas_por_linea.empty else None
+
+    mejor_linea = None
+    mejor_crecimiento = None
+    if growth_table is not None and ultimo_periodo is not None:
+        crecimiento_ultimo = growth_table.loc[ultimo_periodo].replace([np.inf, -np.inf], np.nan).dropna()
+        if not crecimiento_ultimo.empty:
+            mejor_linea = crecimiento_ultimo.idxmax()
+            mejor_crecimiento = crecimiento_ultimo.max()
+
+    return {
+        "total_visible": total_visible,
+        "periodos_visibles": periodos_visibles,
+        "lineas_visibles": lineas_visibles,
+        "ultimo_periodo": ultimo_periodo,
+        "linea_lider": linea_lider,
+        "ventas_linea_lider": ventas_linea_lider,
+        "mejor_linea": mejor_linea,
+        "mejor_crecimiento": mejor_crecimiento,
+    }
+
+
+def format_currency(value):
+    if pd.notna(value):
+        return f"${value:,.2f}"
+    return ""
+
+def run(df):
+    st.title("🔥 Heatmap de Ventas por Línea de Negocio")
+    st.caption(
+        "Vista de concentración y evolución por período. Úsala para detectar líneas dominantes,"
+        " rebotes y caídas en la secuencia temporal seleccionada."
+    )
+
+    df, error_preparacion = preparar_dataframe_base(df)
+    if error_preparacion:
+        st.error(error_preparacion)
+        if df is not None:
+            st.write(f"Columnas detectadas en tu archivo: {df.columns.tolist()}")
+        return
+
+    columna_linea, columna_importe, columna_producto = resolver_columnas_clave(df)
 
     if columna_linea is None or columna_importe is None:
         st.error("❌ No se encontraron las columnas clave necesarias para 'línea' e 'importe'.")
@@ -47,7 +221,7 @@ def run(df):
         return
 
     with st.sidebar:
-        st.header("⚙️ Opciones de análisis")
+        st.header("⚙️ Configuración del heatmap")
         periodo_tipo = st.selectbox(
             "🗓️ Tipo de periodo:",
             ["Mensual", "Trimestral", "Anual", "Rango Personalizado"],
@@ -63,98 +237,19 @@ def run(df):
                 key="heatmap_tipo_comparacion"
             )
 
-    def generar_periodo_id(row, periodo_tipo):
-        """Genera el identificador del periodo de forma segura"""
-        try:
-            # Obtener año de forma segura
-            if 'anio' in row.index:
-                year_val = row['anio']
-            elif 'año' in row.index:
-                year_val = row['año']
-            else:
-                return ""
-            
-            # Validar que year_val no sea NaN
-            if pd.isna(year_val):
-                return ""
-            
-            year_short = str(int(float(year_val)))[-2:]
-            
-            # Obtener mes de forma segura
-            if 'fecha' in row.index and pd.notna(row['fecha']):
-                if hasattr(row['fecha'], 'month'):
-                    month_num = row['fecha'].month
-                else:
-                    # Si no es datetime, intentar convertir
-                    fecha_dt = pd.to_datetime(row['fecha'], errors='coerce')
-                    if pd.notna(fecha_dt):
-                        month_num = fecha_dt.month
-                    else:
-                        month_num = 1
-            else:
-                month_num = 1
-            
-            trimestre = (month_num - 1) // 3 + 1
-
-            if periodo_tipo == "Mensual":
-                return f"{year_short}.{month_num:02d}"
-            elif periodo_tipo == "Trimestral":
-                return f"{year_short}.Q{trimestre}"
-            elif periodo_tipo == "Anual":
-                return f"{year_short}"
-            else:
-                return f"{year_short}.{month_num:02d}"
-        except (KeyError, AttributeError) as e:
-            logger.warning(f"Columna o atributo faltante en periodo_id: {e}")
-            return ""
-        except ValueError as e:
-            logger.warning(f"Valor inválido al generar periodo_id: {e}")
-            return ""
-        except Exception as e:
-            logger.exception(f"Error inesperado generando periodo_id: {e}")
-            return ""
-
-    # Asegurar que la columna fecha esté en formato datetime
-    if 'fecha' in df.columns:
-        df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
-    
-    df['periodo_id'] = df.apply(lambda row: generar_periodo_id(row, periodo_tipo), axis=1)
-
-    if periodo_tipo == "Mensual":
-        df['periodo'] = df['mes_anio']
-        growth_lag_secuencial = 1  # Comparar con mes anterior
-        growth_lag_yoy = 12  # Comparar con mismo mes año anterior
-    elif periodo_tipo == "Trimestral":
-        df['periodo'] = df['trimestre']
-        growth_lag_secuencial = 1  # Comparar con trimestre anterior
-        growth_lag_yoy = 4  # Comparar con mismo trimestre año anterior
-    elif periodo_tipo == "Anual":
-        df['periodo'] = df['anio'].astype(str)
-        growth_lag_secuencial = 1  # Comparar con año anterior
-        growth_lag_yoy = 1  # Comparar con año anterior (mismo)
-    elif periodo_tipo == "Rango Personalizado":
+    if periodo_tipo == "Rango Personalizado":
         with st.sidebar:
             start_date = st.date_input("📅 Fecha inicio:", value=df['fecha'].min(), key="heatmap_fecha_inicio")
             end_date = st.date_input("📅 Fecha fin:", value=df['fecha'].max(), key="heatmap_fecha_fin")
         df = df[(df['fecha'] >= pd.to_datetime(start_date)) & (df['fecha'] <= pd.to_datetime(end_date))]
-        df['periodo'] = "Rango Personalizado"
-        growth_lag_secuencial = None
-        growth_lag_yoy = None
+
+    df, growth_lag_secuencial, growth_lag_yoy = construir_periodo_y_lags(df, periodo_tipo)
 
     # Convertir a string antes de concatenar para evitar errores de tipo
     df['periodo_etiqueta'] = df['periodo_id'].astype(str) + " - " + df['periodo'].astype(str)
-    df = df.sort_values('periodo_id')
+    df = df.sort_values('periodo_inicio')
 
-    pivot_table = df.pivot_table(
-        index='periodo_etiqueta',
-        columns=columna_linea,
-        values=columna_importe,
-        aggfunc='sum',
-        fill_value=0
-    )
-
-    period_id_lookup = df.drop_duplicates('periodo_etiqueta').set_index('periodo_etiqueta')['periodo_id']
-    df_period_ids = period_id_lookup.reindex(pivot_table.index)
+    pivot_table, df_period_order = construir_tabla_pivot(df, columna_linea, columna_importe)
 
     lineas_disponibles = list(pivot_table.columns)
 
@@ -202,57 +297,52 @@ def run(df):
         top_lineas = total_por_linea.sort_values(ascending=False).head(top_n).index.tolist()
         df_filtered = df_filtered[top_lineas]
 
-        def format_currency(value):
-            if pd.notna(value):
-                return f"${value:,.2f}"
-            else:
-                return ""
-
         annot_data = df_filtered.copy().astype(str)
         nuevas_lineas = set()
+        lineas_sin_base = set()
+        growth_table = None
+        status_table = None
+        comparacion_label = ""
 
         if mostrar_crecimiento and growth_lag_secuencial:
             try:
-                # Calcular crecimiento según tipo de comparación seleccionado
-                df_growth = df_filtered.copy()
-                
-                # Ordenar por periodo_id para asegurar orden cronológico
-                df_growth['periodo_id_num'] = df_period_ids.loc[df_filtered.index]
-                df_growth = df_growth.sort_values('periodo_id_num')
-                df_growth = df_growth.drop(columns='periodo_id_num')
-                
                 if periodo_tipo != "Rango Personalizado":
-                    # Determinar el lag según tipo de comparación
-                    if tipo_comparacion == "Período anterior":
-                        lag = growth_lag_secuencial
-                        comparacion_label = "vs período anterior"
-                    else:  # "Mismo período año anterior"
-                        lag = growth_lag_yoy
-                        comparacion_label = "vs mismo período año anterior"
-                    
-                    # pct_change con el lag correspondiente
-                    growth_table = df_growth.pct_change(periods=lag) * 100
-                    growth_table = growth_table.loc[:, df_filtered.columns]
+                    growth_table, status_table, comparacion_label = calcular_tabla_crecimiento(
+                        df_filtered,
+                        df_period_order,
+                        periodo_tipo,
+                        tipo_comparacion
+                    )
                 else:
                     growth_table = None
+                    status_table = None
                     comparacion_label = ""
 
                 for row in annot_data.index:
                     for col in annot_data.columns:
                         val = df_filtered.loc[row, col]
                         growth = growth_table.loc[row, col] if growth_table is not None else np.nan
+                        status = status_table.loc[row, col] if status_table is not None else None
                         if pd.notna(val):
-                            if pd.notna(growth) and not np.isinf(growth):
+                            if status == 'comparable' and pd.notna(growth) and not np.isinf(growth):
                                 annot_data.loc[row, col] = f"{format_currency(val)}\n({growth:.1f}%)"
-                            elif np.isinf(growth):
-                                annot_data.loc[row, col] = f"{format_currency(val)}\nNEW"
+                            elif status == 'nuevo' or np.isinf(growth):
+                                annot_data.loc[row, col] = f"{format_currency(val)}\nNuevo"
                                 nuevas_lineas.add(col)
+                            elif status == 'sin_comparable':
+                                annot_data.loc[row, col] = f"{format_currency(val)}\nSin base"
+                                lineas_sin_base.add(col)
                             else:
                                 annot_data.loc[row, col] = f"{format_currency(val)}"
 
                 if nuevas_lineas:
-                    st.info(f"🟢 **Líneas con ventas nuevas o reiniciadas** ({comparacion_label}):")
+                    st.info(f"🟢 **Líneas con ventas nuevas** ({comparacion_label}):")
                     for linea in sorted(nuevas_lineas):
+                        st.markdown(f"- {linea}")
+
+                if lineas_sin_base:
+                    st.info(f"ℹ️ **Líneas sin base comparable disponible** ({comparacion_label}):")
+                    for linea in sorted(lineas_sin_base):
                         st.markdown(f"- {linea}")
 
             except Exception as e:
@@ -260,6 +350,31 @@ def run(df):
                 annot_data = df_filtered.map(lambda x: format_currency(x))
         else:
             annot_data = df_filtered.map(lambda x: format_currency(x))
+
+        resumen = construir_resumen_heatmap(df_filtered, growth_table)
+        st.write("### Lectura rápida")
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Ventas visibles", format_currency(resumen["total_visible"]))
+        col2.metric("Períodos visibles", f"{resumen['periodos_visibles']}")
+        col3.metric(
+            "Línea líder",
+            resumen["linea_lider"] or "N/D",
+            format_currency(resumen["ventas_linea_lider"]) if resumen["ventas_linea_lider"] is not None else None
+        )
+        if resumen["mejor_linea"] is not None and resumen["mejor_crecimiento"] is not None:
+            col4.metric(
+                "Mayor crecimiento comparable",
+                resumen["mejor_linea"],
+                f"{resumen['mejor_crecimiento']:.1f}%"
+            )
+        else:
+            col4.metric("Mayor crecimiento comparable", "N/D")
+
+        if resumen["ultimo_periodo"]:
+            st.caption(
+                f"Último período visible: {resumen['ultimo_periodo']}"
+                + (f" | Comparación activa: {comparacion_label}" if comparacion_label else "")
+            )
 
         fig, ax = plt.subplots(figsize=(max(10, len(top_lineas)*1.5), max(5, len(df_filtered.index)*0.6)))
         sns.heatmap(
@@ -282,8 +397,10 @@ def run(df):
 
                 if pd.notna(value):
                     intensity = norm(value)
-                    if text == "NEW":
+                    if "Nuevo" in text:
                         text_color = 'lime'
+                    elif "Sin base" in text:
+                        text_color = '#1f3c5c'
                     elif intensity > 0.6:
                         text_color = 'white'
                     else:
