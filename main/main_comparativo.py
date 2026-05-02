@@ -128,6 +128,33 @@ def _crear_chart_diferencia(comparativo):
     ).properties(height=320)
 
 
+def _crear_heatmap_historico(df_heatmap):
+    return alt.Chart(df_heatmap).mark_rect().encode(
+        x=alt.X("Mes:O", title="Mes", sort=ORDEN_MESES),
+        y=alt.Y("Año:O", title="Año", sort="descending"),
+        color=alt.Color("Ventas USD:Q", title="Ventas USD", scale=alt.Scale(scheme="blues")),
+        tooltip=["Año", "Mes", alt.Tooltip("Ventas USD:Q", format=",.2f")],
+    ).properties(height=320)
+
+
+def _crear_chart_totales_anuales(resumen_anual):
+    return alt.Chart(resumen_anual).mark_bar().encode(
+        x=alt.X("Año:O", title="Año", sort="descending"),
+        y=alt.Y("Ventas Totales:Q", title="Ventas Totales USD"),
+        color=alt.Color("Año:O", legend=None),
+        tooltip=["Año", alt.Tooltip("Ventas Totales:Q", format=",.2f"), "Operaciones", alt.Tooltip("Ticket Promedio:Q", format=",.2f")],
+    ).properties(height=320)
+
+
+def _crear_chart_acumulado_historico(df_acumulado):
+    return alt.Chart(df_acumulado).mark_line(point=True).encode(
+        x=alt.X("Mes:O", title="Mes", sort=ORDEN_MESES),
+        y=alt.Y("Ventas Acumuladas:Q", title="Ventas Acumuladas USD"),
+        color=alt.Color("Año:N", title="Año"),
+        tooltip=["Año", "Mes", alt.Tooltip("Ventas Acumuladas:Q", format=",.2f")],
+    ).properties(height=360)
+
+
 def run(df, año_base=None):
     st.title("📊 Comparativo Año vs Año")
 
@@ -169,8 +196,8 @@ def run(df, año_base=None):
     meses_favorables = int((comparativo["Diferencia"] > 0).sum())
     meses_desfavorables = int((comparativo["Diferencia"] < 0).sum())
 
-    tab_resumen, tab_detalle, tab_hallazgos, tab_descargas = st.tabs([
-        "Resumen Ejecutivo", "Detalle Mensual", "Hallazgos", "Descargas"
+    tab_resumen, tab_detalle, tab_hallazgos, tab_descargas, tab_historico = st.tabs([
+        "Resumen Ejecutivo", "Detalle Mensual", "Hallazgos", "Descargas", "Panorama Histórico"
     ])
 
     with tab_resumen:
@@ -291,3 +318,96 @@ def run(df, año_base=None):
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
             )
+
+    with tab_historico:
+        st.subheader("Panorama histórico de todos los años")
+
+        df_heatmap = df.groupby(["año", "mes"], as_index=False)["valor_usd"].sum()
+        df_heatmap["Mes"] = df_heatmap["mes"].map(MESES)
+        df_heatmap["Año"] = df_heatmap["año"].astype(str)
+        df_heatmap = df_heatmap.rename(columns={"valor_usd": "Ventas USD"})
+
+        vista_historica = st.radio(
+            "Vista histórica principal",
+            ["Heatmap mensual", "Línea acumulada por año"],
+            horizontal=True,
+        )
+
+        df_acumulado = df.groupby(["año", "mes"], as_index=False)["valor_usd"].sum().sort_values(["año", "mes"])
+        df_acumulado["Ventas Acumuladas"] = df_acumulado.groupby("año")["valor_usd"].cumsum()
+        df_acumulado["Mes"] = df_acumulado["mes"].map(MESES)
+        df_acumulado["Año"] = df_acumulado["año"].astype(str)
+
+        col_hist_1, col_hist_2 = st.columns([1.2, 1])
+        with col_hist_1:
+            if vista_historica == "Heatmap mensual":
+                st.markdown("### 🗓️ Heatmap mensual por año")
+                st.altair_chart(_crear_heatmap_historico(df_heatmap), width='stretch')
+            else:
+                st.markdown("### 📈 Carrera acumulada por año")
+                st.altair_chart(_crear_chart_acumulado_historico(df_acumulado), width='stretch')
+
+        resumen_anual = (
+            df.groupby("año", as_index=False)
+            .agg(
+                ventas_totales=("valor_usd", "sum"),
+                operaciones=("valor_usd", "count"),
+            )
+            .sort_values("año", ascending=False)
+        )
+        resumen_anual["ticket_promedio"] = resumen_anual["ventas_totales"] / resumen_anual["operaciones"]
+        resumen_anual["variacion_vs_prev"] = resumen_anual["ventas_totales"].pct_change(periods=-1) * 100
+        resumen_anual_chart = resumen_anual.rename(columns={
+            "año": "Año",
+            "ventas_totales": "Ventas Totales",
+            "operaciones": "Operaciones",
+            "ticket_promedio": "Ticket Promedio",
+        })
+
+        with col_hist_2:
+            st.markdown("### 📊 Total anual")
+            st.altair_chart(_crear_chart_totales_anuales(resumen_anual_chart), width='stretch')
+
+        mejor_anio = resumen_anual_chart.loc[resumen_anual_chart["Ventas Totales"].idxmax(), "Año"]
+        peor_anio = resumen_anual_chart.loc[resumen_anual_chart["Ventas Totales"].idxmin(), "Año"]
+        ranking_final = resumen_anual_chart.sort_values("Ventas Totales", ascending=False).reset_index(drop=True).copy()
+        ranking_final.insert(0, "Posición", range(1, len(ranking_final) + 1))
+
+        h1, h2, h3 = st.columns(3)
+        h1.metric("🏆 Mejor Año", str(mejor_anio))
+        h2.metric("📉 Año más Débil", str(peor_anio))
+        h3.metric("📚 Años Analizados", f"{resumen_anual_chart['Año'].nunique()}")
+
+        if vista_historica == "Línea acumulada por año":
+            st.markdown("### 🥇 Llegada final por año")
+            st.dataframe(
+                ranking_final[["Posición", "Año", "Ventas Totales", "Operaciones", "Ticket Promedio"]],
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Posición": st.column_config.NumberColumn("#", format="%d"),
+                    "Año": st.column_config.NumberColumn("Año", format="%d"),
+                    "Ventas Totales": st.column_config.ProgressColumn(
+                        "Ventas Totales",
+                        format="$%.0f",
+                        min_value=0,
+                        max_value=float(ranking_final["Ventas Totales"].max()) if not ranking_final.empty else 0,
+                    ),
+                    "Operaciones": st.column_config.NumberColumn("Operaciones", format="%d"),
+                    "Ticket Promedio": st.column_config.NumberColumn("Ticket Promedio", format="$%.2f"),
+                },
+            )
+
+        st.markdown("### 📋 Resumen anual")
+        st.dataframe(
+            resumen_anual_chart[["Año", "Ventas Totales", "Operaciones", "Ticket Promedio", "variacion_vs_prev"]],
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Año": st.column_config.NumberColumn("Año", format="%d"),
+                "Ventas Totales": st.column_config.NumberColumn("Ventas Totales", format="$%.2f"),
+                "Operaciones": st.column_config.NumberColumn("Operaciones", format="%d"),
+                "Ticket Promedio": st.column_config.NumberColumn("Ticket Promedio", format="$%.2f"),
+                "variacion_vs_prev": st.column_config.NumberColumn("% vs Año Previo", format="%.2f%%"),
+            },
+        )
