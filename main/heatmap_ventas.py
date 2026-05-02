@@ -625,7 +625,13 @@ def run(df):
                     y=serie_linea.values.tolist(),
                     name="Tendencia visible",
                     mode='lines+markers',
-                    line=dict(color="#163a24", width=2),
+                    line=dict(color="#2d7ff9", width=4),
+                    marker=dict(
+                        color="#2d7ff9",
+                        size=8,
+                        symbol="diamond",
+                        line=dict(color="#f8fafc", width=1.5)
+                    ),
                     hoverinfo='skip'
                 ))
 
