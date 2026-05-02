@@ -198,6 +198,8 @@ Ver [CONTRIBUTING.md](CONTRIBUTING.md) para detalles completos sobre:
 ## 📝 Documentación Adicional
 
 - [CONTRIBUTING.md](CONTRIBUTING.md) - Guía de contribución
+- [docs/ARQUITECTURA_INTEGRACION_CRM_ERP.md](docs/ARQUITECTURA_INTEGRACION_CRM_ERP.md) - Arquitectura de integración para CRMs, ERPs y fuentes financieras
+- [docs/MODELO_FISICO_INTEGRACION_CRM_ERP.md](docs/MODELO_FISICO_INTEGRACION_CRM_ERP.md) - Modelo físico sugerido con tablas, relaciones y marts analíticos
 - [REFACTOR_SUMMARY.md](REFACTOR_SUMMARY.md) - Resumen de refactorización
 - [TESTING_SUMMARY.md](TESTING_SUMMARY.md) - Documentación de testing
 - [EXECUTIVE_SUMMARY.md](EXECUTIVE_SUMMARY.md) - Resumen ejecutivo

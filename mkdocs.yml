@@ -66,6 +66,8 @@ nav:
     - Arquitectura Escalable: ARQUITECTURA_ESCALABLE.md
     - Distribución Empaquetada: ARQUITECTURA_DISTRIBUCION_EMPAQUETADA.md
     - Marketplace / Comunidad: ARQUITECTURA_MARKETPLACE_COMUNIDAD.md
+    - Integración CRM ERP: ARQUITECTURA_INTEGRACION_CRM_ERP.md
+    - Modelo Físico CRM ERP: MODELO_FISICO_INTEGRACION_CRM_ERP.md
   - Análisis:
     - Plataforma Integrada: ANALISIS_PLATAFORMA_INTEGRADA.md
     - Valor Completo: ANALISIS_VALOR_COMPLETO.md
