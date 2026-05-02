@@ -507,6 +507,147 @@ def run(df):
                 df_lineas_tabla['% Acumulado'] = df_lineas_tabla['% Acumulado'].apply(lambda x: f"{x:.2f}%")
                 st.dataframe(df_lineas_tabla, use_container_width=True, hide_index=True)
 
+            st.write("---")
+            st.subheader("📈 Pareto de líneas")
+            st.caption(
+                "Muestra cuántas líneas explican la mayor parte de las ventas visibles."
+                " Es la vista correcta para detectar concentración comercial real."
+            )
+
+            pareto_df = pd.DataFrame({
+                'linea': ventas_linea.index.astype(str),
+                'ventas': ventas_linea.values,
+            })
+            pareto_df['participacion_pct'] = (pareto_df['ventas'] / pareto_df['ventas'].sum() * 100)
+            pareto_df['acumulado_pct'] = pareto_df['participacion_pct'].cumsum()
+
+            lineas_80 = int((pareto_df['acumulado_pct'] < 80).sum() + 1)
+            lineas_80 = min(lineas_80, len(pareto_df))
+            cobertura_80 = pareto_df.iloc[lineas_80 - 1]['acumulado_pct'] if not pareto_df.empty else 0
+
+            st.info(
+                f"📌 **{lineas_80} líneas** explican **{cobertura_80:.1f}%** de las ventas visibles."
+            )
+
+            fig_pareto = go.Figure()
+            fig_pareto.add_trace(go.Bar(
+                x=pareto_df['linea'].tolist(),
+                y=pareto_df['ventas'].tolist(),
+                name='Ventas visibles',
+                marker_color='#5c8f6a',
+                hovertemplate='<b>%{x}</b><br>Ventas: $%{y:,.2f}<extra></extra>'
+            ))
+            fig_pareto.add_trace(go.Scatter(
+                x=pareto_df['linea'].tolist(),
+                y=pareto_df['acumulado_pct'].tolist(),
+                name='% acumulado',
+                mode='lines+markers',
+                line=dict(color='#f1c40f', width=3),
+                marker=dict(color='#f1c40f'),
+                yaxis='y2',
+                hovertemplate='<b>%{x}</b><br>Acumulado: %{y:.1f}%<extra></extra>'
+            ))
+            fig_pareto.add_trace(go.Scatter(
+                x=pareto_df['linea'].tolist(),
+                y=[80] * len(pareto_df),
+                name='Referencia 80%',
+                mode='lines',
+                line=dict(color='#b03a2e', width=2, dash='dash'),
+                yaxis='y2',
+                hoverinfo='skip'
+            ))
+
+            fig_pareto.update_layout(
+                title='Concentración acumulada por línea visible',
+                height=460,
+                xaxis_title='Línea de negocio',
+                yaxis=dict(title='Ventas visibles ($)'),
+                yaxis2=dict(
+                    title='% acumulado',
+                    overlaying='y',
+                    side='right',
+                    range=[0, 105]
+                ),
+                legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='left', x=0),
+                margin=dict(l=20, r=20, t=60, b=80)
+            )
+
+            st.plotly_chart(fig_pareto, use_container_width=True)
+
+            st.write("---")
+            st.subheader("🔎 Detalle de línea")
+            st.caption(
+                "Permite bajar del mapa general a una lectura puntual por línea usando exactamente"
+                " el mismo recorte visible del heatmap."
+            )
+
+            linea_detalle = st.selectbox(
+                "Selecciona una línea para revisar su secuencia:",
+                ventas_linea.index.tolist(),
+                key="heatmap_linea_detalle"
+            )
+
+            serie_linea = df_filtered[linea_detalle].dropna()
+
+            if not serie_linea.empty:
+                total_linea = float(serie_linea.sum())
+                participacion_linea_total = (total_linea / ventas_linea.sum()) * 100 if ventas_linea.sum() else 0
+                mejor_periodo_linea = serie_linea.idxmax()
+                mejor_valor_linea = float(serie_linea.max())
+                ultimo_periodo_linea = serie_linea.index[-1]
+                ultimo_valor_linea = float(serie_linea.iloc[-1])
+
+                ultimo_crecimiento_linea = None
+                if growth_table is not None and linea_detalle in growth_table.columns:
+                    crecimiento_linea = growth_table[linea_detalle].replace([np.inf, -np.inf], np.nan).dropna()
+                    if not crecimiento_linea.empty:
+                        ultimo_crecimiento_linea = float(crecimiento_linea.iloc[-1])
+
+                d1, d2, d3, d4 = st.columns(4)
+                d1.metric("Ventas visibles línea", format_currency(total_linea))
+                d2.metric("Participación visible", f"{participacion_linea_total:.1f}%")
+                d3.metric("Pico del período", format_currency(mejor_valor_linea), mejor_periodo_linea)
+                if ultimo_crecimiento_linea is not None:
+                    d4.metric("Último crecimiento comparable", f"{ultimo_crecimiento_linea:.1f}%", ultimo_periodo_linea)
+                else:
+                    d4.metric("Último período visible", format_currency(ultimo_valor_linea), ultimo_periodo_linea)
+
+                fig_detalle = go.Figure()
+                fig_detalle.add_trace(go.Bar(
+                    x=serie_linea.index.astype(str).tolist(),
+                    y=serie_linea.values.tolist(),
+                    name="Ventas",
+                    marker_color="#2f6b3f",
+                    hovertemplate='<b>%{x}</b><br>Ventas: $%{y:,.2f}<extra></extra>'
+                ))
+                fig_detalle.add_trace(go.Scatter(
+                    x=serie_linea.index.astype(str).tolist(),
+                    y=serie_linea.values.tolist(),
+                    name="Tendencia visible",
+                    mode='lines+markers',
+                    line=dict(color="#163a24", width=2),
+                    hoverinfo='skip'
+                ))
+
+                fig_detalle.update_layout(
+                    title=f"Secuencia visible de {linea_detalle}",
+                    height=420,
+                    xaxis_title="Período",
+                    yaxis_title="Ventas ($)",
+                    margin=dict(l=20, r=20, t=60, b=20),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0)
+                )
+
+                st.plotly_chart(fig_detalle, use_container_width=True)
+
+                with st.expander("📄 Ver tabla del detalle seleccionado"):
+                    df_detalle_linea = pd.DataFrame({
+                        'Período': serie_linea.index,
+                        'Ventas': serie_linea.values,
+                    })
+                    df_detalle_linea['Ventas'] = df_detalle_linea['Ventas'].apply(lambda x: f"${x:,.2f}")
+                    st.dataframe(df_detalle_linea, use_container_width=True, hide_index=True)
+
         user = get_current_user()
         puede_exportar = user and user.can_export()
         
