@@ -393,3 +393,85 @@ class TestPeriodos:
         df['trimestre'] = df['fecha'].dt.to_period('Q').astype(str)
         
         assert df['trimestre'].tolist() == ['2024Q1', '2024Q2', '2024Q4']
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# TESTS DE HELPERS REALES DEL MÓDULO
+# ═══════════════════════════════════════════════════════════════════════
+
+class TestHeatmapHelpersReales:
+    """Valida helpers reales agregados al módulo de heatmap."""
+
+    def test_preparar_dataframe_base_normaliza_y_crea_periodos(self):
+        """Test: prepara columnas fecha, mes, año y trimestre con nombres sucios."""
+        from main.heatmap_ventas import preparar_dataframe_base
+
+        df = pd.DataFrame({
+            ' FECHA ': ['2024-01-15', '2024-04-20'],
+            'IMPORTE': [100, 200],
+        })
+
+        preparado, error = preparar_dataframe_base(df)
+
+        assert error is None
+        assert 'fecha' in preparado.columns
+        assert 'mes_anio' in preparado.columns
+        assert 'anio' in preparado.columns
+        assert 'trimestre' in preparado.columns
+        assert preparado['anio'].tolist() == [2024, 2024]
+        assert preparado['trimestre'].tolist() == ['2024Q1', '2024Q2']
+
+    def test_preparar_dataframe_base_rechaza_fecha_inexistente(self):
+        """Test: retorna error cuando no existe columna fecha."""
+        from main.heatmap_ventas import preparar_dataframe_base
+
+        df = pd.DataFrame({'importe': [100, 200]})
+
+        preparado, error = preparar_dataframe_base(df)
+
+        assert preparado is None
+        assert "No se encontró la columna 'fecha'" in error
+
+    def test_calcular_metricas_concentracion_retorna_top_1_top_3_y_relevantes(self):
+        """Test: resume concentración visible con umbral comercial."""
+        from main.heatmap_ventas import calcular_metricas_concentracion
+
+        ventas_linea = pd.Series(
+            [50, 30, 15, 5],
+            index=['A', 'B', 'C', 'D'],
+            dtype=float,
+        )
+
+        top_1_share, top_3_share, lineas_relevantes = calcular_metricas_concentracion(ventas_linea)
+
+        assert top_1_share == pytest.approx(50.0, rel=0.01)
+        assert top_3_share == pytest.approx(95.0, rel=0.01)
+        assert lineas_relevantes == 3
+
+    def test_construir_pareto_dataframe_calcula_participacion_y_acumulado(self):
+        """Test: genera dataframe Pareto con porcentajes acumulados."""
+        from main.heatmap_ventas import construir_pareto_dataframe
+
+        ventas_linea = pd.Series([60, 25, 15], index=['A', 'B', 'C'], dtype=float)
+
+        pareto_df = construir_pareto_dataframe(ventas_linea)
+
+        assert pareto_df['linea'].tolist() == ['A', 'B', 'C']
+        assert pareto_df['participacion_pct'].tolist() == pytest.approx([60.0, 25.0, 15.0], rel=0.01)
+        assert pareto_df['acumulado_pct'].tolist() == pytest.approx([60.0, 85.0, 100.0], rel=0.01)
+
+    def test_resumir_pareto_detecta_minimo_numero_de_lineas_hasta_objetivo(self):
+        """Test: identifica cuántas líneas explican al menos 80% de ventas."""
+        from main.heatmap_ventas import resumir_pareto
+
+        pareto_df = pd.DataFrame({
+            'linea': ['A', 'B', 'C'],
+            'ventas': [60, 25, 15],
+            'participacion_pct': [60.0, 25.0, 15.0],
+            'acumulado_pct': [60.0, 85.0, 100.0],
+        })
+
+        lineas_objetivo, cobertura_objetivo = resumir_pareto(pareto_df)
+
+        assert lineas_objetivo == 2
+        assert cobertura_objetivo == pytest.approx(85.0, rel=0.01)

@@ -11,6 +11,20 @@ from utils.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 
+PARETO_TARGET_PCT = 80
+LINEA_RELEVANTE_PCT = 10
+DETALLE_BAR_COLOR = "#2f6b3f"
+DETALLE_TREND_COLOR = "#2d7ff9"
+DETALLE_TREND_MARKER_BORDER = "#f8fafc"
+
+TITULOS_HEATMAP = {
+    "sidebar": "⚙️ Configuración del heatmap",
+    "lectura_rapida": "### Lectura rápida",
+    "ranking": "📊 Ranking y concentración de líneas",
+    "pareto": "📈 Pareto de líneas",
+    "detalle": "🔎 Detalle de línea",
+}
+
 
 def clean_columns(columns):
     return (
@@ -199,6 +213,34 @@ def format_currency(value):
         return f"${value:,.2f}"
     return ""
 
+
+def calcular_metricas_concentracion(ventas_linea):
+    total_ventas = ventas_linea.sum()
+    if total_ventas == 0:
+        return 0, 0, 0
+
+    top_1_share = (ventas_linea.head(1).sum() / total_ventas) * 100
+    top_3_share = (ventas_linea.head(min(3, len(ventas_linea))).sum() / total_ventas) * 100
+    lineas_relevantes = int((ventas_linea / total_ventas * 100 >= LINEA_RELEVANTE_PCT).sum())
+    return top_1_share, top_3_share, lineas_relevantes
+
+
+def construir_pareto_dataframe(ventas_linea):
+    pareto_df = pd.DataFrame({
+        'linea': ventas_linea.index.astype(str),
+        'ventas': ventas_linea.values,
+    })
+    pareto_df['participacion_pct'] = (pareto_df['ventas'] / pareto_df['ventas'].sum() * 100)
+    pareto_df['acumulado_pct'] = pareto_df['participacion_pct'].cumsum()
+    return pareto_df
+
+
+def resumir_pareto(pareto_df):
+    lineas_objetivo = int((pareto_df['acumulado_pct'] < PARETO_TARGET_PCT).sum() + 1)
+    lineas_objetivo = min(lineas_objetivo, len(pareto_df))
+    cobertura_objetivo = pareto_df.iloc[lineas_objetivo - 1]['acumulado_pct'] if not pareto_df.empty else 0
+    return lineas_objetivo, cobertura_objetivo
+
 def run(df):
     st.title("🔥 Heatmap de Ventas por Línea de Negocio")
     st.caption(
@@ -221,7 +263,7 @@ def run(df):
         return
 
     with st.sidebar:
-        st.header("⚙️ Configuración del heatmap")
+        st.header(TITULOS_HEATMAP["sidebar"])
         periodo_tipo = st.selectbox(
             "🗓️ Tipo de periodo:",
             ["Mensual", "Trimestral", "Anual", "Rango Personalizado"],
@@ -352,7 +394,7 @@ def run(df):
             annot_data = df_filtered.map(lambda x: format_currency(x))
 
         resumen = construir_resumen_heatmap(df_filtered, growth_table)
-        st.write("### Lectura rápida")
+        st.write(TITULOS_HEATMAP["lectura_rapida"])
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Ventas visibles", format_currency(resumen["total_visible"]))
         col2.metric("Períodos visibles", f"{resumen['periodos_visibles']}")
@@ -423,7 +465,7 @@ def run(df):
         plt.close(fig)
 
         st.write("---")
-        st.subheader("📊 Ranking y concentración de líneas")
+        st.subheader(TITULOS_HEATMAP["ranking"])
         st.caption(
             "Esta vista complementa al heatmap con magnitud comparable entre líneas."
             " Evita la distorsión visual del gráfico circular y mantiene el foco en el peso comercial real."
@@ -455,14 +497,12 @@ def run(df):
             participacion_linea = (top_lineas_ranking / ventas_linea.sum() * 100)
             participacion_acumulada = participacion_linea.cumsum()
 
-            top_1_share = (ventas_linea.head(1).sum() / ventas_linea.sum()) * 100
-            top_3_share = (ventas_linea.head(min(3, total_lineas_disponibles)).sum() / ventas_linea.sum()) * 100
-            lineas_relevantes = int((ventas_linea / ventas_linea.sum() * 100 >= 10).sum())
+            top_1_share, top_3_share, lineas_relevantes = calcular_metricas_concentracion(ventas_linea)
 
             conc1, conc2, conc3 = st.columns(3)
             conc1.metric("Concentración Top 1", f"{top_1_share:.1f}%")
             conc2.metric("Concentración Top 3", f"{top_3_share:.1f}%")
-            conc3.metric("Líneas con peso > 10%", f"{lineas_relevantes}")
+            conc3.metric(f"Líneas con peso > {LINEA_RELEVANTE_PCT}%", f"{lineas_relevantes}")
 
             fig_rank = go.Figure()
             fig_rank.add_trace(go.Bar(
@@ -508,22 +548,14 @@ def run(df):
                 st.dataframe(df_lineas_tabla, use_container_width=True, hide_index=True)
 
             st.write("---")
-            st.subheader("📈 Pareto de líneas")
+            st.subheader(TITULOS_HEATMAP["pareto"])
             st.caption(
                 "Muestra cuántas líneas explican la mayor parte de las ventas visibles."
                 " Es la vista correcta para detectar concentración comercial real."
             )
 
-            pareto_df = pd.DataFrame({
-                'linea': ventas_linea.index.astype(str),
-                'ventas': ventas_linea.values,
-            })
-            pareto_df['participacion_pct'] = (pareto_df['ventas'] / pareto_df['ventas'].sum() * 100)
-            pareto_df['acumulado_pct'] = pareto_df['participacion_pct'].cumsum()
-
-            lineas_80 = int((pareto_df['acumulado_pct'] < 80).sum() + 1)
-            lineas_80 = min(lineas_80, len(pareto_df))
-            cobertura_80 = pareto_df.iloc[lineas_80 - 1]['acumulado_pct'] if not pareto_df.empty else 0
+            pareto_df = construir_pareto_dataframe(ventas_linea)
+            lineas_80, cobertura_80 = resumir_pareto(pareto_df)
 
             st.info(
                 f"📌 **{lineas_80} líneas** explican **{cobertura_80:.1f}%** de las ventas visibles."
@@ -549,8 +581,8 @@ def run(df):
             ))
             fig_pareto.add_trace(go.Scatter(
                 x=pareto_df['linea'].tolist(),
-                y=[80] * len(pareto_df),
-                name='Referencia 80%',
+                y=[PARETO_TARGET_PCT] * len(pareto_df),
+                name=f'Referencia {PARETO_TARGET_PCT}%',
                 mode='lines',
                 line=dict(color='#b03a2e', width=2, dash='dash'),
                 yaxis='y2',
@@ -575,7 +607,7 @@ def run(df):
             st.plotly_chart(fig_pareto, use_container_width=True)
 
             st.write("---")
-            st.subheader("🔎 Detalle de línea")
+            st.subheader(TITULOS_HEATMAP["detalle"])
             st.caption(
                 "Permite bajar del mapa general a una lectura puntual por línea usando exactamente"
                 " el mismo recorte visible del heatmap."
@@ -617,7 +649,7 @@ def run(df):
                     x=serie_linea.index.astype(str).tolist(),
                     y=serie_linea.values.tolist(),
                     name="Ventas",
-                    marker_color="#2f6b3f",
+                    marker_color=DETALLE_BAR_COLOR,
                     hovertemplate='<b>%{x}</b><br>Ventas: $%{y:,.2f}<extra></extra>'
                 ))
                 fig_detalle.add_trace(go.Scatter(
@@ -625,12 +657,12 @@ def run(df):
                     y=serie_linea.values.tolist(),
                     name="Tendencia visible",
                     mode='lines+markers',
-                    line=dict(color="#2d7ff9", width=4),
+                    line=dict(color=DETALLE_TREND_COLOR, width=4),
                     marker=dict(
-                        color="#2d7ff9",
+                        color=DETALLE_TREND_COLOR,
                         size=8,
                         symbol="diamond",
-                        line=dict(color="#f8fafc", width=1.5)
+                        line=dict(color=DETALLE_TREND_MARKER_BORDER, width=1.5)
                     ),
                     hoverinfo='skip'
                 ))
