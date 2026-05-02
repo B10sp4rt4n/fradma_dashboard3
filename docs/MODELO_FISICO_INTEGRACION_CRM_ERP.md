@@ -13,6 +13,10 @@ Este documento asume una estrategia por capas:
 
 ## Diagrama Fisico Simplificado
 
+## Vista SVG Renderizada
+
+![Diagrama de modelo físico CRM ERP](assets/diagrams/modelo_fisico_integracion_crm_erp.svg)
+
 ```mermaid
 erDiagram
     raw_eventos {
@@ -192,6 +196,11 @@ erDiagram
     dim_vendedor ||--o{ map_vendedor_origen : reconcilia
     dim_producto ||--o{ map_producto_origen : reconcilia
 ```
+
+## Archivos Exportados
+
+- SVG: `docs/assets/diagrams/modelo_fisico_integracion_crm_erp.svg`
+- PNG: `docs/assets/diagrams/modelo_fisico_integracion_crm_erp.png`
 
 ## Capas Recomendadas
 

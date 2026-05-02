@@ -15,6 +15,10 @@ La idea central es separar:
 
 ## Diagrama General
 
+## Vista SVG Renderizada
+
+![Diagrama de arquitectura CRM ERP](assets/diagrams/arquitectura_integracion_crm_erp.svg)
+
 ```mermaid
 flowchart LR
     A[CRMs<br/>HubSpot Salesforce Dynamics Zoho] --> B[Capa de Conectores]
@@ -75,6 +79,11 @@ flowchart LR
     class H,I,J output
     class K,L control
 ```
+
+## Archivos Exportados
+
+- SVG: `docs/assets/diagrams/arquitectura_integracion_crm_erp.svg`
+- PNG: `docs/assets/diagrams/arquitectura_integracion_crm_erp.png`
 
 ## Lectura Ejecutiva
 

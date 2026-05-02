@@ -1,0 +1,58 @@
+flowchart LR
+    A[CRMs<br/>HubSpot Salesforce Dynamics Zoho] --> B[Capa de Conectores]
+    A2[ERPs<br/>SAP Odoo CONTPAQi Netsuite] --> B
+    A3[CFDI / Facturacion / Bancos] --> B
+
+    B --> C[Extraccion Incremental<br/>API Webhook CSV SQL]
+    C --> D[Zona Raw<br/>Payload original + metadata origen]
+    D --> E[Normalizacion Canonica]
+
+    E --> E1[Clientes]
+    E --> E2[Vendedores]
+    E --> E3[Productos]
+    E --> E4[Oportunidades]
+    E --> E5[Facturas]
+    E --> E6[Pagos]
+    E --> E7[CxC / Saldos]
+
+    E1 --> F[Motor de Matching y Reglas]
+    E2 --> F
+    E3 --> F
+    E4 --> F
+    E5 --> F
+    E6 --> F
+    E7 --> F
+
+    F --> G[Modelo Analitico Unificado]
+
+    G --> G1[Pipeline Comercial]
+    G --> G2[Ventas]
+    G --> G3[Cobranza]
+    G --> G4[Cartera]
+    G --> G5[YTD / Comparativos]
+    G --> G6[ROI / Forecast]
+
+    G --> H[Dashboards Streamlit]
+    G --> I[Alertas y Reglas]
+    G --> J[Exportacion / API / SQL Assistant]
+
+    K[Monitoreo y Auditoria<br/>logs cobertura calidad refresh] --> B
+    K --> D
+    K --> E
+    K --> F
+    K --> G
+
+    L[Cola de Excepciones<br/>clientes sin match productos huerfanos pagos sin factura] --> F
+    F --> L
+
+    classDef source fill:#1f3c5c,color:#fff,stroke:#0d2238
+    classDef process fill:#2f6b4f,color:#fff,stroke:#1d4d37
+    classDef data fill:#7a5c2e,color:#fff,stroke:#533d1b
+    classDef output fill:#5a3d7a,color:#fff,stroke:#3b2752
+    classDef control fill:#555,color:#fff,stroke:#333
+
+    class A,A2,A3 source
+    class B,C,E,F process
+    class D,G,E1,E2,E3,E4,E5,E6,E7 data
+    class H,I,J output
+    class K,L control
