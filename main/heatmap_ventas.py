@@ -19,6 +19,9 @@ DETALLE_TREND_MARKER_BORDER = "#f8fafc"
 
 TITULOS_HEATMAP = {
     "sidebar": "⚙️ Configuración del heatmap",
+    "segmentacion": "#### 1. Corte comercial",
+    "temporal": "#### 2. Corte temporal",
+    "visual": "#### 3. Visualización",
     "lectura_rapida": "### Lectura rápida",
     "ranking": "📊 Ranking y concentración de líneas",
     "pareto": "📈 Pareto de líneas",
@@ -85,7 +88,8 @@ def aplicar_filtros_comerciales(df, columna_cliente=None, columna_vendedor=None)
     df_filtrado = df.copy()
 
     with st.sidebar:
-        st.write("### Segmentación comercial")
+        st.markdown(TITULOS_HEATMAP["segmentacion"])
+        st.caption("Recorta la vista por responsable o cuenta antes del análisis temporal.")
 
         if columna_vendedor is not None:
             vendedores_disponibles = sorted(df_filtrado[columna_vendedor].dropna().astype(str).unique().tolist())
@@ -311,6 +315,8 @@ def run(df):
 
     with st.sidebar:
         st.header(TITULOS_HEATMAP["sidebar"])
+        st.markdown(TITULOS_HEATMAP["temporal"])
+        st.caption("Define el horizonte de lectura y la base de comparación.")
         periodo_tipo = st.selectbox(
             "🗓️ Tipo de periodo:",
             ["Mensual", "Trimestral", "Anual", "Rango Personalizado"],
@@ -326,10 +332,14 @@ def run(df):
                 key="heatmap_tipo_comparacion"
             )
 
-    if periodo_tipo == "Rango Personalizado":
-        with st.sidebar:
+        if periodo_tipo == "Rango Personalizado":
             start_date = st.date_input("📅 Fecha inicio:", value=df['fecha'].min(), key="heatmap_fecha_inicio")
             end_date = st.date_input("📅 Fecha fin:", value=df['fecha'].max(), key="heatmap_fecha_fin")
+        else:
+            start_date = None
+            end_date = None
+
+    if periodo_tipo == "Rango Personalizado":
         df = df[(df['fecha'] >= pd.to_datetime(start_date)) & (df['fecha'] <= pd.to_datetime(end_date))]
 
     df, growth_lag_secuencial, growth_lag_yoy = construir_periodo_y_lags(df, periodo_tipo)
@@ -342,12 +352,15 @@ def run(df):
 
     lineas_disponibles = list(pivot_table.columns)
 
-    selected_lineas = st.multiselect(
-        "📌 Selecciona las líneas de negocio:",
-        lineas_disponibles,
-        default=lineas_disponibles,
-        key="heatmap_lineas_seleccionadas"
-    )
+    with st.sidebar:
+        st.markdown(TITULOS_HEATMAP["visual"])
+        st.caption("Ajusta el recorte visible que alimenta heatmap, ranking, Pareto y detalle.")
+        selected_lineas = st.multiselect(
+            "📌 Líneas visibles:",
+            lineas_disponibles,
+            default=lineas_disponibles,
+            key="heatmap_lineas_seleccionadas"
+        )
 
     if selected_lineas:
         df_filtered = pivot_table.loc[:, selected_lineas]
@@ -360,7 +373,7 @@ def run(df):
             # Validar que los valores sean válidos y diferentes
             if pd.notna(valores_min) and pd.notna(valores_max) and valores_min < valores_max:
                 min_importe, max_importe = st.slider(
-                    "💰 Filtro por importe ($):",
+                    "💰 Rango visible por importe ($):",
                     min_value=float(valores_min),
                     max_value=float(valores_max),
                     value=(float(valores_min), float(valores_max)),
@@ -373,7 +386,7 @@ def run(df):
                 st.sidebar.info("ℹ️ No hay rango de importes suficiente para filtrar")
 
             top_n = st.number_input(
-                "🏅 Top N líneas de negocio:",
+                "🏅 Máximo de líneas en heatmap:",
                 min_value=1,
                 max_value=len(selected_lineas),
                 value=min(10, len(selected_lineas)),
