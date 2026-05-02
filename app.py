@@ -1106,7 +1106,7 @@ _grupos = {
         "items": [
             ("🎯 Reporte Ejecutivo",         "file-earmark-bar-chart"),
             ("📊 Reporte Consolidado",       "grid-1x2"),
-            ("📈 KPIs Generales",            "bar-chart-line"),
+            ("📈 Desempeño Comercial",       "bar-chart-line"),
             ("📊 Comparativo Año vs Año",    "arrow-left-right"),
             ("📉 YTD por Línea de Negocio",  "diagram-3"),
             ("🔷 YTD por Producto",          "box-seam"),
@@ -1555,7 +1555,7 @@ _FILTROS_POR_VISTA = {
             "monto":   "Limita el análisis a operaciones dentro del rango de monto.",
         }
     },
-    "📈 KPIs Generales": {
+    "📈 Desempeño Comercial": {
         "filtros": ["fecha", "cliente", "monto"],
         "descripcion": "Filtra las ventas que se usan para calcular todos los KPIs de esta vista.",
         "ayuda": {
@@ -1653,9 +1653,9 @@ with st.sidebar.expander("ℹ️ Acerca de esta vista"):
         - Análisis con IA del estado del negocio
         - Métricas de desempeño integral
         """)
-    elif menu == "📈 KPIs Generales":
+    elif menu == "📈 Desempeño Comercial":
         st.markdown("""
-        **Análisis general de ventas**
+        **Desempeño comercial del equipo**
         
         - Total ventas y operaciones
         - Filtros por ejecutivo y línea
@@ -2132,7 +2132,7 @@ if menu == "🎯 Reporte Ejecutivo":
         st.warning("⚠️ Primero sube un archivo Excel para visualizar el Reporte Ejecutivo.")
         st.info("📂 Usa el menú lateral para cargar tu archivo de datos.")
 
-elif menu == "📈 KPIs Generales":
+elif menu == "📈 Desempeño Comercial":
     # Pasar parámetros de IA premium al módulo
     ia_habilitada = st.session_state.get("ia_premium_activada", False)
     api_key = st.session_state.get("openai_api_key", None)
