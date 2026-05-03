@@ -114,13 +114,7 @@ def calcular_dias_overdue(df: pd.DataFrame) -> pd.Series:
     hoy = pd.Timestamp.today().normalize()
     resultado = pd.Series(np.nan, index=df.index, dtype='float64')
 
-    # Método 1: dias_vencido directo
-    # Se llena solo donde haya valor y el resto continúa al fallback.
-    if 'dias_vencido' in df.columns:
-        dias = pd.to_numeric(df['dias_vencido'], errors='coerce')
-        resultado = resultado.where(~resultado.isna(), dias)
-
-    # Método 2: dias_restante/dias_restantes
+    # Método 1: dias_restante/dias_restantes
     # Positivo = vigente, negativo = vencido, entonces invertir.
     for col_rest in ['dias_restante', 'dias_restantes']:
         if col_rest in df.columns:
@@ -128,6 +122,12 @@ def calcular_dias_overdue(df: pd.DataFrame) -> pd.Series:
             calculado = -dias_restantes
             resultado = resultado.where(~resultado.isna(), calculado)
             break
+
+    # Método 2: dias_vencido directo
+    # Se llena solo donde aún no haya valor y el resto continúa al fallback.
+    if 'dias_vencido' in df.columns:
+        dias = pd.to_numeric(df['dias_vencido'], errors='coerce')
+        resultado = resultado.where(~resultado.isna(), dias)
 
     # Método 3: calcular desde fecha de vencimiento
     # fecha_vencimiento se interpreta como el último día válido para pagar.

@@ -10,6 +10,12 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 
+from main.kpi_cpc import (
+    _calcular_pct_sobre_total,
+    _normalizar_columna_deudor,
+    _obtener_nombre_archivo,
+)
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # FIXTURES ESPECÍFICAS PARA KPI_CPC
@@ -217,6 +223,33 @@ def test_metricas_basicas_cxc_completas(df_cxc_vigentes_vencidas):
     # Validar que porcentajes suman ~100%
     total_pct = metricas['pct_vigente'] + metricas['pct_vencida']
     assert 99 <= total_pct <= 101, f"Porcentajes no suman 100: {total_pct}"
+
+
+def test_kpi_cpc_acepta_ruta_string_como_archivo():
+    """run documenta ruta o buffer; el helper debe aceptar rutas string."""
+    nombre = _obtener_nombre_archivo('/tmp/reporte_cxc.xlsx')
+
+    assert nombre == '/tmp/reporte_cxc.xlsx'
+
+
+def test_normalizacion_deudor_conserva_respaldo_razon_social():
+    """Si cliente viene vacío, razon_social debe poblar deudor antes de descartarse."""
+    df = pd.DataFrame({
+        'cliente': [pd.NA, 'Cliente Activo'],
+        'razon_social': ['Razón Respaldo', 'Razón Ignorada'],
+    })
+
+    result = _normalizar_columna_deudor(df.copy())
+
+    assert result['deudor'].tolist() == ['Razón Respaldo', 'Cliente Activo']
+    assert 'cliente' not in result.columns
+    assert 'razon_social' not in result.columns
+
+
+def test_porcentaje_sobre_total_evta_division_por_cero():
+    """Los KPIs deben sobrevivir cuando el total adeudado es cero."""
+    assert _calcular_pct_sobre_total(100, 0) == 0.0
+    assert _calcular_pct_sobre_total(0, 0) == 0.0
 
 
 # ═══════════════════════════════════════════════════════════════════════

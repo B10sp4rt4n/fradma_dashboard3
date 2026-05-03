@@ -62,6 +62,17 @@ class TestCalcularDiasOverdue:
         result = calcular_dias_overdue(df)
         
         assert result.tolist() == [-10, 20, 0]
+
+    def test_prioriza_dias_restante_sobre_dias_vencido(self):
+        """Cuando ambas columnas existen, dias_restante debe tener prioridad."""
+        df = pd.DataFrame({
+            'dias_vencido': [0, 5],
+            'dias_restante': [-15, 2],
+        })
+
+        result = calcular_dias_overdue(df)
+
+        assert result.tolist() == [15, -2]
     
     def test_con_fecha_vencimiento(self):
         """Método 3: Calcula desde fecha_vencimiento vs hoy"""

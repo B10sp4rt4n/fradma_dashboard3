@@ -58,6 +58,41 @@ def _detectar_col_vendedor(df: pd.DataFrame) -> str | None:
     return None
 
 
+def _obtener_nombre_archivo(archivo) -> str:
+    """Obtiene un nombre de archivo válido desde path, buffer o UploadedFile."""
+    if hasattr(archivo, 'name') and archivo.name:
+        return str(archivo.name)
+    if isinstance(archivo, (str, os.PathLike)):
+        return os.fspath(archivo)
+    raise TypeError("Se esperaba una ruta o un archivo con atributo 'name'.")
+
+
+def _normalizar_columna_deudor(df: pd.DataFrame) -> pd.DataFrame:
+    """Consolida deudor priorizando cliente y usando razon_social como respaldo."""
+    serie_deudor = pd.Series(pd.NA, index=df.index, dtype='object')
+
+    for columna in ('deudor', 'cliente', 'razon_social'):
+        if columna in df.columns:
+            valores = df[columna].astype('string').str.strip().replace('', pd.NA)
+            serie_deudor = serie_deudor.fillna(valores)
+
+    if serie_deudor.notna().any():
+        df['deudor'] = serie_deudor
+
+    columnas_descartar = [col for col in ('cliente', 'razon_social') if col in df.columns]
+    if columnas_descartar:
+        df.drop(columns=columnas_descartar, inplace=True)
+
+    return df
+
+
+def _calcular_pct_sobre_total(parte: float, total: float) -> float:
+    """Retorna porcentaje protegido contra totales nulos o negativos."""
+    if total <= 0:
+        return 0.0
+    return parte / total * 100
+
+
 def run(archivo, habilitar_ia=False, openai_api_key=None):
     """
     Función principal del módulo KPI CxC (Cuentas por Cobrar).
@@ -67,7 +102,9 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
         habilitar_ia: Booleano para activar análisis con IA (default: False)
         openai_api_key: API key de OpenAI para análisis premium (default: None)
     """
-    if not archivo.name.endswith(('.xls', '.xlsx')):
+    nombre_archivo = _obtener_nombre_archivo(archivo)
+
+    if not nombre_archivo.lower().endswith(('.xls', '.xlsx')):
         st.error("❌ Solo se aceptan archivos Excel para el reporte de deudas.")
         return
 
@@ -160,25 +197,15 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
         
         # Renombrar columnas clave - PRIORIZAR COLUMNA F (CLIENTE)
         for df in [df_vigentes, df_vencidas]:
-            # 1. Priorizar columna 'cliente' (columna F)
-            if 'cliente' in df.columns:
-                df.rename(columns={'cliente': 'deudor'}, inplace=True)
-                
-                # Si también existe 'razon_social', eliminarla
-                if 'razon_social' in df.columns:
-                    df.drop(columns=['razon_social'], inplace=True)
-                    
-            # 2. Si no existe 'cliente', usar 'razon_social' como respaldo
-            elif 'razon_social' in df.columns:
-                df.rename(columns={'razon_social': 'deudor'}, inplace=True)
+            _normalizar_columna_deudor(df)
             
-            # 3. Detectar y normalizar columna de vendedor/agente
+            # 2. Detectar y normalizar columna de vendedor/agente
             col_vendedor = _detectar_col_vendedor(df)
             if col_vendedor and col_vendedor != 'vendedor':
                 df.rename(columns={col_vendedor: 'vendedor'}, inplace=True)
                 logger.info(f"Columna '{col_vendedor}' renombrada a 'vendedor'")
             
-            # Renombrar otras columnas importantes
+            # 3. Renombrar otras columnas importantes
             column_rename = {
                 'linea_de_negocio': 'linea_negocio',
                 'saldo': 'saldo_adeudado',
@@ -272,10 +299,12 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
         # Métricas principales en columnas
         col1, col2, col3 = st.columns(3)
         col1.metric("💰 Total Adeudado", f"${total_adeudado:,.2f}")
+        pct_vigente_total = _calcular_pct_sobre_total(vigente, total_adeudado)
+        pct_vencida_total = _calcular_pct_sobre_total(vencida, total_adeudado)
         col2.metric("✅ Cartera Vigente", f"${vigente:,.2f}", 
-                   delta=f"{(vigente/total_adeudado*100):.1f}%")
+               delta=f"{pct_vigente_total:.1f}%")
         col3.metric("⚠️ Deuda Vencida", f"${vencida:,.2f}", 
-                   delta=f"{(vencida/total_adeudado*100):.1f}%",
+               delta=f"{pct_vencida_total:.1f}%",
                    delta_color="inverse")
         
         # Pie Chart: Vigente vs Vencido
