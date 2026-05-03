@@ -53,6 +53,8 @@ def obtener_mapa_columnas():
         "producto": ["producto", "articulo", "item", "descripcion", "producto_nombre", "producto nombre"],
         "cliente": ["cliente", "razon_social", "razon social", "deudor", "nombre_cliente", "nombre cliente"],
         "vendedor": ["vendedor", "agente", "ejecutivo", "vendedor_asignado", "vendedor asignado", "seller", "rep"],
+        "canal": ["canal", "canal_venta", "canal venta", "canal_comercial", "canal comercial"],
+        "region": ["region", "región", "zona", "estado", "territorio"],
     }
 
 
@@ -81,10 +83,26 @@ def resolver_columnas_clave(df):
     columna_producto = detectar_columna(df, mapa_columnas["producto"])
     columna_cliente = detectar_columna(df, mapa_columnas["cliente"])
     columna_vendedor = detectar_columna(df, mapa_columnas["vendedor"])
-    return columna_linea, columna_importe, columna_producto, columna_cliente, columna_vendedor
+    columna_canal = detectar_columna(df, mapa_columnas["canal"])
+    columna_region = detectar_columna(df, mapa_columnas["region"])
+    return (
+        columna_linea,
+        columna_importe,
+        columna_producto,
+        columna_cliente,
+        columna_vendedor,
+        columna_canal,
+        columna_region,
+    )
 
 
-def aplicar_filtros_comerciales(df, columna_cliente=None, columna_vendedor=None):
+def aplicar_filtros_comerciales(
+    df,
+    columna_cliente=None,
+    columna_vendedor=None,
+    columna_canal=None,
+    columna_region=None,
+):
     df_filtrado = df.copy()
 
     with st.sidebar:
@@ -102,6 +120,30 @@ def aplicar_filtros_comerciales(df, columna_cliente=None, columna_vendedor=None)
                 )
                 if vendedores_seleccionados:
                     df_filtrado = df_filtrado[df_filtrado[columna_vendedor].astype(str).isin(vendedores_seleccionados)]
+
+        if columna_canal is not None:
+            canales_disponibles = sorted(df_filtrado[columna_canal].dropna().astype(str).unique().tolist())
+            if canales_disponibles:
+                canales_seleccionados = st.multiselect(
+                    "🧭 Filtrar por canal:",
+                    canales_disponibles,
+                    default=canales_disponibles,
+                    key="heatmap_filtro_canal"
+                )
+                if canales_seleccionados:
+                    df_filtrado = df_filtrado[df_filtrado[columna_canal].astype(str).isin(canales_seleccionados)]
+
+        if columna_region is not None:
+            regiones_disponibles = sorted(df_filtrado[columna_region].dropna().astype(str).unique().tolist())
+            if regiones_disponibles:
+                regiones_seleccionadas = st.multiselect(
+                    "🌎 Filtrar por región:",
+                    regiones_disponibles,
+                    default=regiones_disponibles,
+                    key="heatmap_filtro_region"
+                )
+                if regiones_seleccionadas:
+                    df_filtrado = df_filtrado[df_filtrado[columna_region].astype(str).isin(regiones_seleccionadas)]
 
         if columna_cliente is not None:
             clientes_disponibles = sorted(df_filtrado[columna_cliente].dropna().astype(str).unique().tolist())
@@ -296,7 +338,15 @@ def run(df):
             st.write(f"Columnas detectadas en tu archivo: {df.columns.tolist()}")
         return
 
-    columna_linea, columna_importe, columna_producto, columna_cliente, columna_vendedor = resolver_columnas_clave(df)
+    (
+        columna_linea,
+        columna_importe,
+        columna_producto,
+        columna_cliente,
+        columna_vendedor,
+        columna_canal,
+        columna_region,
+    ) = resolver_columnas_clave(df)
 
     if columna_linea is None or columna_importe is None:
         st.error("❌ No se encontraron las columnas clave necesarias para 'línea' e 'importe'.")
@@ -307,6 +357,8 @@ def run(df):
         df,
         columna_cliente=columna_cliente,
         columna_vendedor=columna_vendedor,
+        columna_canal=columna_canal,
+        columna_region=columna_region,
     )
 
     if df.empty:

@@ -13,6 +13,7 @@ main/heatmap_ventas.py
 
 El módulo construye una vista comercial de ventas por línea de negocio con foco en:
 
+- **segmentación comercial opcional** por vendedor, cliente, canal y región
 - **evolución temporal visible** mediante heatmap por período
 - **comparabilidad explícita** contra período anterior o mismo período del año previo
 - **concentración comercial** con ranking y Pareto
@@ -26,6 +27,26 @@ La intención ya no es solo mostrar una matriz de color, sino permitir lectura e
 ## ✅ Flujo actual de la vista
 
 La sección se renderiza en este orden:
+
+Antes del render principal, el sidebar organiza los controles en tres bloques:
+
+1. **Corte comercial**
+	- vendedor
+	- cliente
+	- canal
+	- región
+
+2. **Corte temporal**
+	- tipo de período
+	- comparación
+	- rango personalizado cuando aplica
+
+3. **Visualización**
+	- líneas visibles
+	- rango visible por importe
+	- máximo de líneas en heatmap
+
+En el cuerpo principal, la lectura queda así:
 
 1. **Lectura rápida**
 	- ventas visibles
@@ -126,7 +147,11 @@ La detección de nombres es flexible. Variantes soportadas incluyen:
 
 - línea: `linea_prodcucto`, `linea_producto`, `linea_de_negocio`, `linea producto`
 - importe: `valor_usd`, `ventas_usd`, `importe`
-- producto: `producto`, `articulo`, `item`, `descripcion`
+- producto: `producto`, `articulo`, `item`, `descripcion`, `producto_nombre`
+- cliente: `cliente`, `razon_social`, `deudor`, `nombre_cliente`
+- vendedor: `vendedor`, `agente`, `ejecutivo`, `vendedor_asignado`, `seller`, `rep`
+- canal: `canal`, `canal_venta`, `canal_comercial`
+- región: `region`, `zona`, `estado`, `territorio`
 
 Antes de procesar, el módulo:
 
@@ -141,6 +166,8 @@ Antes de procesar, el módulo:
 Helpers clave hoy cubiertos por tests unitarios:
 
 - `preparar_dataframe_base()`
+- `resolver_columnas_clave()`
+- `aplicar_filtros_comerciales()`
 - `construir_periodo_y_lags()`
 - `calcular_tabla_crecimiento()`
 - `calcular_metricas_concentracion()`
@@ -187,7 +214,6 @@ La cobertura se enfoca en helpers de transformación y reglas de negocio. La cap
 
 ## ✅ Próximos ajustes razonables
 
-- agregar filtros por dimensión comercial adicional: canal, región, cliente o vendedor
 - exportar visuales del heatmap o del Pareto
-- introducir tests adicionales para `calcular_tabla_crecimiento()` en escenarios edge
+- ampliar segmentación a otras dimensiones si aparecen en el dataset, por ejemplo categoría o familia
 - evaluar una capa de insights automáticos por línea o por concentración

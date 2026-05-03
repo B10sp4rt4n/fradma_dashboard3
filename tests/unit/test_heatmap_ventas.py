@@ -476,19 +476,29 @@ class TestHeatmapHelpersReales:
         assert lineas_objetivo == 2
         assert cobertura_objetivo == pytest.approx(85.0, rel=0.01)
 
-    def test_resolver_columnas_clave_detecta_cliente_y_vendedor(self):
+    def test_resolver_columnas_clave_detecta_segmentacion_comercial_completa(self):
         """Test: detecta columnas opcionales comerciales además de las obligatorias."""
         from main.heatmap_ventas import resolver_columnas_clave
 
-        df = pd.DataFrame(columns=['linea_de_negocio', 'importe', 'producto', 'cliente', 'agente'])
+        df = pd.DataFrame(columns=['linea_de_negocio', 'importe', 'producto', 'cliente', 'agente', 'canal', 'zona'])
 
-        columna_linea, columna_importe, columna_producto, columna_cliente, columna_vendedor = resolver_columnas_clave(df)
+        (
+            columna_linea,
+            columna_importe,
+            columna_producto,
+            columna_cliente,
+            columna_vendedor,
+            columna_canal,
+            columna_region,
+        ) = resolver_columnas_clave(df)
 
         assert columna_linea == 'linea_de_negocio'
         assert columna_importe == 'importe'
         assert columna_producto == 'producto'
         assert columna_cliente == 'cliente'
         assert columna_vendedor == 'agente'
+        assert columna_canal == 'canal'
+        assert columna_region == 'zona'
 
     def test_aplicar_filtros_comerciales_sin_columnas_opcionales_retorna_mismo_df(self):
         """Test: si no hay columnas opcionales, no modifica el dataframe."""
