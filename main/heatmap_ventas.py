@@ -23,6 +23,7 @@ TITULOS_HEATMAP = {
     "temporal": "#### 2. Corte temporal",
     "visual": "#### 3. Visualización",
     "lectura_rapida": "### Lectura rápida",
+    "insights": "### Insight automático",
     "ranking": "📊 Ranking y concentración de líneas",
     "pareto": "📈 Pareto de líneas",
     "detalle": "🔎 Detalle de línea",
@@ -324,6 +325,58 @@ def resumir_pareto(pareto_df):
     cobertura_objetivo = pareto_df.iloc[lineas_objetivo - 1]['acumulado_pct'] if not pareto_df.empty else 0
     return lineas_objetivo, cobertura_objetivo
 
+
+def construir_insights_heatmap(
+    df_contexto,
+    ventas_linea,
+    resumen,
+    pareto_df,
+    columnas_segmentacion=None,
+):
+    insights = []
+
+    if columnas_segmentacion:
+        segmentos = []
+        for etiqueta, columna in columnas_segmentacion.items():
+            if columna and columna in df_contexto.columns:
+                cantidad = int(df_contexto[columna].dropna().astype(str).nunique())
+                if cantidad > 0:
+                    segmentos.append(f"{cantidad} {etiqueta}")
+        if segmentos:
+            insights.append("Corte activo: foco comercial sobre " + ", ".join(segmentos) + ".")
+
+    if not ventas_linea.empty and ventas_linea.sum() > 0:
+        top_1_share, top_3_share, _ = calcular_metricas_concentracion(ventas_linea)
+        if top_1_share >= 50:
+            insights.append(
+                f"Alta concentración: {ventas_linea.index[0]} sostiene {top_1_share:.1f}% de la venta visible; conviene proteger esa línea y validar dependencia."
+            )
+        elif top_3_share >= PARETO_TARGET_PCT:
+            insights.append(
+                f"Concentración manejable: las 3 principales líneas capturan {top_3_share:.1f}% de la venta visible; ahí está hoy la mayor palanca comercial."
+            )
+        else:
+            insights.append(
+                f"Mix relativamente distribuido: las 3 principales líneas concentran {top_3_share:.1f}% de la venta visible, con menor dependencia de un solo frente comercial."
+            )
+
+    if resumen.get("mejor_linea") is not None and resumen.get("mejor_crecimiento") is not None:
+        insights.append(
+            f"Momentum: {resumen['mejor_linea']} marca la tracción más fuerte del período con {resumen['mejor_crecimiento']:.1f}% de crecimiento comparable; es la línea a empujar en el corto plazo."
+        )
+    elif resumen.get("linea_lider") is not None and resumen.get("ventas_linea_lider") is not None:
+        insights.append(
+            f"Volumen líder: {resumen['linea_lider']} concentra {format_currency(resumen['ventas_linea_lider'])} en la vista actual y sigue siendo la referencia comercial del corte."
+        )
+
+    if pareto_df is not None and not pareto_df.empty:
+        lineas_objetivo, cobertura_objetivo = resumir_pareto(pareto_df)
+        insights.append(
+            f"Pareto visible: {lineas_objetivo} líneas explican {cobertura_objetivo:.1f}% de la venta visible; priorizar ese bloque acelera el impacto comercial."
+        )
+
+    return insights[:3]
+
 def run(df):
     st.title("🔥 Heatmap de Ventas por Línea de Negocio")
     st.caption(
@@ -529,6 +582,25 @@ def run(df):
                 f"Último período visible: {resumen['ultimo_periodo']}"
                 + (f" | Comparación activa: {comparacion_label}" if comparacion_label else "")
             )
+
+        ventas_linea_resumen = df_filtered.sum(axis=0).sort_values(ascending=False)
+        pareto_df_resumen = construir_pareto_dataframe(ventas_linea_resumen) if ventas_linea_resumen.sum() > 0 else pd.DataFrame()
+        insights_heatmap = construir_insights_heatmap(
+            df_contexto=df,
+            ventas_linea=ventas_linea_resumen,
+            resumen=resumen,
+            pareto_df=pareto_df_resumen,
+            columnas_segmentacion={
+                "vendedores": columna_vendedor,
+                "clientes": columna_cliente,
+                "canales": columna_canal,
+                "regiones": columna_region,
+            },
+        )
+
+        if insights_heatmap:
+            st.write(TITULOS_HEATMAP["insights"])
+            st.info("\n".join(f"- {insight}" for insight in insights_heatmap))
 
         fig, ax = plt.subplots(figsize=(max(10, len(top_lineas)*1.5), max(5, len(df_filtered.index)*0.6)))
         sns.heatmap(

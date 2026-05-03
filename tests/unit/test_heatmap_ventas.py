@@ -609,3 +609,49 @@ class TestCalcularTablaCrecimientoReal:
 
         assert status_table.loc['24.02 - Feb', 'Linea A'] == 'comparable'
         assert growth_table.loc['24.02 - Feb', 'Linea A'] == pytest.approx(25.0, rel=0.01)
+
+
+class TestInsightsHeatmap:
+    """Valida la síntesis automática de insights del heatmap."""
+
+    def test_construir_insights_heatmap_resume_corte_concentracion_y_pareto(self):
+        """Test: genera hasta 3 insights con corte, concentración y Pareto."""
+        from main.heatmap_ventas import construir_insights_heatmap
+
+        df_contexto = pd.DataFrame({
+            'vendedor': ['Ana', 'Luis', 'Ana'],
+            'cliente': ['C1', 'C2', 'C3'],
+            'canal': ['Directo', 'Distribuidor', 'Directo'],
+            'region': ['Norte', 'Norte', 'Centro'],
+        })
+        ventas_linea = pd.Series([60, 25, 15], index=['Linea A', 'Linea B', 'Linea C'], dtype=float)
+        resumen = {
+            'mejor_linea': 'Linea B',
+            'mejor_crecimiento': 18.5,
+            'linea_lider': 'Linea A',
+            'ventas_linea_lider': 60.0,
+        }
+        pareto_df = pd.DataFrame({
+            'linea': ['Linea A', 'Linea B', 'Linea C'],
+            'ventas': [60, 25, 15],
+            'participacion_pct': [60.0, 25.0, 15.0],
+            'acumulado_pct': [60.0, 85.0, 100.0],
+        })
+
+        insights = construir_insights_heatmap(
+            df_contexto=df_contexto,
+            ventas_linea=ventas_linea,
+            resumen=resumen,
+            pareto_df=pareto_df,
+            columnas_segmentacion={
+                'vendedores': 'vendedor',
+                'clientes': 'cliente',
+                'canales': 'canal',
+                'regiones': 'region',
+            },
+        )
+
+        assert len(insights) == 3
+        assert insights[0].startswith('Corte activo:')
+        assert 'Alta concentración' in insights[1]
+        assert 'Momentum:' in insights[2]
