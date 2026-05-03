@@ -14,6 +14,7 @@ from main.kpi_cpc import (
     _calcular_pct_sobre_total,
     _normalizar_columna_deudor,
     _obtener_nombre_archivo,
+    _safe_int,
 )
 
 
@@ -250,6 +251,13 @@ def test_porcentaje_sobre_total_evta_division_por_cero():
     """Los KPIs deben sobrevivir cuando el total adeudado es cero."""
     assert _calcular_pct_sobre_total(100, 0) == 0.0
     assert _calcular_pct_sobre_total(0, 0) == 0.0
+
+
+def test_safe_int_tolera_nan_y_nulos():
+    """Las vistas ejecutivas no deben romperse por conversiones int con NaN."""
+    assert _safe_int(np.nan) == 0
+    assert _safe_int(None) == 0
+    assert _safe_int(7.9) == 7
 
 
 # ═══════════════════════════════════════════════════════════════════════

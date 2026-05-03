@@ -93,6 +93,14 @@ def _calcular_pct_sobre_total(parte: float, total: float) -> float:
     return parte / total * 100
 
 
+def _safe_int(value, default: int = 0) -> int:
+    """Convierte valores numéricos a int tolerando NaN y nulos."""
+    numeric = pd.to_numeric(pd.Series([value]), errors='coerce').iloc[0]
+    if pd.isna(numeric):
+        return default
+    return int(numeric)
+
+
 def run(archivo, habilitar_ia=False, openai_api_key=None):
     """
     Función principal del módulo KPI CxC (Cuentas por Cobrar).
@@ -545,7 +553,7 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                         r = fila_cliente.iloc[0]
                         col_d1, col_d2, col_d3, col_d4 = st.columns(4)
                         col_d1.metric("💰 Saldo Total", f"${r['saldo_total']:,.0f}")
-                        col_d2.metric("📄 # Facturas", int(r['num_facturas']))
+                        col_d2.metric("📄 # Facturas", _safe_int(r['num_facturas']))
                         col_d3.metric("📊 Días Prom. Ponderado", f"{r['dias_promedio_ponderado']:.0f}")
                         col_d4.metric("⏰ Factura Más Antigua", f"{r['dias_factura_mas_antigua']:.0f} días")
 
@@ -2187,7 +2195,7 @@ Estimado(a) Cliente: **{cliente_carta}**
 **DETALLE DE LA DEUDA:**
 
 - **Monto Total Adeudado:** ${monto_cliente:,.2f}
-- **Días Máximos de Atraso:** {int(dias_vencido_max)} días
+- **Días Máximos de Atraso:** {_safe_int(dias_vencido_max)} días
 - **Estado:** {prioridad_cliente}
 
 De acuerdo con nuestros registros, el saldo pendiente corresponde a facturas vencidas que requieren su atención inmediata.
