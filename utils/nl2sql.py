@@ -20,7 +20,7 @@ import json
 import logging
 import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from decimal import Decimal
 from typing import Dict, List, Optional, Tuple
@@ -63,6 +63,7 @@ logger = configurar_logger("nl2sql", nivel="INFO")
 MAX_ROWS = 1000
 QUERY_TIMEOUT_SECONDS = 30
 MAX_SQL_LENGTH = 8000
+MAX_HISTORY_ITEMS = 20
 
 # Patrones SQL peligrosos (case-insensitive)
 FORBIDDEN_PATTERNS = [
@@ -88,6 +89,15 @@ ALLOWED_TABLES = [
     'v_cartera_clientes',
     'v_ventas_linea_mes',
 ]
+
+TENANT_SCOPED_TABLES = {
+    'cfdi_ventas',
+    'cfdi_conceptos',
+    'cfdi_pagos',
+    'clientes_master',
+    'v_cartera_clientes',
+    'v_ventas_linea_mes',
+}
 
 
 # =====================================================================
@@ -1283,7 +1293,7 @@ SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quart
     # -----------------------------------------------------------------
     # 2. Validación de seguridad
     # -----------------------------------------------------------------
-    def validate_sql(self, sql: str) -> Tuple[bool, str]:
+    def validate_sql(self, sql: str, empresa_id: Optional[str] = None) -> Tuple[bool, str]:
         """
         Valida que el SQL sea seguro para ejecución.
 
@@ -1338,10 +1348,20 @@ SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quart
             re.IGNORECASE
         )
         allowed = set(ALLOWED_TABLES) | cte_names
+        referenced_tables = set()
         for match_groups in tables_in_query:
             for table in match_groups:
                 if table and table.lower() not in allowed:
                     return False, f"Tabla no permitida: {table}"
+                if table:
+                    referenced_tables.add(table.lower())
+
+        # Si el usuario está acotado a un tenant, exigir que la consulta
+        # incluya explícitamente el filtro de empresa antes de ejecutarse.
+        if empresa_id and referenced_tables.intersection(TENANT_SCOPED_TABLES):
+            sql_lower = sql_cleaned.lower()
+            if "empresa_id" not in sql_lower or empresa_id.lower() not in sql_lower:
+                return False, "Falta filtro obligatorio por empresa_id"
 
         return True, "OK"
 
@@ -1421,7 +1441,7 @@ SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quart
     # -----------------------------------------------------------------
     # 3. Ejecución de query
     # -----------------------------------------------------------------
-    def execute_query(self, sql: str) -> pd.DataFrame:
+    def execute_query(self, sql: str, empresa_id: Optional[str] = None) -> pd.DataFrame:
         """
         Ejecuta una query SQL contra la base de datos.
 
@@ -1434,6 +1454,10 @@ SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quart
         Raises:
             RuntimeError: Si hay error de conexión o ejecución
         """
+        is_valid, error_msg = self.validate_sql(sql, empresa_id=empresa_id)
+        if not is_valid:
+            raise RuntimeError(error_msg)
+
         conn = None
         try:
             conn = psycopg2.connect(self.connection_string)
@@ -2091,16 +2115,18 @@ Si el usuario pidió explícitamente una orientación (ej: "vertical", "horizont
             result.sql = sql
 
             # Paso 2: Validar seguridad
-            is_valid, error_msg = self.validate_sql(sql)
+            is_valid, error_msg = self.validate_sql(sql, empresa_id=empresa_id)
             if not is_valid:
                 result.error = f"🛡️ Seguridad: {error_msg}"
                 result.execution_time = time.time() - start_time
-                self.history.append(result)
+                history_entry = replace(result, dataframe=None)
+                self.history.append(history_entry)
+                self.history = self.history[-MAX_HISTORY_ITEMS:]
                 return result
 
             # Paso 3: Ejecutar query (con retry auto-fix si falla GROUP BY)
             try:
-                df = self.execute_query(sql)
+                df = self.execute_query(sql, empresa_id=empresa_id)
             except RuntimeError as exec_err:
                 err_str = str(exec_err)
                 if "GROUP BY" in err_str or "aggregate function" in err_str:
@@ -2109,7 +2135,7 @@ Si el usuario pidió explícitamente una orientación (ej: "vertical", "horizont
                     if fixed_sql != sql:
                         result.sql = fixed_sql
                         sql = fixed_sql
-                        df = self.execute_query(sql)  # si falla de nuevo, propaga
+                        df = self.execute_query(sql, empresa_id=empresa_id)  # si falla de nuevo, propaga
                     else:
                         raise
                 else:
@@ -2173,7 +2199,9 @@ Si el usuario pidió explícitamente una orientación (ej: "vertical", "horizont
             logger.exception(f"Error en pipeline ask(): {e}")
 
         result.execution_time = time.time() - start_time
-        self.history.append(result)
+        history_entry = replace(result, dataframe=None)
+        self.history.append(history_entry)
+        self.history = self.history[-MAX_HISTORY_ITEMS:]
 
         return result
 
@@ -2209,7 +2237,7 @@ Si el usuario pidió explícitamente una orientación (ej: "vertical", "horizont
             if conn:
                 conn.close()
 
-    def get_table_counts(self) -> Dict[str, int]:
+    def get_table_counts(self, empresa_id: Optional[str] = None) -> Dict[str, int]:
         """
         Obtiene el conteo de registros por tabla.
 
@@ -2227,7 +2255,42 @@ Si el usuario pidió explícitamente una orientación (ej: "vertical", "horizont
                 if table.startswith('v_'):
                     continue  # Las vistas pueden ser costosas
                 try:
-                    cursor.execute(f"SELECT COUNT(*) FROM {table};")
+                    if empresa_id:
+                        if table == 'cfdi_ventas':
+                            cursor.execute(
+                                "SELECT COUNT(*) FROM cfdi_ventas WHERE empresa_id = %s::uuid;",
+                                (empresa_id,),
+                            )
+                        elif table == 'cfdi_conceptos':
+                            cursor.execute(
+                                """
+                                SELECT COUNT(*)
+                                FROM cfdi_conceptos cc
+                                JOIN cfdi_ventas cv ON cv.id = cc.cfdi_venta_id
+                                WHERE cv.empresa_id = %s::uuid;
+                                """,
+                                (empresa_id,),
+                            )
+                        elif table == 'cfdi_pagos':
+                            cursor.execute(
+                                "SELECT COUNT(*) FROM cfdi_pagos WHERE empresa_id = %s::uuid;",
+                                (empresa_id,),
+                            )
+                        elif table == 'clientes_master':
+                            cursor.execute(
+                                "SELECT COUNT(*) FROM clientes_master WHERE empresa_id = %s::uuid;",
+                                (empresa_id,),
+                            )
+                        elif table == 'empresas':
+                            cursor.execute(
+                                "SELECT COUNT(*) FROM empresas WHERE id = %s::uuid;",
+                                (empresa_id,),
+                            )
+                        else:
+                            counts[table] = -1
+                            continue
+                    else:
+                        cursor.execute(f"SELECT COUNT(*) FROM {table};")
                     counts[table] = cursor.fetchone()[0]
                 except Exception:
                     counts[table] = -1  # Tabla puede no existir
@@ -2241,7 +2304,7 @@ Si el usuario pidió explícitamente una orientación (ej: "vertical", "horizont
             if conn:
                 conn.close()
 
-    def get_date_range(self) -> Optional[Tuple[str, str]]:
+    def get_date_range(self, empresa_id: Optional[str] = None) -> Optional[Tuple[str, str]]:
         """
         Obtiene el rango de fechas de los datos.
 
@@ -2253,10 +2316,17 @@ Si el usuario pidió explícitamente una orientación (ej: "vertical", "horizont
             conn = psycopg2.connect(self.connection_string)
             cursor = conn.cursor()
             cursor.execute("SET default_transaction_read_only = true;")
-            cursor.execute(
-                "SELECT MIN(fecha_emision)::date, MAX(fecha_emision)::date "
-                "FROM cfdi_ventas;"
-            )
+            if empresa_id:
+                cursor.execute(
+                    "SELECT MIN(fecha_emision)::date, MAX(fecha_emision)::date "
+                    "FROM cfdi_ventas WHERE empresa_id = %s::uuid;",
+                    (empresa_id,),
+                )
+            else:
+                cursor.execute(
+                    "SELECT MIN(fecha_emision)::date, MAX(fecha_emision)::date "
+                    "FROM cfdi_ventas;"
+                )
             row = cursor.fetchone()
             cursor.close()
             if row and row[0]:

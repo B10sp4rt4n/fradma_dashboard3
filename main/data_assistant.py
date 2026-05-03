@@ -35,6 +35,7 @@ from utils.nl2sql import (
 
 from utils.roi_tracker import init_roi_tracker
 from utils.logger import configurar_logger
+from utils.auth import get_current_user
 
 # Configurar logger para data_assistant
 logger = configurar_logger("data_assistant", nivel="INFO")
@@ -153,8 +154,7 @@ ASSISTANT_CSS = """
 def _get_engine() -> NL2SQLEngine:
     """Obtiene o crea la instancia del engine NL2SQL."""
     if "nl2sql_engine" not in st.session_state:
-        neon_url = st.session_state.get("nl2sql_neon_url", "")
-        api_key = st.session_state.get("nl2sql_api_key", "")
+        neon_url, api_key, model = _get_runtime_credentials()
 
         if not neon_url or not api_key:
             return None
@@ -163,7 +163,7 @@ def _get_engine() -> NL2SQLEngine:
             engine = NL2SQLEngine(
                 connection_string=neon_url,
                 api_key=api_key,
-                model=st.session_state.get("nl2sql_model", "gpt-4o"),
+                model=model,
             )
             st.session_state["nl2sql_engine"] = engine
         except Exception as e:
@@ -189,6 +189,38 @@ CHART_COLORS = [
     "#00BCD4", "#FF5722", "#607D8B", "#795548", "#8BC34A",
     "#3F51B5", "#FFEB3B", "#009688", "#F44336", "#673AB7",
 ]
+
+MAX_CHAT_MESSAGES = 40
+MAX_SESSION_RESULT_ROWS = 300
+
+
+def _append_chat_message(msg: dict):
+    """Agrega un mensaje al chat y limita el tamaño de la sesión."""
+    if "nl2sql_messages" not in st.session_state:
+        st.session_state["nl2sql_messages"] = []
+    st.session_state["nl2sql_messages"].append(msg)
+    st.session_state["nl2sql_messages"] = st.session_state["nl2sql_messages"][-MAX_CHAT_MESSAGES:]
+
+
+def _get_active_empresa_id():
+    """Obtiene el empresa_id efectivo del contexto actual."""
+    user = get_current_user()
+    if user and not user.is_superadmin:
+        return st.session_state.get("empresa_id") or user.empresa_id
+    return st.session_state.get("empresa_id") or st.session_state.get("nl2sql_empresa_id")
+
+
+def _get_runtime_credentials():
+    """Resuelve credenciales del motor sin exponer secretos del servidor al frontend."""
+    user = get_current_user()
+    model = st.session_state.get("nl2sql_model", "gpt-4o")
+
+    if user and not user.is_superadmin:
+        return os.getenv("NEON_DATABASE_URL", ""), os.getenv("OPENAI_API_KEY", ""), model
+
+    neon_url = st.session_state.get("nl2sql_neon_url", "").strip() or os.getenv("NEON_DATABASE_URL", "")
+    api_key = st.session_state.get("nl2sql_api_key", "").strip() or os.getenv("OPENAI_API_KEY", "")
+    return neon_url, api_key, model
 
 
 def _render_stats_kpi(df: pd.DataFrame):
@@ -1681,7 +1713,7 @@ def _render_hero():
 
 def _auto_connect_from_env():
     """Si las credenciales están en variables de entorno y no hay sesión activa, conecta automáticamente."""
-    if st.session_state.get("nl2sql_connected"):
+    if st.session_state.get("nl2sql_connected") or st.session_state.get("nl2sql_disable_auto_connect"):
         return  # Ya conectado, nada que hacer
 
     neon_url = os.getenv("NEON_DATABASE_URL", "")
@@ -1690,9 +1722,6 @@ def _auto_connect_from_env():
     if not neon_url or not api_key:
         return  # Sin env vars → mostrar formulario manual
 
-    # Establecer credenciales en session_state silenciosamente
-    st.session_state["nl2sql_neon_url"] = neon_url
-    st.session_state["nl2sql_api_key"] = api_key
     if "nl2sql_model" not in st.session_state:
         st.session_state["nl2sql_model"] = "gpt-4o"
 
@@ -1701,11 +1730,34 @@ def _auto_connect_from_env():
         ok, _ = engine.test_connection()
         if ok:
             st.session_state["nl2sql_connected"] = True
+            st.session_state["nl2sql_disable_auto_connect"] = False
 
 
 def _render_connection_setup():
     """Panel de configuración de conexión."""
     st.markdown("### 🔌 Configurar Conexión")
+
+    user = get_current_user()
+    server_neon = os.getenv("NEON_DATABASE_URL", "")
+    server_api = os.getenv("OPENAI_API_KEY", "")
+
+    if user and not user.is_superadmin:
+        if server_neon and server_api:
+            st.success("✅ El asistente usa credenciales seguras del servidor para tu sesión.")
+            if st.button("🔌 Conectar", type="primary", use_container_width=True):
+                st.session_state["nl2sql_disable_auto_connect"] = False
+                engine = _get_engine()
+                if engine:
+                    with st.spinner("Probando conexión..."):
+                        ok, msg = engine.test_connection()
+                    if ok:
+                        st.session_state["nl2sql_connected"] = True
+                        st.rerun()
+                    st.error(f"❌ {msg}")
+            return st.session_state.get("nl2sql_connected", False)
+
+        st.warning("El Asistente de Datos requiere credenciales del servidor. Contacta al administrador.")
+        return False
 
     st.info(
         "Para usar el Asistente de Datos necesitas:\n"
@@ -1719,7 +1771,7 @@ def _render_connection_setup():
         neon_url = st.text_input(
             "URL de Neon PostgreSQL",
             type="password",
-            value=st.session_state.get("nl2sql_neon_url", os.getenv("NEON_DATABASE_URL", "")),
+            value=st.session_state.get("nl2sql_neon_url", ""),
             help="postgresql://user:pass@host/db?sslmode=require",
             key="input_neon_url",
         )
@@ -1728,7 +1780,7 @@ def _render_connection_setup():
         api_key = st.text_input(
             "API Key de OpenAI",
             type="password",
-            value=st.session_state.get("nl2sql_api_key", os.getenv("OPENAI_API_KEY", "")),
+            value=st.session_state.get("nl2sql_api_key", ""),
             help="sk-...",
             key="input_api_key",
         )
@@ -1773,6 +1825,7 @@ def _render_connection_setup():
             st.session_state["nl2sql_neon_url"] = neon_url
             st.session_state["nl2sql_api_key"] = api_key
             st.session_state["nl2sql_model"] = model
+            st.session_state["nl2sql_disable_auto_connect"] = False
             _invalidate_engine()
 
             engine = _get_engine()
@@ -1822,8 +1875,8 @@ def _render_schema_explorer():
 
     # Obtener conteos
     with st.spinner("Obteniendo información del esquema..."):
-        counts = engine.get_table_counts()
-        date_range = engine.get_date_range()
+        counts = engine.get_table_counts(empresa_id=_get_active_empresa_id())
+        date_range = engine.get_date_range(empresa_id=_get_active_empresa_id())
 
     # Mostrar rango de datos
     if date_range:
@@ -2386,7 +2439,7 @@ def _render_chat_interface():
                 st.error(_val["mensaje"])
                 if _val.get("sugerencia"):
                     st.info(_val["sugerencia"])
-            st.session_state["nl2sql_messages"].append({
+            _append_chat_message({
                 "role": "assistant",
                 "content": f"{_val['mensaje']}\n\n{_val.get('sugerencia', '')}",
                 "type": "error",
@@ -2401,7 +2454,7 @@ def _render_chat_interface():
         with st.chat_message("user", avatar="🧑‍💼"):
             st.markdown(question)
 
-        st.session_state["nl2sql_messages"].append({
+        _append_chat_message({
             "role": "user",
             "content": question,
         })
@@ -2410,10 +2463,7 @@ def _render_chat_interface():
         with st.chat_message("assistant", avatar="🤖"):
             with st.spinner("🔍 Analizando pregunta y consultando datos..."):
                 # empresa_id: primero del usuario logueado (multiempresa), si no hay usa el override manual
-                empresa_id = (
-                    st.session_state.get("empresa_id")          # seteado en login por usuario
-                    or st.session_state.get("nl2sql_empresa_id")  # override manual (superadmin)
-                )
+                empresa_id = _get_active_empresa_id()
                 result = engine.ask(
                     question,
                     empresa_id=empresa_id,
@@ -2430,7 +2480,7 @@ def _render_chat_interface():
             new_idx = len(st.session_state["nl2sql_messages"])
             _render_result_message(msg_data, new_idx)
 
-            st.session_state["nl2sql_messages"].append(msg_data)
+            _append_chat_message(msg_data)
 
 
 def _build_result_message(result: NL2SQLResult, question: str = "") -> dict:
@@ -2450,7 +2500,9 @@ def _build_result_message(result: NL2SQLResult, question: str = "") -> dict:
 
     # Serializar DataFrame para session_state
     if result.dataframe is not None and not result.dataframe.empty:
-        msg["dataframe_json"] = result.dataframe.to_json(orient="split", date_format="iso")
+        truncated_df = result.dataframe.head(MAX_SESSION_RESULT_ROWS)
+        msg["dataframe_json"] = truncated_df.to_json(orient="split", date_format="iso")
+        msg["dataframe_truncated"] = len(result.dataframe) > len(truncated_df)
 
     return msg
 
@@ -2522,6 +2574,10 @@ def _render_result_message(msg: dict, msg_idx: int = 0):
                     col_config[col] = st.column_config.NumberColumn(format="$%.2f")
             st.dataframe(df, use_container_width=True, hide_index=True, column_config=col_config)
             st.caption(f"📋 {len(df)} fila(s) · {len(df.columns)} columna(s)")
+            if msg.get("dataframe_truncated"):
+                st.caption(
+                    f"⚠️ Vista reducida a las primeras {MAX_SESSION_RESULT_ROWS} filas en el historial de sesión."
+                )
 
         with tab_sql:
             st.code(msg.get("sql", ""), language="sql")
@@ -2667,6 +2723,11 @@ def _render_sql_playground():
     st.markdown("### 🛠️ SQL Playground")
     st.caption("Escribe y ejecuta SQL directamente (solo SELECT)")
 
+    user = get_current_user()
+    if not user or not user.is_superadmin:
+        st.warning("🔒 El SQL Playground está disponible solo para superadmin.")
+        return
+
     engine = _get_engine()
     if not engine:
         st.warning("Conecta primero a la base de datos")
@@ -2740,7 +2801,6 @@ def run():
         return
 
     # Verificar permiso de rol
-    from utils.auth import get_current_user
     _user = get_current_user()
     if _user and not _user.can_use_ai():
         st.warning("🔒 Tu rol no tiene acceso al Asistente de Datos. Contacta al administrador.")
@@ -2767,6 +2827,7 @@ def run():
     with col_disconnect:
         if st.button("🔌 Desconectar"):
             st.session_state["nl2sql_connected"] = False
+            st.session_state["nl2sql_disable_auto_connect"] = True
             _invalidate_engine()
             st.session_state["nl2sql_messages"] = []
             st.rerun()
