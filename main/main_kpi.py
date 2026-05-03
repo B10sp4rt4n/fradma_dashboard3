@@ -93,6 +93,10 @@ def run(habilitar_ia=False, openai_api_key=None):
     ticket_promedio = total_filtrado_usd / operaciones_filtradas if operaciones_filtradas > 0 else 0
     vendedores_activos = df["agente"].nunique() if "agente" in df.columns else 0
     clientes_unicos = df[columna_cliente].nunique() if columna_cliente else 0
+    operaciones_promedio_vendedor = (
+        operaciones_filtradas / vendedores_activos
+        if vendedores_activos > 0 else 0
+    )
 
     colf1, colf2, colf3, colf4 = st.columns(4)
     colf1.metric(
@@ -104,13 +108,16 @@ def run(habilitar_ia=False, openai_api_key=None):
     colf2.metric(
         "📦 Operaciones",
         f"{operaciones_filtradas:,}",
-        delta=f"{(operaciones_filtradas / total_operaciones_base * 100):.1f}% del total" if total_operaciones_base > 0 else None,
-        help="📐 Número de transacciones que cumplen los filtros"
+        delta=(
+            f"{operaciones_promedio_vendedor:,.0f} prom./vendedor"
+            if vendedores_activos > 0 else None
+        ),
+        help="📐 Número total de transacciones que cumplen los filtros"
     )
     colf3.metric(
-        "💳 Ticket Promedio",
+        "💳 Ticket Prom./Operación",
         f"${ticket_promedio:,.2f}",
-        help="📐 Venta promedio por operación dentro del contexto activo"
+        help="📐 Promedio ponderado del contexto: ventas totales / operaciones"
     )
     if columna_cliente:
         colf4.metric(
@@ -249,34 +256,28 @@ def run(habilitar_ia=False, openai_api_key=None):
             "Ranking", "Medalla", "Vendedor", "Ventas Totales", "Operaciones",
             "Ticket Promedio", "Clientes", "Venta por Cliente", "Clasificacion"
         ]]
-        st.dataframe(
-            ranking_display,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Ranking": st.column_config.NumberColumn("#", format="%d", width="small"),
-                "Medalla": st.column_config.TextColumn(" ", width="small"),
-                "Vendedor": st.column_config.TextColumn("Vendedor", width="medium"),
-                "Ventas Totales": st.column_config.ProgressColumn(
-                    "Ventas Totales",
-                    format="$%d",
-                    min_value=0,
-                    max_value=float(ranking_display["Ventas Totales"].max()) if not ranking_display.empty else 0,
-                ),
-                "Operaciones": st.column_config.ProgressColumn(
-                    "Operaciones",
-                    format="%d",
-                    min_value=0,
-                    max_value=int(ranking_display["Operaciones"].max()) if not ranking_display.empty else 0,
-                ),
-                "Ticket Promedio": st.column_config.NumberColumn("Ticket Promedio", format="$%.2f"),
-                "Clientes": st.column_config.NumberColumn("Clientes", format="%d"),
-                "Venta por Cliente": st.column_config.NumberColumn("Venta por Cliente", format="$%.2f"),
-                "Clasificacion": st.column_config.TextColumn("Clasificación", width="medium"),
-            },
+        ranking_styler = (
+            ranking_display.style
+            .format({
+                "Ranking": "{:,.0f}",
+                "Ventas Totales": "${:,.0f}",
+                "Operaciones": "{:,.0f}",
+                "Ticket Promedio": "${:,.2f}",
+                "Clientes": "{:,.0f}",
+                "Venta por Cliente": "${:,.2f}",
+            })
+            .bar(subset=["Ventas Totales", "Operaciones"], color="#ff4b4b")
+        )
+        st.markdown(
+            ranking_styler.hide(axis="index").to_html(),
+            unsafe_allow_html=True,
         )
 
         st.subheader("⚡ KPIs de Eficiencia por Vendedor")
+        st.caption(
+            "Estos indicadores comparan vendedores entre sí. "
+            "No equivalen al ticket promedio por operación mostrado arriba."
+        )
         
         # Mostrar métricas principales
         col_ef1, col_ef2, col_ef3, col_ef4 = st.columns(4)
@@ -284,16 +285,16 @@ def run(habilitar_ia=False, openai_api_key=None):
         mejor_ticket = df_eficiencia_ventas.loc[df_eficiencia_ventas['ticket_promedio'].idxmax()]
         mayor_volumen = df_eficiencia_ventas.loc[df_eficiencia_ventas['operaciones'].idxmax()]
         
-        col_ef1.metric("💰 Mejor Ticket Promedio", 
+        col_ef1.metric("💰 Mejor Ticket por Vendedor", 
                       f"${mejor_ticket['ticket_promedio']:,.2f}",
                       delta=mejor_ticket['agente'])
-        col_ef2.metric("📊 Mayor Volumen Ops", 
+        col_ef2.metric("📊 Mayor Volumen de Ops", 
                       f"{mayor_volumen['operaciones']:,.0f}",
                       delta=mayor_volumen['agente'])
-        col_ef3.metric("💵 Ticket Prom. General", 
+        col_ef3.metric("💵 Ticket Prom. por Vendedor", 
                       f"${df_eficiencia_ventas['ticket_promedio'].mean():,.2f}")
-        col_ef4.metric("🎯 Ops Promedio", 
-                      f"{df_eficiencia_ventas['operaciones'].mean():,.0f}")
+        col_ef4.metric("👤 Vendedores Evaluados", 
+                      f"{len(df_eficiencia_ventas):,.0f}")
         
         # Matriz de Eficiencia vs Volumen
         st.write("### 📈 Matriz de Eficiencia vs Volumen")
@@ -330,41 +331,6 @@ def run(habilitar_ia=False, openai_api_key=None):
         q2.metric("📊 Alto Volumen", f"{(df_eficiencia_ventas['clasificacion'] == '📊 Alto Volumen').sum()}")
         q3.metric("💎 Alto Ticket", f"{(df_eficiencia_ventas['clasificacion'] == '💎 Alto Ticket').sum()}")
         q4.metric("🔄 En Desarrollo", f"{(df_eficiencia_ventas['clasificacion'] == '🔄 En Desarrollo').sum()}")
-
-        # Tabla detallada de eficiencia
-        st.write("### 📋 Tabla Detallada de Eficiencia")
-
-        df_ef_display = df_eficiencia_ventas.sort_values('total_ventas', ascending=False).copy()
-        df_ef_display.insert(0, 'ranking', range(1, len(df_ef_display) + 1))
-
-        st.dataframe(
-            df_ef_display[[
-                'ranking', 'agente', 'total_ventas', 'operaciones', 'ticket_promedio',
-                'clientes_unicos', 'ventas_por_cliente', 'clasificacion'
-            ]],
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                'ranking': st.column_config.NumberColumn('#', format='%d', width='small'),
-                'agente': st.column_config.TextColumn('Vendedor', width='medium'),
-                'total_ventas': st.column_config.ProgressColumn(
-                    'Ventas Totales',
-                    format='$%.0f',
-                    min_value=0,
-                    max_value=float(df_ef_display['total_ventas'].max()) if not df_ef_display.empty else 0,
-                ),
-                'operaciones': st.column_config.ProgressColumn(
-                    'Operaciones',
-                    format='%d',
-                    min_value=0,
-                    max_value=int(df_ef_display['operaciones'].max()) if not df_ef_display.empty else 0,
-                ),
-                'ticket_promedio': st.column_config.NumberColumn('Ticket Promedio', format='$%.2f'),
-                'clientes_unicos': st.column_config.NumberColumn('Clientes', format='%d'),
-                'ventas_por_cliente': st.column_config.NumberColumn('Venta/Cliente', format='$%.2f'),
-                'clasificacion': st.column_config.TextColumn('Clasificación', width='medium'),
-            },
-        )
         
         # Insights y recomendaciones
         st.write("### 💡 Insights y Recomendaciones")
@@ -437,14 +403,74 @@ def run(habilitar_ia=False, openai_api_key=None):
                     operaciones=("operaciones", "sum")
                 )
                 .reset_index()
+                .sort_values("total_ventas", ascending=False)
             )
             pie_data["ventas_moneda"] = pie_data["total_ventas"].apply(lambda x: f"${x:,.2f}")
+            pie_data["pct_ventas"] = pie_data["total_ventas"] / pie_data["total_ventas"].sum()
+            pie_data["etiqueta_visible"] = pie_data.apply(
+                lambda row: f"{row['agente']}<br>{row['pct_ventas']:.1%}"
+                if row["pct_ventas"] >= 0.02 else "",
+                axis=1,
+            )
 
-            chart = alt.Chart(pie_data).mark_arc(innerRadius=50).encode(
-                theta="total_ventas:Q",
-                color="agente:N",
-                tooltip=["agente:N", "ventas_moneda:N", "operaciones:Q"]
-            ).properties(title="Participación de Vendedores (USD)")
+            chart = px.pie(
+                pie_data,
+                names="agente",
+                values="total_ventas",
+                title="Participación de Vendedores (USD)",
+                custom_data=["ventas_moneda", "operaciones", "pct_ventas", "etiqueta_visible"],
+                hole=0.35,
+            )
+            chart.update_traces(
+                pull=[0.03] * len(pie_data),
+                domain=dict(x=[0.0, 0.68], y=[0.02, 0.98]),
+                textposition="outside",
+                texttemplate="%{customdata[3]}",
+                textfont_size=14,
+                hovertemplate=(
+                    "<b>%{label}</b><br>"
+                    "Ventas: %{customdata[0]}<br>"
+                    "Operaciones: %{customdata[1]:,.0f}<br>"
+                    "Participación: %{customdata[2]:.1%}<extra></extra>"
+                )
+            )
+            chart.update_layout(
+                showlegend=False,
+                height=680,
+                margin=dict(t=70, b=40, l=70, r=140),
+                uniformtext_minsize=13,
+                uniformtext_mode="hide",
+            )
+
+            tabla_pct_html = (
+                pie_data[["agente", "ventas_moneda", "pct_ventas"]]
+                .rename(columns={
+                    "agente": "Vendedor",
+                    "ventas_moneda": "Ventas",
+                    "pct_ventas": "% Ventas",
+                })
+                .assign(**{"% Ventas": lambda df_tmp: df_tmp["% Ventas"].map(lambda v: f"{v:.1%}")})
+                .to_html(index=False, escape=False, classes="pie-summary-table", justify="center")
+            )
+            tabla_pct_bloque_html = f"""
+            <div style=\"height: 680px; display: flex; align-items: center; justify-content: center;\">
+                <div style=\"width: 100%; max-width: 360px;\">
+                    <h4 style=\"text-align: center; margin: 0 0 16px 0;\">% de ventas</h4>
+                    <style>
+                        .pie-summary-table {{
+                            margin: 0 auto;
+                            border-collapse: collapse;
+                        }}
+                        .pie-summary-table th,
+                        .pie-summary-table td {{
+                            text-align: center;
+                            vertical-align: middle;
+                        }}
+                    </style>
+                    <div style=\"display: flex; justify-content: center; text-align: center;\">{tabla_pct_html}</div>
+                </div>
+            </div>
+            """
 
         elif chart_type == "Barras Horizontales":
             bar_data = (
@@ -473,7 +499,14 @@ def run(habilitar_ia=False, openai_api_key=None):
                 tooltip=["anio:N", "agente:N", "ventas_moneda:N", "operaciones:Q"]
             ).properties(title="Ventas por Vendedor en el Tiempo")
 
-        st.altair_chart(chart, width='stretch')    
+        if chart_type == "Pie Chart":
+            col_chart, col_tabla = st.columns([2.4, 1])
+            with col_chart:
+                st.plotly_chart(chart, width='stretch')
+            with col_tabla:
+                st.markdown(tabla_pct_bloque_html, unsafe_allow_html=True)
+        else:
+            st.altair_chart(chart, width='stretch')    
     st.markdown("---")
     
     # =====================================================================
