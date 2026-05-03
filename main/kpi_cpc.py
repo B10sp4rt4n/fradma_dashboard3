@@ -333,6 +333,10 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
             "3. Clientes Clave",
             "4. Evolución y Seguimiento",
         ])
+        resumen_view = tab_resumen.container()
+        riesgo_view = tab_riesgo.container()
+        clientes_view = tab_clientes.container()
+        seguimiento_view = tab_seguimiento.container()
 
         with tab_resumen:
             col_nav1, col_nav2, col_nav3, col_nav4 = st.columns(4)
@@ -350,25 +354,27 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
             st.caption("Esta pestaña resume el nivel de deterioro y dependencia comercial antes de entrar al detalle.")
 
         with tab_clientes:
-            st.dataframe(
-                top_deudores.reset_index().rename(
-                    columns={'deudor': 'Cliente', 'saldo_adeudado': 'Saldo Adeudado'}
-                ).style.format({'Saldo Adeudado': '${:,.2f}'}),
-                use_container_width=True,
-                hide_index=True,
+            col_nav_clientes1, col_nav_clientes2 = st.columns(2)
+            col_nav_clientes1.metric(
+                "🔝 Principal Deudor",
+                top_deudores.index[0] if len(top_deudores) > 0 else "N/D",
+                delta=f"${top_deudores.iloc[0]:,.0f}" if len(top_deudores) > 0 else None,
+                delta_color="inverse",
             )
+            col_nav_clientes2.metric("🎯 Concentración Top 3", f"{pct_concentracion:.1f}%", delta_color="inverse")
+            st.caption("La tabla detallada y el gráfico de concentración se muestran más abajo dentro de esta misma pestaña.")
 
         with tab_seguimiento:
             col_nav8, col_nav9, col_nav10 = st.columns(3)
             col_nav8.metric("🟠 Vencida 1-30d", f"{pct_vencida_0_30:.1f}%")
             col_nav9.metric("🟠 Vencida 31-60d", f"{pct_vencida_31_60:.1f}%")
             col_nav10.metric("🔴 Vencida 61-90d", f"{pct_vencida_61_90:.1f}%", delta_color="inverse")
-            st.caption("Usa el detalle completo de abajo para profundizar en clientes, antigüedad, cobranza y exportación.")
+            st.caption("Esta pestaña concentra evolución temporal, antigüedad, exportación y cierre ejecutivo.")
 
-        st.write("---")
+        resumen_view.write("---")
         
         # Métricas principales en columnas
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3 = resumen_view.columns(3)
         col1.metric("💰 Total Adeudado", f"${total_adeudado:,.2f}")
         pct_vigente_total = _calcular_pct_sobre_total(vigente, total_adeudado)
         pct_vencida_total = _calcular_pct_sobre_total(vencida, total_adeudado)
@@ -379,8 +385,8 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                    delta_color="inverse")
         
         # Pie Chart: Vigente vs Vencido
-        st.subheader("📊 Distribución General de Cartera")
-        col_pie1, col_pie2 = st.columns(2)
+        resumen_view.subheader("📊 Distribución General de Cartera")
+        col_pie1, col_pie2 = resumen_view.columns(2)
         
         with col_pie1:
             st.write("**Vigente vs Vencido**")
@@ -400,13 +406,13 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
             st.plotly_chart(fig_vigente, width='stretch')
 
         # Top 5 deudores usando el identificador comercial consolidado
-        st.subheader("🔝 Principales Deudores")
+        resumen_view.subheader("🔝 Principales Deudores")
         
         # =====================================================================
         # ANÁLISIS DETALLADO POR CLIENTE: 3 MÉTODOS DE CÁLCULO DE DÍAS
         # =====================================================================
-        st.write("---")
-        st.subheader("📊 Análisis Detallado de Antigüedad por Cliente")
+        resumen_view.write("---")
+        resumen_view.subheader("📊 Análisis Detallado de Antigüedad por Cliente")
         
         # Calcular métricas por cliente con 3 métodos
         df_metricas_cliente = calcular_metricas_por_cliente(df_np)
@@ -518,6 +524,10 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                 # Formatear DataFrame para display
                 df_display = df_display_raw.copy()
                 df_display['saldo_total'] = df_display['saldo_total'].apply(lambda x: f"${x:,.0f}")
+                df_display['num_facturas'] = df_display['num_facturas'].apply(lambda x: f"{_safe_int(x):,}")
+                df_display['dias_promedio_ponderado'] = df_display['dias_promedio_ponderado'].apply(lambda x: f"{x:,.1f}")
+                df_display['dias_factura_mas_antigua'] = df_display['dias_factura_mas_antigua'].apply(lambda x: f"{x:,.0f}")
+                df_display['dias_factura_mas_reciente'] = df_display['dias_factura_mas_reciente'].apply(lambda x: f"{x:,.0f}")
                 
                 st.dataframe(
                     df_display,
@@ -526,18 +536,18 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                     column_config={
                         "deudor": st.column_config.TextColumn("Cliente", width="large"),
                         "saldo_total": st.column_config.TextColumn("Saldo Total", width="medium"),
-                        "num_facturas": st.column_config.NumberColumn("# Facturas", width="small"),
-                        "dias_promedio_ponderado": st.column_config.NumberColumn(
+                        "num_facturas": st.column_config.TextColumn("# Facturas", width="small"),
+                        "dias_promedio_ponderado": st.column_config.TextColumn(
                             "📊 Días Promedio Ponderado", 
                             width="medium",
                             help="Promedio de días vencidos ponderado por monto de cada factura"
                         ),
-                        "dias_factura_mas_antigua": st.column_config.NumberColumn(
+                        "dias_factura_mas_antigua": st.column_config.TextColumn(
                             "⏰ Días Factura Más Antigua", 
                             width="medium",
                             help="Días vencidos de la factura más vieja del cliente"
                         ),
-                        "dias_factura_mas_reciente": st.column_config.NumberColumn(
+                        "dias_factura_mas_reciente": st.column_config.TextColumn(
                             "🆕 Días Factura Más Reciente", 
                             width="medium",
                             help="Días vencidos de la factura más nueva del cliente"
@@ -582,13 +592,13 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                     help="Factura más antigua en toda la cartera"
                 )
         else:
-            st.info("No hay datos de clientes para mostrar métricas detalladas")
+            resumen_view.info("No hay datos de clientes para mostrar métricas detalladas")
 
         # =====================================================================
         # DRILL-DOWN: FACTURAS POR CLIENTE
         # =====================================================================
         if not df_metricas_cliente.empty:
-            st.subheader("🔎 Detalle de Facturas por Cliente")
+            resumen_view.subheader("🔎 Detalle de Facturas por Cliente")
 
             # Poblar lista de clientes desde la tabla actualmente visible o del total
             lista_clientes = sorted(df_metricas_cliente['deudor'].dropna().unique().tolist())
@@ -615,9 +625,9 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                         r = fila_cliente.iloc[0]
                         col_d1, col_d2, col_d3, col_d4 = st.columns(4)
                         col_d1.metric("💰 Saldo Total", f"${r['saldo_total']:,.0f}")
-                        col_d2.metric("📄 # Facturas", _safe_int(r['num_facturas']))
-                        col_d3.metric("📊 Días Prom. Ponderado", f"{r['dias_promedio_ponderado']:.0f}")
-                        col_d4.metric("⏰ Factura Más Antigua", f"{r['dias_factura_mas_antigua']:.0f} días")
+                        col_d2.metric("📄 # Facturas", f"{_safe_int(r['num_facturas']):,}")
+                        col_d3.metric("📊 Días Prom. Ponderado", f"{r['dias_promedio_ponderado']:,.0f}")
+                        col_d4.metric("⏰ Factura Más Antigua", f"{r['dias_factura_mas_antigua']:,.0f} días")
 
                     # Formatear tabla de facturas
                     df_facturas_display = df_facturas.copy()
@@ -652,7 +662,7 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
         # =====================================================================
         # GRÁFICO: EVOLUCIÓN DE MOROSIDAD
         # =====================================================================
-        st.subheader("📈 Evolución de Morosidad en el Tiempo")
+        resumen_view.subheader("📈 Evolución de Morosidad en el Tiempo")
 
         # Detectar columna de fecha disponible
         col_fecha = None
@@ -662,7 +672,7 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                 break
 
         if col_fecha is None:
-            st.info(
+            resumen_view.info(
                 "ℹ️ No se detectó una columna de fecha en los datos. "
                 "Para ver la evolución de morosidad, el archivo debe incluir una columna de fecha de factura."
             )
@@ -685,7 +695,7 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
             meses_unicos = df_evol['mes'].nunique()
 
             if meses_unicos < 2:
-                st.info(
+                resumen_view.info(
                     "ℹ️ Se necesitan datos de **al menos 2 meses** para mostrar la evolución. "
                     f"El archivo actual contiene datos de {meses_unicos} periodo(s)."
                 )
@@ -729,8 +739,8 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                     plot_bgcolor='rgba(0,0,0,0)',
                     paper_bgcolor='rgba(0,0,0,0)',
                 )
-                st.plotly_chart(fig_evol, use_container_width=True)
-                st.caption(
+                resumen_view.plotly_chart(fig_evol, use_container_width=True)
+                resumen_view.caption(
                     f"Periodos analizados: {pivot['mes'].iloc[0]} → {pivot['mes'].iloc[-1]} "
                     f"({meses_unicos} meses)"
                 )
@@ -738,12 +748,12 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
         # =====================================================================
         # FASE 2: DASHBOARD DE SALUD FINANCIERA
         # =====================================================================
-        st.header("🏥 Dashboard de Salud Financiera")
+        riesgo_view.header("🏥 Dashboard de Salud Financiera")
         
         # Las métricas de salud y concentración ya se prepararon arriba para la navegación priorizada.
         
         # Gauge principal de salud — reemplazado por métricas directas
-        col_health1, col_health2 = st.columns([1, 2])
+        col_health1, col_health2 = riesgo_view.columns([1, 2])
         
         with col_health1:
             st.write("### 📊 Resumen de Cartera")
@@ -802,7 +812,7 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
             df_kpis = pd.DataFrame(kpis_data)
             
             # Mostrar tabla con estilo
-            st.dataframe(
+            riesgo_view.dataframe(
                 df_kpis,
                 width='stretch',
                 hide_index=True,
@@ -816,9 +826,9 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
             )
             
             # Nota sobre KPIs que requieren datos externos
-            st.caption("💡 **Nota:** DSO y Rotación CxC requieren datos de ventas para cálculo preciso (módulo de ventas separado)")
+            riesgo_view.caption("💡 **Nota:** DSO y Rotación CxC requieren datos de ventas para cálculo preciso (módulo de ventas separado)")
         
-        st.write("---")
+        riesgo_view.write("---")
         
         # =====================================================================
         # FASE 2.5: ANÁLISIS EJECUTIVO CON IA - FUNCIÓN PREMIUM
@@ -827,20 +837,20 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
         puede_usar_ia = user and user.can_use_ai()
         
         if habilitar_ia and openai_api_key and puede_usar_ia:
-            st.header("🤖 Análisis Ejecutivo con IA Premium")
+            riesgo_view.header("🤖 Análisis Ejecutivo con IA Premium")
             
             # Obtener filtros configurados
             periodo_seleccionado = st.session_state.get("analisis_periodo", "Todos los datos")
             lineas_seleccionadas = st.session_state.get("analisis_lineas", ["Todas"])
             
-            st.info(
+            riesgo_view.info(
                 f"📋 **Configuración:** Periodo: {periodo_seleccionado} | "
                 f"Líneas: {', '.join(lineas_seleccionadas[:3])}{'...' if len(lineas_seleccionadas) > 3 else ''}"
             )
             
             # Botón para ejecutar análisis
-            if st.button("🚀 Generar Análisis con IA", type="primary", use_container_width=True, key="btn_ia_cxc"):
-                with st.spinner("🔄 Generando análisis ejecutivo con GPT-4o-mini..."):
+            if riesgo_view.button("🚀 Generar Análisis con IA", type="primary", use_container_width=True, key="btn_ia_cxc"):
+                with riesgo_view.spinner("🔄 Generando análisis ejecutivo con GPT-4o-mini..."):
                     try:
                         # Filtrar datos según configuración
                         df_analisis = df_np.copy()
@@ -938,7 +948,7 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                             st.info(analisis.get('resumen_ejecutivo', 'No disponible'))
                             
                             # Crear columnas para organizar el contenido
-                            col_izq, col_der = st.columns(2)
+                            col_izq, col_der = riesgo_view.columns(2)
                             
                             with col_izq:
                                 # Highlights clave
@@ -982,25 +992,25 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                                 else:
                                     st.caption("No disponible")
                             
-                            st.caption("🤖 Análisis generado por OpenAI GPT-4o-mini")
+                            riesgo_view.caption("🤖 Análisis generado por OpenAI GPT-4o-mini")
                         else:
-                            st.warning("⚠️ No se pudo generar el análisis ejecutivo")
+                            riesgo_view.warning("⚠️ No se pudo generar el análisis ejecutivo")
                     
                     except Exception as e:
-                        st.error(f"❌ Error al generar análisis con IA: {str(e)}")
+                        riesgo_view.error(f"❌ Error al generar análisis con IA: {str(e)}")
                         logger.error(f"Error en análisis con IA CxC: {e}", exc_info=True)
             else:
-                st.caption("👆 Presiona el botón para generar análisis personalizado según tus filtros")
+                riesgo_view.caption("👆 Presiona el botón para generar análisis personalizado según tus filtros")
             
-            st.write("---")
+            riesgo_view.write("---")
         elif habilitar_ia and openai_api_key and not puede_usar_ia:
-            st.warning("⚠️ El análisis con IA está disponible solo para usuarios con rol **Analyst** o **Admin**")
-            st.info("💡 Contacta al administrador para solicitar acceso a funciones de IA")
+            riesgo_view.warning("⚠️ El análisis con IA está disponible solo para usuarios con rol **Analyst** o **Admin**")
+            riesgo_view.info("💡 Contacta al administrador para solicitar acceso a funciones de IA")
         
         # =====================================================================
         # FASE 3: ALERTAS INTELIGENTES Y PRIORIDADES DE COBRANZA
         # =====================================================================
-        st.header("🚨 Alertas Inteligentes")
+        riesgo_view.header("🚨 Alertas Inteligentes")
         
         alertas = []
         
@@ -1070,7 +1080,7 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                     'MEDIA': '#FFC107'
                 }.get(alerta['prioridad'], '#9E9E9E')
                 
-                st.markdown(
+                riesgo_view.markdown(
                     f"""
                     <div style="background-color:{color}20; border-left: 5px solid {color}; padding: 15px; margin: 10px 0; border-radius: 5px;">
                         <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -1088,14 +1098,14 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                     unsafe_allow_html=True
                 )
         else:
-            st.success("✅ No hay alertas críticas. La cartera está bajo control.")
+            riesgo_view.success("✅ No hay alertas críticas. La cartera está bajo control.")
         
-        st.write("---")
+        riesgo_view.write("---")
 
         # =====================================================================
         # PRIORIDADES DE COBRANZA — Dashboard Proactivo
         # =====================================================================
-        st.header("📋 Dashboard de Cobranza Proactiva")
+        clientes_view.header("📋 Dashboard de Cobranza Proactiva")
 
         from utils.export_helper import crear_excel_cobranza_semanal
 
@@ -1162,7 +1172,7 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
         ).reset_index(drop=True)
 
         # ── Métricas por nivel ───────────────────────────────────────────────
-        col_acc1, col_acc2, col_acc3, col_acc4 = st.columns(4)
+        col_acc1, col_acc2, col_acc3, col_acc4 = clientes_view.columns(4)
         for col_ui, niv_num, emoji, label in [
             (col_acc1, 1, "🔴", "Urgente"),
             (col_acc2, 2, "🟠", "Alta"),
@@ -1177,10 +1187,10 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                 delta_color="inverse" if niv_num <= 2 else "normal",
             )
 
-        st.write("")
+        clientes_view.write("")
 
         # ── Filtro interactivo de nivel ──────────────────────────────────────
-        nivel_filtro = st.multiselect(
+        nivel_filtro = clientes_view.multiselect(
             "Filtrar por nivel de prioridad:",
             options=["🔴 URGENTE", "🟠 ALTA", "🟡 MEDIA", "🟢 BAJA"],
             default=["🔴 URGENTE", "🟠 ALTA"],
@@ -1191,35 +1201,39 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                    if nivel_filtro else df_prioridades
 
         # ── Tabla principal ──────────────────────────────────────────────────
-        st.write(f"**{len(df_vista)} cliente(s) en los niveles seleccionados**")
+        clientes_view.write(f"**{len(df_vista)} cliente(s) en los niveles seleccionados**")
 
         df_tabla = df_vista[[
             'nivel', 'deudor', 'monto', 'dias_max', 'dias_prom',
             'documentos', 'pct_riesgo', 'score', 'accion'
         ]].copy()
 
-        st.dataframe(
+        df_tabla['monto'] = df_tabla['monto'].apply(lambda x: f"${x:,.0f}")
+        df_tabla['dias_max'] = df_tabla['dias_max'].apply(lambda x: f"{x:,.0f}")
+        df_tabla['dias_prom'] = df_tabla['dias_prom'].apply(lambda x: f"{x:,.1f}")
+        df_tabla['documentos'] = df_tabla['documentos'].apply(lambda x: f"{_safe_int(x):,}")
+        df_tabla['pct_riesgo'] = df_tabla['pct_riesgo'].apply(lambda x: f"{x:.1f}%")
+        df_tabla['score'] = df_tabla['score'].apply(lambda x: f"{x:,.1f}")
+
+        clientes_view.dataframe(
             df_tabla,
             use_container_width=True,
             hide_index=True,
             column_config={
                 "nivel":      st.column_config.TextColumn("Prioridad",       width="small"),
                 "deudor":     st.column_config.TextColumn("Cliente",         width="large"),
-                "monto":      st.column_config.NumberColumn("Saldo ($)",     width="medium",
-                              format="$%.0f"),
-                "dias_max":   st.column_config.NumberColumn("Días Máx.",     width="small"),
-                "dias_prom":  st.column_config.NumberColumn("Días Prom.",    width="small"),
-                "documentos": st.column_config.NumberColumn("# Docs",        width="small"),
-                "pct_riesgo": st.column_config.NumberColumn("% Alto Riesgo", width="small",
-                              format="%.1f%%"),
-                "score":      st.column_config.ProgressColumn(
-                              "Score", width="small", min_value=0, max_value=100, format="%.1f"),
+                "monto":      st.column_config.TextColumn("Saldo ($)",       width="medium"),
+                "dias_max":   st.column_config.TextColumn("Días Máx.",       width="small"),
+                "dias_prom":  st.column_config.TextColumn("Días Prom.",      width="small"),
+                "documentos": st.column_config.TextColumn("# Docs",          width="small"),
+                "pct_riesgo": st.column_config.TextColumn("% Saldo >90d",    width="small"),
+                "score":      st.column_config.TextColumn("Score",           width="small"),
                 "accion":     st.column_config.TextColumn("Acción Recomendada", width="large"),
             },
         )
 
         # ── Explicación del score ────────────────────────────────────────────
-        with st.expander("ℹ️ ¿Cómo se calcula el Score de Prioridad?"):
+        with clientes_view.expander("ℹ️ ¿Cómo se calcula el Score de Prioridad?"):
             st.markdown("""
             El **Score de Prioridad** (0–100) combina 4 factores para identificar
             qué clientes requieren atención **antes** de que la deuda se deteriore:
@@ -1229,7 +1243,7 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
             | 💰 **Monto relativo** | 30 % | Saldo del cliente vs. el mayor deudor de la cartera |
             | ⏰ **Días máx. vencido** | 35 % | Factura más antigua vencida (normalizada a 180 días) |
             | 📄 **# Documentos** | 15 % | Cantidad de facturas pendientes (normalizada a 20) |
-            | 🔴 **% en Alto Riesgo** | 20 % | Porcentaje del saldo del cliente con >90 días vencido |
+            | 🔴 **% Saldo >90d** | 20 % | Porcentaje del saldo del cliente que ya cayó en antigüedad mayor a 90 días |
 
             **Umbral de niveles:**
             - 🔴 URGENTE: Score ≥ 65
@@ -1239,14 +1253,14 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
             """)
 
         # ── Descarga Excel semanal ───────────────────────────────────────────
-        st.write("---")
-        st.write("### 📥 Exportar Lista de Cobranza Semanal")
+        clientes_view.write("---")
+        clientes_view.write("### 📥 Exportar Lista de Cobranza Semanal")
         
         user = get_current_user()
         puede_exportar = user and user.can_export()
         
         if puede_exportar:
-            col_dl1, col_dl2 = st.columns([2, 3])
+            col_dl1, col_dl2 = clientes_view.columns([2, 3])
 
             with col_dl1:
                 nivel_export = st.multiselect(
@@ -1266,27 +1280,27 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                     try:
                         excel_bytes = crear_excel_cobranza_semanal(df_export_cobranza)
                         fecha_archivo = now_mx().strftime("%Y%m%d")
-                        st.download_button(
+                        clientes_view.download_button(
                             label=f"⬇️ Descargar Excel ({len(df_export_cobranza)} clientes)",
                             data=excel_bytes,
                             file_name=f"cobranza_semanal_{fecha_archivo}.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                             use_container_width=True,
                         )
-                        st.caption(
+                        clientes_view.caption(
                             "El Excel incluye: semáforo de colores por prioridad, "
                             "acción recomendada y columnas vacías para Gestor, Notas y Fecha de Compromiso."
                         )
                     except Exception as e:
-                        st.error(f"Error al generar Excel: {e}")
+                        clientes_view.error(f"Error al generar Excel: {e}")
                 else:
-                    st.info("Selecciona al menos un nivel para habilitar la descarga.")
+                    clientes_view.info("Selecciona al menos un nivel para habilitar la descarga.")
         else:
-            st.warning("⚠️ Las funciones de exportación están disponibles solo para usuarios con rol **Analyst** o **Admin**")
-            st.info("💡 Contacta al administrador para solicitar acceso")
+            clientes_view.warning("⚠️ Las funciones de exportación están disponibles solo para usuarios con rol **Analyst** o **Admin**")
+            clientes_view.info("💡 Contacta al administrador para solicitar acceso")
 
 
-        st.write("---")
+        clientes_view.write("---")
 
         # ── Gráfico: distribución de saldo por nivel ─────────────────────────
         if not df_prioridades.empty:
@@ -1321,21 +1335,21 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                 paper_bgcolor='rgba(0,0,0,0)',
                 xaxis_title='',
             )
-            st.plotly_chart(fig_prio, use_container_width=True)
+            clientes_view.plotly_chart(fig_prio, use_container_width=True)
 
         # Top 5 deudores con tabla mejorada
-        st.dataframe(top_deudores.reset_index().rename(
+        clientes_view.dataframe(top_deudores.reset_index().rename(
             columns={'deudor': 'Cliente (Col F)', 'saldo_adeudado': 'Monto Adeudado ($)'}
         ).style.format({'Monto Adeudado ($)': '${:,.2f}'}))
 
         # Gráfico de concentración
-        st.bar_chart(top_deudores)
+        clientes_view.bar_chart(top_deudores)
 
         # =====================================================================
         # FASE 4: ANÁLISIS POR LÍNEA DE NEGOCIO
         # =====================================================================
         if 'linea_negocio' in df_deudas.columns or 'linea_de_negocio' in df_deudas.columns:
-            st.header("🏭 Análisis por Línea de Negocio")
+            riesgo_view.header("🏭 Análisis por Línea de Negocio")
             
             # Normalizar nombre de columna
             col_linea = 'linea_negocio' if 'linea_negocio' in df_deudas.columns else 'linea_de_negocio'
@@ -1408,13 +1422,13 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                 df_lineas_metricas = df_lineas_metricas.sort_values('total', ascending=False)
                 
                 # Gauges por línea de negocio
-                st.write("### 🎯 Indicadores por Línea de Negocio")
+                riesgo_view.write("### 🎯 Indicadores por Línea de Negocio")
                 
                 # Mostrar gauges de CxC por línea (top 6)
                 top_lineas = df_lineas_metricas.head(6)
                 
                 for i in range(0, len(top_lineas), 3):
-                    cols_linea = st.columns(3)
+                    cols_linea = riesgo_view.columns(3)
                     
                     for j in range(3):
                         if i + j < len(top_lineas):
@@ -1461,10 +1475,10 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                                 st.plotly_chart(fig_linea, width='stretch')
                                 st.caption(f"Severidad de mora: {morosidad:.1f}% | Clientes: {row['clientes']}")
                 
-                st.write("---")
+                riesgo_view.write("---")
                 
                 # Tabla comparativa de líneas
-                st.write("### 📊 Comparativa de Líneas de Negocio")
+                riesgo_view.write("### 📊 Comparativa de Líneas de Negocio")
                 
                 df_comparativa = df_lineas_metricas.copy()
                 df_comparativa['% del Total'] = (df_comparativa['total'] / total_adeudado * 100)
@@ -1492,12 +1506,12 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                     'Riesgo Alto', '🚦 Riesgo Alto', 'Concentración', 'Clientes', 'Docs'
                 ]
                 
-                st.dataframe(df_display, width='stretch', hide_index=True)
+                riesgo_view.dataframe(df_display, width='stretch', hide_index=True)
                 
                 # =====================================================================
                 # SISTEMA DE SCORING Y PRIORIZACIÓN DE RIESGOS
                 # =====================================================================
-                st.write("### ⚠️ Líneas que Requieren Atención")
+                riesgo_view.write("### ⚠️ Líneas que Requieren Atención")
                 
                 # Calcular score de riesgo ponderado (0-100)
                 # Pesos: Severidad de mora 50%, Riesgo Alto 35%, Concentración 15%
@@ -1530,7 +1544,7 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                 
                 if len(lineas_problematicas) > 0:
                     # Gráfico de distribución de riesgos (Pie Chart)
-                    col_pie, col_list = st.columns([1, 2])
+                    col_pie, col_list = riesgo_view.columns([1, 2])
                     
                     with col_pie:
                         st.write("**Clasificación de Riesgos**")
@@ -1576,12 +1590,12 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                                 f"{' | '.join(problemas)}"
                             )
                 else:
-                    st.success("✅ Todas las líneas de negocio están dentro de parámetros aceptables")
+                    riesgo_view.success("✅ Todas las líneas de negocio están dentro de parámetros aceptables")
                 
                 # Gráfico de comparación
-                st.write("### 📈 Comparación Visual por Línea")
+                riesgo_view.write("### 📈 Comparación Visual por Línea")
                 
-                col_chart1, col_chart2 = st.columns(2)
+                col_chart1, col_chart2 = riesgo_view.columns(2)
                 
                 with col_chart1:
                     # Gráfico de monto por línea
@@ -1590,12 +1604,24 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                         x='linea',
                         y='total',
                         title='Monto CxC por Línea de Negocio',
-                        labels={'linea': 'Línea', 'total': 'Monto ($)'},
+                        labels={
+                            'linea': 'Línea',
+                            'total': 'Monto ($)',
+                            'pct_morosidad': 'Severidad de Mora (%)',
+                        },
                         color='pct_morosidad',
+                        custom_data=['pct_morosidad'],
                         color_continuous_scale=['green', 'yellow', 'orange', 'red'],
                         range_color=[0, 100]  # Fijar escala de 0 a 100%
                     )
-                    fig_monto_lineas.update_layout(height=400)
+                    fig_monto_lineas.update_traces(
+                        hovertemplate=(
+                            'Línea: %{x}<br>'
+                            'Monto: $%{y:,.2f}<br>'
+                            'Severidad de Mora: %{customdata[0]:.1f}%<extra></extra>'
+                        )
+                    )
+                    fig_monto_lineas.update_layout(height=400, coloraxis_colorbar_title='Severidad %')
                     st.plotly_chart(fig_monto_lineas, width='stretch')
                 
                 with col_chart2:
@@ -1605,25 +1631,38 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                         x='linea',
                         y='pct_morosidad',
                         title='Índice de Severidad de Mora por Línea',
-                        labels={'linea': 'Línea', 'pct_morosidad': 'Severidad de Mora (%)'},
+                        labels={
+                            'linea': 'Línea',
+                            'pct_morosidad': 'Severidad de Mora (%)',
+                            'total': 'Monto ($)',
+                        },
                         color='pct_morosidad',
+                        custom_data=['total'],
                         color_continuous_scale=['green', 'yellow', 'orange', 'red'],
                         range_color=[0, 100]  # Fijar escala de 0 a 100%
                     )
-                    fig_morosidad_lineas.update_layout(height=400)
+                    fig_morosidad_lineas.update_traces(
+                        hovertemplate=(
+                            'Línea: %{x}<br>'
+                            'Severidad de Mora: %{y:.1f}%<br>'
+                            'Monto: $%{customdata[0]:,.2f}<extra></extra>'
+                        )
+                    )
+                    fig_morosidad_lineas.update_layout(height=400, coloraxis_colorbar_title='Severidad %')
                     st.plotly_chart(fig_morosidad_lineas, width='stretch')
                 
-                st.write("---")
+                riesgo_view.write("---")
             else:
-                st.info("ℹ️ No hay datos de línea de negocio disponibles para análisis")
+                riesgo_view.info("ℹ️ No hay datos de línea de negocio disponibles para análisis")
         else:
-            st.info("ℹ️ No se encontró información de línea de negocio en los datos")
+            riesgo_view.info("ℹ️ No se encontró información de línea de negocio en los datos")
 
         # Análisis de riesgo por antigüedad
-        st.subheader("📅 Perfil de Riesgo por Antigüedad")
+        seguimiento_view.subheader("📅 Perfil de Riesgo por Antigüedad")
         if 'dias_overdue' in df_deudas.columns:
             try:
                 df_riesgo = df_np.copy()
+                col_ant1, col_ant2 = seguimiento_view.columns(2)
                 
                 # Clasificación de riesgo usando constantes
                 df_riesgo['nivel_riesgo'] = clasificar_antiguedad(df_riesgo, tipo='completo')
@@ -1636,7 +1675,7 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                 riesgo_df = riesgo_df.sort_values('nivel_riesgo')
                 
                 # Pie Chart: Distribución por antigüedad
-                with col_pie2:
+                with col_ant2:
                     st.write("**Distribución por Antigüedad**")
                     # Asignar colores según severidad de cada categoría
                     colores_pie = [MAPA_COLORES_RIESGO.get(nivel, '#808080') for nivel in riesgo_df['nivel_riesgo']]
@@ -1656,12 +1695,12 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                     st.plotly_chart(fig_antiguedad, width='stretch')
                 
                 # Gauges por categoría de riesgo
-                st.write("### 🎯 Indicadores de Riesgo por Antigüedad")
+                seguimiento_view.write("### 🎯 Indicadores de Riesgo por Antigüedad")
                 
                 # Crear gauges en filas de 3
                 num_categorias = len(riesgo_df)
                 for i in range(0, num_categorias, 3):
-                    cols_gauge = st.columns(3)
+                    cols_gauge = seguimiento_view.columns(3)
                     
                     for j in range(3):
                         if i + j < num_categorias:
@@ -1704,19 +1743,19 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                                 )
                                 st.plotly_chart(fig_gauge, width='stretch')
                 
-                st.write("---")
+                seguimiento_view.write("---")
                 
                 # Mostrar tabla resumen (reemplaza tarjetas HTML)
-                st.write("### 📋 Resumen Detallado por Categoría")
+                seguimiento_view.write("### 📋 Resumen Detallado por Categoría")
                 resumen_tabla = riesgo_df.copy()
                 resumen_tabla['Monto'] = resumen_tabla['saldo_adeudado'].apply(lambda x: f"${x:,.2f}")
                 resumen_tabla['% del Total'] = resumen_tabla['porcentaje'].apply(lambda x: f"{x:.1f}%")
                 resumen_tabla = resumen_tabla[['nivel_riesgo', 'Monto', '% del Total']]
                 resumen_tabla.columns = ['Categoría', 'Monto Adeudado', '% del Total']
-                st.dataframe(resumen_tabla, width='stretch', hide_index=True)
+                seguimiento_view.dataframe(resumen_tabla, width='stretch', hide_index=True)
                 
                 # Gráfico de barras con colores por categoría
-                st.write("### 📊 Distribución de Deuda por Antigüedad")
+                seguimiento_view.write("### 📊 Distribución de Deuda por Antigüedad")
                 fig, ax = plt.subplots(figsize=(10, 5))
                 # Asignar colores según severidad de cada categoría
                 colores_barras = [MAPA_COLORES_RIESGO.get(nivel, '#808080') for nivel in riesgo_df['nivel_riesgo']]
@@ -1735,32 +1774,32 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                                 textcoords="offset points",
                                 ha='center', va='bottom')
                 
-                st.pyplot(fig, clear_figure=True)
+                seguimiento_view.pyplot(fig, clear_figure=True)
                 plt.close(fig)
                 
             except KeyError as e:
-                st.error(f"❌ Columna requerida no encontrada: {e}")
+                seguimiento_view.error(f"❌ Columna requerida no encontrada: {e}")
                 logger.error(f"Columna faltante en análisis de vencimientos: {e}")
             except ValueError as e:
-                st.error(f"❌ Error en valores de vencimientos: {e}")
+                seguimiento_view.error(f"❌ Error en valores de vencimientos: {e}")
                 logger.error(f"Valor inválido en vencimientos: {e}")
             except Exception as e:
-                st.error(f"❌ Error en análisis de vencimientos: {str(e)}")
+                seguimiento_view.error(f"❌ Error en análisis de vencimientos: {str(e)}")
                 logger.exception(f"Error inesperado en vencimientos: {e}")
         else:
-            st.warning("ℹ️ No se encontró columna de vencimiento")
+            seguimiento_view.warning("ℹ️ No se encontró columna de vencimiento")
             
         # =====================================================================
         # ANÁLISIS DE AGENTES (VENDEDORES) CON LÓGICA DE ANTIGÜEDAD
         # =====================================================================
-        st.subheader("👤 Distribución de Deuda por Agente")
+        seguimiento_view.subheader("👤 Distribución de Deuda por Agente")
         
         if 'vendedor' in df_deudas.columns:
             # Verificar si hay datos no nulos
             vendedores_validos = df_deudas['vendedor'].dropna()
             if len(vendedores_validos) == 0:
-                st.warning("ℹ️ La columna 'vendedor' existe pero no contiene datos válidos")
-                st.info(f"📋 Columnas disponibles en el archivo: {', '.join(df_deudas.columns.tolist())}")
+                seguimiento_view.warning("ℹ️ La columna 'vendedor' existe pero no contiene datos válidos")
+                seguimiento_view.info(f"📋 Columnas disponibles en el archivo: {', '.join(df_deudas.columns.tolist())}")
             else:
                 # Usar cartera NO pagada y días de atraso estándar
                 df_agentes = df_np.copy()
@@ -1777,8 +1816,8 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                     agente_categoria = agente_categoria.sort_values('Total', ascending=False)
 
                     # Pies solicitados: % deuda por agente y antigüedad (por agente)
-                    st.write("### 🥧 % de Deuda por Agente y por Antigüedad")
-                    col_pie_ag1, col_pie_ag2 = st.columns(2)
+                    seguimiento_view.write("### 🥧 % de Deuda por Agente y por Antigüedad")
+                    col_pie_ag1, col_pie_ag2 = seguimiento_view.columns(2)
 
                     with col_pie_ag1:
                         fig_pie_agente = go.Figure(data=[go.Pie(
@@ -1815,7 +1854,7 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                             st.plotly_chart(fig_pie_ant, width='stretch')
                 
                     # Crear gráfico de barras apiladas
-                    st.write("### 📊 Distribución por Agente y Antigüedad")
+                    seguimiento_view.write("### 📊 Distribución por Agente y Antigüedad")
                     fig, ax = plt.subplots(figsize=(12, 6))
                 
                     # Preparar datos para el gráfico usando constantes
@@ -1834,10 +1873,10 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                     ax.legend(title='Días Vencidos', loc='upper right')
                     ax.yaxis.set_major_formatter('${x:,.2f}')
                 
-                    st.pyplot(fig)
+                    seguimiento_view.pyplot(fig)
                 
                     # Mostrar tabla resumen
-                    st.write("### 📋 Resumen por Agente")
+                    seguimiento_view.write("### 📋 Resumen por Agente")
                     resumen_agente = agente_categoria.copy()
                     resumen_agente = resumen_agente.sort_values('Total', ascending=False)
                 
@@ -1847,13 +1886,13 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                             resumen_agente[col] = resumen_agente[col].apply(lambda x: f"${x:,.2f}" if x > 0 else "")
                     resumen_agente['Total'] = resumen_agente['Total'].apply(lambda x: f"${x:,.2f}")
                 
-                    st.dataframe(resumen_agente)
+                    seguimiento_view.dataframe(resumen_agente)
                 
                     # =====================================================================
                     # EFICIENCIA DE COBRANZA POR AGENTE
                     # =====================================================================
-                    st.write("---")
-                    st.subheader("⚡ Eficiencia de Cobranza por Agente")
+                    seguimiento_view.write("---")
+                    seguimiento_view.subheader("⚡ Eficiencia de Cobranza por Agente")
                 
                     # Calcular métricas de eficiencia por agente
                     agentes_eficiencia = []
@@ -1907,12 +1946,12 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                     df_eficiencia = df_eficiencia.sort_values('score', ascending=False)
                 
                     # Gauges de eficiencia por agente (top 6)
-                    st.write("### 🎯 Score de Eficiencia por Agente")
+                    seguimiento_view.write("### 🎯 Score de Eficiencia por Agente")
                 
                     top_agentes_ef = df_eficiencia.head(6)
                 
                     for i in range(0, len(top_agentes_ef), 3):
-                        cols_agente = st.columns(3)
+                        cols_agente = seguimiento_view.columns(3)
                     
                         for j in range(3):
                             if i + j < len(top_agentes_ef):
@@ -1973,7 +2012,7 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                                     st.caption(f"Efectividad: {efectividad:.1f}% | Clientes: {row['clientes']}")
                 
                     # Tabla comparativa de eficiencia
-                    st.write("### 📊 Tabla Comparativa de Eficiencia")
+                    seguimiento_view.write("### 📊 Tabla Comparativa de Eficiencia")
                 
                     df_ef_display = df_eficiencia.copy()
                 
@@ -2003,12 +2042,12 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                         'Días Prom.', 'Casos >90d', '% Críticos', 'Clientes', 'Cartera Total'
                     ]
                 
-                    st.dataframe(df_ef_table, width='stretch', hide_index=True)
+                    seguimiento_view.dataframe(df_ef_table, width='stretch', hide_index=True)
                 
                     # Ranking y reconocimiento
-                    st.write("### 🏆 Ranking de Eficiencia")
+                    seguimiento_view.write("### 🏆 Ranking de Eficiencia")
                 
-                    col_rank1, col_rank2, col_rank3 = st.columns(3)
+                    col_rank1, col_rank2, col_rank3 = seguimiento_view.columns(3)
                 
                     if len(df_eficiencia) >= 1:
                         mejor_agente = df_eficiencia.iloc[0]
@@ -2026,7 +2065,7 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                     agentes_mejora = df_eficiencia[df_eficiencia['score'] < 40]
                 
                     if len(agentes_mejora) > 0:
-                        st.warning("⚠️ **Agentes que Requieren Capacitación/Apoyo:**")
+                        seguimiento_view.warning("⚠️ **Agentes que Requieren Capacitación/Apoyo:**")
                         for _, agente_m in agentes_mejora.iterrows():
                             problemas = []
                             if agente_m['efectividad'] < 60:
@@ -2036,12 +2075,12 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                             if agente_m['pct_criticos'] > 20:
                                 problemas.append(f"Casos críticos: {agente_m['pct_criticos']:.1f}%")
                         
-                            st.write(f"- **{agente_m['agente']}** (Score: {agente_m['score']:.1f}): {' | '.join(problemas)}")
+                            seguimiento_view.write(f"- **{agente_m['agente']}** (Score: {agente_m['score']:.1f}): {' | '.join(problemas)}")
                     else:
-                        st.success("✅ Todos los agentes mantienen niveles aceptables de eficiencia")
+                        seguimiento_view.success("✅ Todos los agentes mantienen niveles aceptables de eficiencia")
 
                 else:
-                    st.warning("ℹ️ No se pudo calcular la antigüedad (días vencidos) para los agentes")
+                    seguimiento_view.warning("ℹ️ No se pudo calcular la antigüedad (días vencidos) para los agentes")
 
                     # Fallback: resumen simple por agente sin segmentación de antigüedad
                     resumen_simple = (
@@ -2052,28 +2091,28 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                     )
                     resumen_simple.columns = ['Agente', 'Cartera Total']
                     resumen_simple['Cartera Total'] = resumen_simple['Cartera Total'].apply(lambda x: f"${x:,.2f}")
-                    st.dataframe(resumen_simple, width='stretch', hide_index=True)
+                    seguimiento_view.dataframe(resumen_simple, width='stretch', hide_index=True)
         else:
-            st.warning("ℹ️ No se encontró columna de vendedor/agente en el archivo CxC")
-            st.info(f"📋 **Columnas disponibles:** {', '.join(df_deudas.columns.tolist())}")
-            st.caption(
+            seguimiento_view.warning("ℹ️ No se encontró columna de vendedor/agente en el archivo CxC")
+            seguimiento_view.info(f"📋 **Columnas disponibles:** {', '.join(df_deudas.columns.tolist())}")
+            seguimiento_view.caption(
                 "💡 **Tip:** El análisis por vendedor requiere una columna llamada: "
                 "'vendedor', 'agente', 'ejecutivo', 'seller', o 'rep'"
             )
 
         # Desglose detallado por deudor usando el identificador consolidado
-        st.subheader("🔍 Detalle Completo por Deudor")
+        seguimiento_view.subheader("🔍 Detalle Completo por Deudor")
         deudores = df_deudas['deudor'].unique().tolist()
-        selected_deudor = st.selectbox("Seleccionar Deudor", deudores)
+        selected_deudor = seguimiento_view.selectbox("Seleccionar Deudor", deudores)
         
         # Filtrar datos
         deudor_df = df_deudas[df_deudas['deudor'] == selected_deudor]
         total_deudor = deudor_df['saldo_adeudado'].sum()
         
-        st.metric(f"Total Adeudado por {selected_deudor}", f"${total_deudor:,.2f}")
+        seguimiento_view.metric(f"Total Adeudado por {selected_deudor}", f"${total_deudor:,.2f}")
         
         # Mostrar documentos pendientes
-        st.write("**Documentos pendientes:**")
+        seguimiento_view.write("**Documentos pendientes:**")
         cols = ['fecha_vencimiento', 'saldo_adeudado', 'estatus', 'dias_vencido'] 
         cols = [c for c in cols if c in deudor_df.columns]
         
@@ -2085,20 +2124,50 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
             sort_col = 'dias_vencido'
         elif 'saldo_adeudado' in cols:
             sort_col = 'saldo_adeudado'
+
+        column_config_deudor = {}
+        if 'fecha_vencimiento' in cols:
+            column_config_deudor['fecha_vencimiento'] = st.column_config.DateColumn("Fecha Vencimiento", width="medium")
+        if 'saldo_adeudado' in cols:
+            column_config_deudor['saldo_adeudado'] = st.column_config.NumberColumn("Saldo Adeudado", width="medium", format="$%.2f")
+        if 'estatus' in cols:
+            column_config_deudor['estatus'] = st.column_config.TextColumn("Estatus", width="small")
+        if 'dias_vencido' in cols:
+            column_config_deudor['dias_vencido'] = st.column_config.NumberColumn("Días Vencidos", width="small")
+
+        df_deudor_display = deudor_df[cols].copy()
+        if 'saldo_adeudado' in df_deudor_display.columns:
+            df_deudor_display['saldo_adeudado'] = df_deudor_display['saldo_adeudado'].apply(lambda x: f"${x:,.2f}")
+            column_config_deudor['saldo_adeudado'] = st.column_config.TextColumn("Saldo Adeudado", width="medium")
+        if 'dias_vencido' in df_deudor_display.columns:
+            df_deudor_display['dias_vencido'] = df_deudor_display['dias_vencido'].apply(
+                lambda x: "-" if pd.isna(x) else f"{x:,.0f}"
+            )
+            column_config_deudor['dias_vencido'] = st.column_config.TextColumn("Días Vencidos", width="small")
         
         if sort_col and len(cols) > 0:
-            st.dataframe(deudor_df[cols].sort_values(sort_col, ascending=False))
+            seguimiento_view.dataframe(
+                df_deudor_display.sort_values(sort_col, ascending=False),
+                use_container_width=True,
+                hide_index=True,
+                column_config=column_config_deudor,
+            )
         elif len(cols) > 0:
-            st.dataframe(deudor_df[cols])
+            seguimiento_view.dataframe(
+                df_deudor_display,
+                use_container_width=True,
+                hide_index=True,
+                column_config=column_config_deudor,
+            )
         else:
-            st.warning("No hay columnas disponibles para mostrar")
+            seguimiento_view.warning("No hay columnas disponibles para mostrar")
 
         # =====================================================================
         # FASE 5: EXPORTACIÓN Y REPORTES
         # =====================================================================
-        st.header("📥 Exportación y Reportes")
+        clientes_view.header("📥 Exportación y Reportes")
         
-        col_export1, col_export2 = st.columns(2)
+        col_export1, col_export2 = clientes_view.columns(2)
         
         with col_export1:
             st.subheader("📊 Reporte Excel Completo")
@@ -2187,7 +2256,7 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                     help="Descarga reporte completo con todas las hojas de análisis"
                 )
             else:
-                st.warning("⚠️ Solo usuarios con rol **Analyst** o **Admin** pueden exportar reportes")
+                clientes_view.warning("⚠️ Solo usuarios con rol **Analyst** o **Admin** pueden exportar reportes")
         
         with col_export2:
             st.subheader("📄 Plantillas de Cobranza")
@@ -2286,19 +2355,19 @@ Departamento de Crédito y Cobranza
                         mime="text/plain"
                     )
                 else:
-                    st.warning("⚠️ Solo usuarios con rol **Analyst** o **Admin** pueden exportar cartas")
+                    clientes_view.warning("⚠️ Solo usuarios con rol **Analyst** o **Admin** pueden exportar cartas")
         
-        st.write("---")
+        seguimiento_view.write("---")
 
         # Resumen ejecutivo
-        st.subheader("📝 Resumen Ejecutivo para Dirección")
+        seguimiento_view.subheader("📝 Resumen Ejecutivo para Dirección")
 
         # urgente_count: clientes en nivel URGENTE (calculado desde df_prioridades)
         urgente_count = len(df_prioridades[df_prioridades['nivel_num'] == 1]) \
                         if 'df_prioridades' in dir() and not df_prioridades.empty else 0
         
         # Crear resumen en formato de reporte ejecutivo
-        col_resumen1, col_resumen2, col_resumen3 = st.columns(3)
+        col_resumen1, col_resumen2, col_resumen3 = seguimiento_view.columns(3)
         
         with col_resumen1:
             st.metric("💰 Cartera Total", f"${total_adeudado:,.2f}",
@@ -2321,25 +2390,25 @@ Departamento de Crédito y Cobranza
                      help="📐 Cartera con más de 90 días vencida / Cartera total (subconjunto crítico de vencida)")
             st.caption(f"${deuda_alto_riesgo:,.2f}")
         
-        st.write("**Observaciones Clave:**")
-        st.write(f"- Total en cuentas por cobrar: **${total_adeudado:,.2f}**")
-        st.write(f"- El principal deudor es **{top_deudores.index[0]}** con **${top_deudores.iloc[0]:,.2f}** ({(top_deudores.iloc[0]/total_adeudado*100):.1f}% del total)")
+        seguimiento_view.write("**Observaciones Clave:**")
+        seguimiento_view.write(f"- Total en cuentas por cobrar: **${total_adeudado:,.2f}**")
+        seguimiento_view.write(f"- El principal deudor es **{top_deudores.index[0]}** con **${top_deudores.iloc[0]:,.2f}** ({(top_deudores.iloc[0]/total_adeudado*100):.1f}% del total)")
         
         if 'dias_vencido' in df_deudas.columns:
             deuda_vencida_total = df_deudas[df_deudas['dias_vencido'] > 0]['saldo_adeudado'].sum()
-            st.write(f"- **${deuda_vencida_total:,.2f}** en deuda vencida ({(deuda_vencida_total/total_adeudado*100):.1f}% del total)")
+            seguimiento_view.write(f"- **${deuda_vencida_total:,.2f}** en deuda vencida ({(deuda_vencida_total/total_adeudado*100):.1f}% del total)")
         
-        st.write(f"- **{urgente_count} casos** requieren acción urgente inmediata")
+        seguimiento_view.write(f"- **{urgente_count} casos** requieren acción urgente inmediata")
         
         if alertas:
-            st.write(f"- **{len(alertas)} alertas** activas requieren atención")
+            seguimiento_view.write(f"- **{len(alertas)} alertas** activas requieren atención")
         
-        st.markdown("---")
+        seguimiento_view.markdown("---")
         
         # =====================================================================
         # PANEL DE DEFINICIONES Y FÓRMULAS CXC
         # =====================================================================
-        with st.expander("📐 **Definiciones y Fórmulas de KPIs CxC**"):
+        with seguimiento_view.expander("📐 **Definiciones y Fórmulas de KPIs CxC**"):
             st.markdown("""
             ### 📊 Métricas de Salud de Cartera
             
@@ -2462,7 +2531,7 @@ Departamento de Crédito y Cobranza
             - **Actualización**: Datos actualizados a la fecha de última factura registrada
             """)
         
-        st.info("📌 Este reporte consolida el identificador de deudor a partir de las columnas comerciales disponibles en el archivo.")
+        seguimiento_view.info("📌 Este reporte consolida el identificador de deudor a partir de las columnas comerciales disponibles en el archivo.")
 
     except KeyError as e:
         st.error(f"❌ Columna requerida no encontrada: {e}")
