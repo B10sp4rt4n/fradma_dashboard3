@@ -408,14 +408,14 @@ class NeonIngestion:
         cursor = self.conn.cursor()
         
         try:
-            uuid_pago = pago_data.get('uuid_pago')
+            uuid_pago = pago_data.get('uuid_pago') or pago_data.get('uuid_complemento')
             if not uuid_pago:
                 return False, "UUID de pago faltante"
             
             # Verificar duplicados
             if skip_duplicates:
                 cursor.execute(
-                    "SELECT 1 FROM cfdi_pagos WHERE uuid_pago = %s LIMIT 1",
+                    "SELECT 1 FROM cfdi_pagos WHERE uuid_complemento = %s LIMIT 1",
                     (uuid_pago,)
                 )
                 if cursor.fetchone():
@@ -424,49 +424,56 @@ class NeonIngestion:
             
             # Insertar cada CFDI relacionado en el complemento de pago
             cfdi_relacionados = pago_data.get('cfdi_relacionados', [])
+            if not cfdi_relacionados and pago_data.get('uuid_documento'):
+                # Compatibilidad con output directo de parser de complementos
+                cfdi_relacionados = [pago_data]
             insertados = 0
             
             for rel in cfdi_relacionados:
-                # Buscar el cfdi_id correspondiente al UUID de la venta
+                uuid_venta = rel.get('uuid_venta') or rel.get('uuid_documento')
+                if not uuid_venta:
+                    logger.warning("Complemento sin UUID de venta relacionada, saltando")
+                    continue
+
+                # Verificar que la factura relacionada exista para este tenant
                 cursor.execute(
-                    "SELECT id FROM cfdi_ventas WHERE uuid = %s AND empresa_id = %s LIMIT 1",
-                    (rel.get('uuid_venta'), empresa_id)
+                    "SELECT 1 FROM cfdi_ventas WHERE uuid_sat = %s AND empresa_id = %s LIMIT 1",
+                    (uuid_venta, empresa_id)
                 )
                 result = cursor.fetchone()
                 
                 if not result:
                     logger.warning(
-                        f"CFDI venta {rel.get('uuid_venta')} no encontrado, "
+                        f"CFDI venta {uuid_venta} no encontrado, "
                         f"saltando pago relacionado"
                     )
                     continue
-                    
-                cfdi_id = result[0]
                 
                 insert_pago_sql = """
                     INSERT INTO cfdi_pagos (
-                        empresa_id, cfdi_id, uuid_pago, fecha_pago,
-                        forma_pago_p, moneda_p, tipo_cambio_p,
-                        monto_pagado, monto_pagado_mxn, saldo_anterior,
+                        empresa_id, uuid_complemento, cfdi_venta_uuid, serie, folio,
+                        fecha_pago, forma_pago, moneda, tipo_cambio,
+                        monto_pagado, saldo_anterior,
                         saldo_insoluto, num_parcialidad
                     ) VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                     )
                 """
                 
                 cursor.execute(insert_pago_sql, (
                     empresa_id,
-                    cfdi_id,
                     uuid_pago,
-                    pago_data.get('fecha_pago'),
-                    rel.get('forma_pago'),
-                    rel.get('moneda', 'MXN'),
-                    rel.get('tipo_cambio', Decimal('1.0')),
-                    rel.get('monto_pagado'),
-                    rel.get('monto_pagado_mxn'),
-                    rel.get('saldo_anterior'),
-                    rel.get('saldo_insoluto'),
-                    rel.get('num_parcialidad')
+                    uuid_venta,
+                    rel.get('serie', pago_data.get('serie', '')),
+                    rel.get('folio', pago_data.get('folio', '')),
+                    rel.get('fecha_pago', pago_data.get('fecha_pago')),
+                    rel.get('forma_pago', pago_data.get('forma_pago', '')),
+                    rel.get('moneda', pago_data.get('moneda', 'MXN')),
+                    rel.get('tipo_cambio', pago_data.get('tipo_cambio', Decimal('1.0'))),
+                    rel.get('monto_pagado', rel.get('imp_pagado', pago_data.get('monto', Decimal('0')))),
+                    rel.get('saldo_anterior', rel.get('imp_saldo_ant')),
+                    rel.get('saldo_insoluto', rel.get('imp_saldo_insoluto')),
+                    rel.get('num_parcialidad', 1)
                 ))
                 
                 insertados += 1

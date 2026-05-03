@@ -29,6 +29,38 @@ from utils.auth import get_current_user
 # Configurar logger
 logger = configurar_logger("reporte_consolidado", nivel="INFO")
 
+
+def _obtener_paleta_colores(modo_monocromatico=False):
+    """
+    Retorna paleta de colores según el modo visual.
+    
+    Args:
+        modo_monocromatico: Si True, retorna escala de grises; False, colores vibrantes
+        
+    Returns:
+        dict con 'primario', 'secundario', 'success', 'warning', 'danger', 'neutral'
+    """
+    if modo_monocromatico:
+        return {
+            'primario': '#1a1a1a',      # Negro
+            'secundario': '#4a4a4a',    # Gris oscuro
+            'success': '#555555',       # Gris medio
+            'warning': '#888888',       # Gris claro
+            'danger': '#aaaaaa',        # Gris más claro
+            'neutral': '#d0d0d0',       # Gris muy claro
+            'scale': ['#f5f5f5', '#e0e0e0', '#cccccc', '#999999', '#666666', '#333333'],
+        }
+    else:
+        return {
+            'primario': '#1F4E79',      # Azul corporativo
+            'secundario': '#6ba3c1',    # Azul claro
+            'success': '#2ecc71',       # Verde
+            'warning': '#f39c12',       # Naranja
+            'danger': '#e74c3c',        # Rojo
+            'neutral': '#95a5a6',       # Gris neutral
+            'scale': 'Viridis',         # Escala de colores vibrante
+        }
+
 def agrupar_por_periodo(df, tipo_periodo='mensual'):
     """
     Agrupa un DataFrame de ventas por el período especificado.
@@ -69,6 +101,9 @@ def crear_grafico_ventas_periodo(df_agrupado, tipo_periodo):
     ventas_periodo = df_agrupado.groupby(['periodo', 'periodo_label'])['ventas_usd'].sum().reset_index()
     ventas_periodo = ventas_periodo.sort_values('periodo')
     
+    # Obtener paleta de colores según modo
+    _paleta = _obtener_paleta_colores(st.session_state.get("reporte_modo_monocromatico", False))
+    
     # Crear gráfico combinado
     fig = go.Figure()
     
@@ -77,7 +112,7 @@ def crear_grafico_ventas_periodo(df_agrupado, tipo_periodo):
         x=ventas_periodo['periodo_label'],
         y=ventas_periodo['ventas_usd'],
         name='Ventas',
-        marker_color='#1f77b4',
+        marker_color=_paleta['primario'],
         text=ventas_periodo['ventas_usd'],
         texttemplate='$%{text:,.0f}',
         textposition='outside'
@@ -89,7 +124,7 @@ def crear_grafico_ventas_periodo(df_agrupado, tipo_periodo):
         y=ventas_periodo['ventas_usd'],
         name='Tendencia',
         mode='lines+markers',
-        line=dict(color='#ff7f0e', width=3),
+        line=dict(color=_paleta['secundario'], width=3),
         marker=dict(size=8)
     ))
     
@@ -124,7 +159,10 @@ def crear_pie_cxc(metricas_cxc):
         metricas_cxc.get('vencida_61_90', 0),
         metricas_cxc.get('alto_riesgo', 0)
     ]
-    colors = ['#4CAF50', '#FFC107', '#FF9800', '#FF5722', '#F44336']
+    
+    # Obtener paleta de colores según modo
+    _paleta = _obtener_paleta_colores(st.session_state.get("reporte_modo_monocromatico", False))
+    colors = [_paleta['success'], _paleta['warning'], _paleta['danger'], '#ff5722', '#F44336'] if st.session_state.get("reporte_modo_monocromatico") else ['#4CAF50', '#FFC107', '#FF9800', '#FF5722', '#F44336']
     
     fig = go.Figure(data=[go.Pie(
         labels=labels,
@@ -142,6 +180,7 @@ def crear_pie_cxc(metricas_cxc):
         height=450,
         template='plotly_white'
     )
+
     
     return fig
 
@@ -435,7 +474,9 @@ def _renderizar_visualizaciones(df_ventas_agrupado, metricas_cxc, config, period
                     m.get('vencida_61_90', 0),
                     m.get('alto_riesgo', 0),
                 ]
-                colores = ['#4CAF50', '#FFC107', '#FF9800', '#FF5722', '#F44336']
+                # Obtener paleta de colores según modo
+                _paleta = _obtener_paleta_colores(st.session_state.get("reporte_modo_monocromatico", False))
+                colores = [_paleta['success'], _paleta['warning'], _paleta['danger'], '#ff5722', '#F44336'] if st.session_state.get("reporte_modo_monocromatico") else ['#4CAF50', '#FFC107', '#FF9800', '#FF5722', '#F44336']
                 fig_barras = go.Figure(go.Bar(
                     x=montos,
                     y=rangos,
@@ -667,6 +708,25 @@ def run(df_ventas, df_cxc=None, habilitar_ia=False, openai_api_key=None):
         openai_api_key: API key de OpenAI para análisis premium (default: None)
     """
     st.title("📊 Reporte Consolidado - Dashboard Ejecutivo")
+    st.markdown("---")
+    
+    # =====================================================================
+    # SELECTOR DE MODO: MONOCROMÁTICO vs COLORES
+    # =====================================================================
+    col_titulo, col_modo = st.columns([4, 1])
+    with col_modo:
+        modo_visual = st.radio(
+            "Modo visual",
+            options=["⚫ Monocromático", "🎨 Colores"],
+            index=1,
+            horizontal=True,
+            help="Cambia entre vista monocromática y a colores",
+        )
+        modo_monocromatico = modo_visual == "⚫ Monocromático"
+    
+    # Guardar en session para usarlo en gráficas
+    st.session_state["reporte_modo_monocromatico"] = modo_monocromatico
+
     st.markdown("---")
     
     # =====================================================================

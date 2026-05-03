@@ -1104,7 +1104,7 @@ _grupos = {
     "Análisis Comercial CIMA": {
         "icon": "speedometer2",
         "items": [
-            ("🎯 Reporte Ejecutivo",         "file-earmark-bar-chart"),
+            ("🎯 Reporte Ejecutivo",         "file-earmark-bar-graph"),
             ("📊 Reporte Consolidado",       "grid-1x2"),
             ("📈 Desempeño Comercial",       "bar-chart-line"),
             ("📊 Comparativo Año vs Año",    "arrow-left-right"),
@@ -1142,8 +1142,8 @@ _menu_styles = {
     "container":        {"padding": "0 !important", "background-color": "transparent"},
     "icon":             {"font-size": "14px", "color": "white"},
     "nav-link":         {"font-size": "13px", "text-align": "left", "margin": "1px 0",
-                         "padding": "6px 10px", "--hover-color": "#1F4E79",
-                         "color": "#FFD700"},
+                         "padding": "8px 12px", "--hover-color": "#1F4E79",
+                         "color": "#FFD700", "white-space": "nowrap", "overflow": "visible"},
     "nav-link-selected":{"background-color": "#1F4E79", "color": "white",
                          "font-weight": "600"},
 }
@@ -1161,45 +1161,73 @@ if OPTION_MENU_AVAILABLE:
             menu = _nav_destino
             st.session_state["_menu_seleccion"] = menu
         else:
-            # Determinar en qué grupo está la selección actual o el destino
             _seleccion_previa = st.session_state.get("_menu_seleccion", _todas_opciones[0])
             if _nav_destino and _nav_destino in _todas_opciones:
                 _seleccion_previa = _nav_destino
 
-            menu = None
             _grupo_names = list(_grupos.keys())
-            for _gi, _gname in enumerate(_grupo_names):
-                _gdata = _grupos[_gname]
-                _g_items  = [item for item, _ in _gdata["items"]]
-                _g_icons  = [icon for _, icon in _gdata["items"]]
-
-                # Calcular default_index para este grupo
-                _g_default = None
+            _default_group = _grupo_names[0]
+            for _gname in _grupo_names:
+                _g_items = [item for item, _ in _grupos[_gname]["items"]]
                 if _seleccion_previa in _g_items:
-                    _g_default = _g_items.index(_seleccion_previa)
+                    _default_group = _gname
+                    break
 
-                _result = option_menu(
-                    menu_title=_gname,
-                    options=_g_items,
-                    icons=_g_icons,
-                    menu_icon=_gdata["icon"],
-                    default_index=_g_default if _g_default is not None else 0,
-                    key=f"menu_section_{_gi}",
+            # Selector visual de sección con ícono temático
+            st.markdown("**Sección:**")
+            _col_sec1, _col_sec2 = st.columns(2, gap="small")
+            with _col_sec1:
+                if st.button("📊 Comercial", use_container_width=True, 
+                            key="btn_seccion_comercial"):
+                    st.session_state["_seccion_activa"] = "Análisis Comercial CIMA"
+                    st.rerun()
+            with _col_sec2:
+                if st.button("📋 CFDI", use_container_width=True, 
+                            key="btn_seccion_cfdi"):
+                    st.session_state["_seccion_activa"] = "Análisis CFDI (XML)"
+                    st.rerun()
+            
+            _seccion_activa = st.session_state.get("_seccion_activa", _default_group)
+
+            # Solo se renderiza el menú de la sección activa.
+            # Los botones "📊 Comercial" / "📋 CFDI" controlan qué sección está activa.
+            st.markdown("---")
+            if _seccion_activa == "Análisis Comercial CIMA":
+                _act_group = "Análisis Comercial CIMA"
+                _act_items = [item for item, _ in _grupos[_act_group]["items"]]
+                _act_icons = [icon for _, icon in _grupos[_act_group]["items"]]
+                _act_prev = st.session_state.get("_menu_comercial_sel", _act_items[0])
+                _act_default = _seleccion_previa if _seleccion_previa in _act_items else _act_prev
+                if _act_default not in _act_items:
+                    _act_default = _act_items[0]
+                menu = option_menu(
+                    menu_title="Análisis Comercial CIMA",
+                    options=_act_items,
+                    icons=_act_icons,
+                    menu_icon=_grupos[_act_group]["icon"],
+                    default_index=_act_items.index(_act_default),
+                    key="menu_section_comercial",
                     styles=_menu_styles,
                 )
-
-                # Si el usuario hizo clic en este grupo, usar su selección
-                if _result and _result in _g_items:
-                    if _g_default is not None:
-                        # Este grupo tenía la selección previa
-                        menu = _result
-                    elif _result != _g_items[0] or (_seleccion_previa not in _todas_opciones):
-                        # El usuario cambió a este grupo
-                        menu = _result
-
-            # Si no se asignó (primer render), usar la selección previa o el primero
-            if menu is None:
-                menu = _seleccion_previa if _seleccion_previa in _todas_opciones else _todas_opciones[0]
+                st.session_state["_menu_comercial_sel"] = menu
+            else:
+                _act_group = "Análisis CFDI (XML)"
+                _act_items = [item for item, _ in _grupos[_act_group]["items"]]
+                _act_icons = [icon for _, icon in _grupos[_act_group]["items"]]
+                _act_prev = st.session_state.get("_menu_cfdi_sel", _act_items[0])
+                _act_default = _seleccion_previa if _seleccion_previa in _act_items else _act_prev
+                if _act_default not in _act_items:
+                    _act_default = _act_items[0]
+                menu = option_menu(
+                    menu_title="Análisis CFDI (XML)",
+                    options=_act_items,
+                    icons=_act_icons,
+                    menu_icon=_grupos[_act_group]["icon"],
+                    default_index=_act_items.index(_act_default),
+                    key="menu_section_cfdi",
+                    styles=_menu_styles,
+                )
+                st.session_state["_menu_cfdi_sel"] = menu
 
             st.session_state["_menu_seleccion"] = menu
 else:
@@ -1241,7 +1269,6 @@ with st.sidebar:
 
 with st.sidebar:
     # ----------------------------------------------------------------
-    # WIDGET ROI: Muestra el valor generado en tiempo real
     # ----------------------------------------------------------------
     try:
         roi_tracker = init_roi_tracker(st.session_state)
@@ -1257,8 +1284,6 @@ with st.sidebar:
             _mes_dias = roi_summary['month']['workdays']
             _año_val  = roi_summary['year']['value']
             _año_dias = roi_summary['year']['workdays']
-
-            # colores: clasificación=azul tenue, KPI resultante=verde tenue
             _CL = "#1a3a5c"   # fondo clasificación (azul oscuro)
             _KP = "#1a4a2a"   # fondo KPI resultante (verde oscuro)
             _TC = "#90CAF9"   # texto clasificación (azul claro)

@@ -175,18 +175,20 @@ def _cargar_pue_ppd(empresa_id: str, neon_url: str) -> pd.DataFrame:
             cv.moneda,
             ROUND(cv.total * COALESCE(cv.tipo_cambio, 1), 2)         AS total_mxn,
             COUNT(cp.id)                                              AS num_complementos,
-            COALESCE(SUM(cp.monto_pagado), 0)                        AS monto_pagado,
+                        COALESCE(SUM(cp.monto_pagado * COALESCE(cp.tipo_cambio, 1)), 0) AS monto_pagado,
             COALESCE(
-                MAX(cp.saldo_insoluto),
+                                MAX(cp.saldo_insoluto * COALESCE(cp.tipo_cambio, 1)),
                 CASE WHEN cv.metodo_pago = 'PPD'
                      THEN ROUND(cv.total * COALESCE(cv.tipo_cambio, 1), 2)
                      ELSE 0 END
             )                                                         AS saldo_insoluto,
             MAX(cp.fecha_pago)                                        AS ultima_fecha_pago
         FROM cfdi_ventas cv
-        LEFT JOIN cfdi_pagos cp ON cp.cfdi_venta_uuid = cv.uuid_sat
+                LEFT JOIN cfdi_pagos cp ON cp.cfdi_venta_uuid = cv.uuid_sat
+                                                             AND cp.empresa_id = cv.empresa_id
         WHERE cv.empresa_id = %s
           AND cv.tipo_comprobante = 'I'
+                    AND cv.estatus = 'vigente'
         GROUP BY cv.uuid_sat, cv.serie, cv.folio, cv.fecha_emision,
                  cv.receptor_rfc, cv.receptor_nombre, cv.metodo_pago,
                  cv.estatus, cv.moneda, cv.total, cv.tipo_cambio
@@ -211,8 +213,11 @@ def _cargar_pue_ppd(empresa_id: str, neon_url: str) -> pd.DataFrame:
 
 def _clasificar_ppd(row) -> str:
     """Clasifica una factura según método de pago y estado de sus complementos."""
-    if row["metodo_pago"] == "PUE":
+    metodo = str(row.get("metodo_pago") or "").upper()
+    if metodo == "PUE":
         return "PUE – Contado"
+    if metodo != "PPD":
+        return "Otro método / Sin dato"
     nc = int(row["num_complementos"])
     si = float(row["saldo_insoluto"])
     if nc == 0:
@@ -463,6 +468,8 @@ def run():
             df_det["total"]     = pd.to_numeric(df_det["total"], errors="coerce")
 
             st.caption(f"**{len(df_det):,}** CFDIs encontrados")
+            if len(df_det) >= 5000:
+                st.info("Mostrando máximo 5,000 registros en detalle. Ajusta filtros para acotar resultados.")
 
             def _color_estatus(val):
                 if val == "cancelado":
@@ -511,6 +518,7 @@ def run():
                 "PPD – Liquidado":             "#4CAF50",
                 "PPD – Parcialmente pagado":   "#FF9800",
                 "PPD – Sin complemento":       "#F44336",
+                "Otro método / Sin dato":      "#9E9E9E",
             }
 
             # ── KPIs principales ──────────────────────────────────────────────

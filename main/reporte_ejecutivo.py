@@ -18,6 +18,38 @@ from utils.roi_tracker import init_roi_tracker
 logger = configurar_logger("reporte_ejecutivo", nivel="INFO")
 
 
+def _obtener_paleta_colores(modo_monocromatico=False):
+    """
+    Retorna paleta de colores según el modo visual.
+    
+    Args:
+        modo_monocromatico: Si True, retorna escala de grises; False, colores vibrantes
+        
+    Returns:
+        dict con 'primario', 'secundario', 'success', 'warning', 'danger', 'neutral'
+    """
+    if modo_monocromatico:
+        return {
+            'primario': '#1a1a1a',      # Negro
+            'secundario': '#4a4a4a',    # Gris oscuro
+            'success': '#555555',       # Gris medio
+            'warning': '#888888',       # Gris claro
+            'danger': '#aaaaaa',        # Gris más claro
+            'neutral': '#d0d0d0',       # Gris muy claro
+            'scale': ['#f5f5f5', '#e0e0e0', '#cccccc', '#999999', '#666666', '#333333'],
+        }
+    else:
+        return {
+            'primario': '#1F4E79',      # Azul corporativo
+            'secundario': '#6ba3c1',    # Azul claro
+            'success': '#2ecc71',       # Verde
+            'warning': '#f39c12',       # Naranja
+            'danger': '#e74c3c',        # Rojo
+            'neutral': '#95a5a6',       # Gris neutral
+            'scale': 'Viridis',         # Escala de colores vibrante
+        }
+
+
 def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_key=None):
     """
     Muestra el reporte ejecutivo consolidado con métricas clave de negocio.
@@ -136,6 +168,23 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
     
     st.title("📊 Reporte Ejecutivo")
     st.markdown("### Vista Consolidada del Negocio — Dashboard para Dirección")
+
+    # =====================================================================
+    # SELECTOR DE MODO: MONOCROMÁTICO vs COLORES
+    # =====================================================================
+    col_titulo, col_modo = st.columns([4, 1])
+    with col_modo:
+        modo_visual = st.radio(
+            "Modo visual",
+            options=["⚫ Monocromático", "🎨 Colores"],
+            index=1,
+            horizontal=True,
+            help="Cambia entre vista monocromática y a colores",
+        )
+        modo_monocromatico = modo_visual == "⚫ Monocromático"
+    
+    # Guardar en session para usarlo en gráficas
+    st.session_state["reporte_modo_monocromatico"] = modo_monocromatico
 
     # =====================================================================
     # SELECTOR DE PERIODO (global, aplica a las 3 tabs)
@@ -448,10 +497,13 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
             df_v_tmp["mes"] = df_v_tmp["fecha"].dt.to_period("M").astype(str)
             ventas_mes = df_v_tmp.groupby("mes").agg(Ventas=("valor_usd", "sum"), Ops=("valor_usd", "count")).reset_index()
 
+            # Obtener paleta de colores según modo
+            _paleta = _obtener_paleta_colores(st.session_state.get("reporte_modo_monocromatico", False))
+            
             fig_ventas = go.Figure()
             fig_ventas.add_trace(go.Bar(
                 x=ventas_mes["mes"], y=ventas_mes["Ventas"],
-                name="Ventas", marker_color="#1F4E79",
+                name="Ventas", marker_color=_paleta['primario'],
                 hovertemplate="<b>%{x}</b><br>Ventas: $%{y:,.0f}<extra></extra>",
             ))
             fig_ventas.update_layout(
@@ -596,10 +648,14 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
             })
             cartera_df = cartera_df[cartera_df["Monto"] > 0]
             if not cartera_df.empty:
+                # Obtener paleta de colores según modo
+                _paleta = _obtener_paleta_colores(st.session_state.get("reporte_modo_monocromatico", False))
+                _colores_pie = [_paleta['success'], _paleta['warning'], _paleta['danger'], '#e74c3c'] if st.session_state.get("reporte_modo_monocromatico") else ["#2ecc71", "#3498db", "#f39c12", "#e74c3c"]
+                
                 fig_pie = go.Figure(data=[go.Pie(
                     labels=cartera_df["Categoría"],
                     values=cartera_df["Monto"],
-                    marker=dict(colors=["#2ecc71", "#3498db", "#f39c12", "#e74c3c"]),
+                    marker=dict(colors=_colores_pie),
                     textinfo="label+percent",
                     hovertemplate="<b>%{label}</b><br>$%{value:,.0f}<br>%{percent}<extra></extra>",
                 )])
@@ -627,7 +683,7 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
                     y=conc.head(10).index,
                     orientation="h",
                     color=conc.head(10).values,
-                    color_continuous_scale="Reds",
+                    color_continuous_scale="Greys" if st.session_state.get("reporte_modo_monocromatico") else "Reds",
                     labels={"x": "Saldo ($)", "y": ""},
                 )
                 fig_conc.update_layout(height=220, showlegend=False,
