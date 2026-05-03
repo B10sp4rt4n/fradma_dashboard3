@@ -1112,7 +1112,6 @@ _grupos = {
             ("🔷 YTD por Producto",          "box-seam"),
             ("🔥 Heatmap Ventas",            "fire"),
             ("💳 KPI Cartera CxC",           "wallet2"),
-            ("👥 Vendedores + CxC",          "people"),
             ("🧰 Herramientas Financieras",  "calculator"),
         ]
     },
@@ -1165,6 +1164,13 @@ if OPTION_MENU_AVAILABLE:
             _seleccion_previa = st.session_state.get("_menu_seleccion", _todas_opciones[0])
             if _nav_destino and _nav_destino in _todas_opciones:
                 _seleccion_previa = _nav_destino
+
+            # Compatibilidad hacia atrás: la vista independiente de
+            # Vendedores + CxC ahora vive dentro de Desempeño Comercial.
+            if _seleccion_previa == "👥 Vendedores + CxC":
+                _seleccion_previa = "📈 Desempeño Comercial"
+            if _nav_destino == "👥 Vendedores + CxC":
+                _nav_destino = "📈 Desempeño Comercial"
 
             menu = None
             _grupo_names = list(_grupos.keys())
@@ -1607,7 +1613,6 @@ _FILTROS_POR_VISTA = {
         }
     },
     "💳 KPI Cartera CxC":          {"filtros": [], "descripcion": ""},
-    "👥 Vendedores + CxC":         {"filtros": [], "descripcion": ""},
     "🧰 Herramientas Financieras": {"filtros": [], "descripcion": ""},
     "📂 Cargar mis facturas":      {"filtros": [], "descripcion": ""},
     "📋 Universo de CFDIs":        {"filtros": [], "descripcion": ""},
@@ -1661,6 +1666,7 @@ with st.sidebar.expander("ℹ️ Acerca de esta vista"):
         - Filtros por ejecutivo y línea
         - Ranking de vendedores
         - KPIs de eficiencia
+        - Cruce Vendedores + CxC
         """)
     elif menu == "📊 Comparativo Año vs Año":
         st.markdown("""
@@ -1707,15 +1713,6 @@ with st.sidebar.expander("ℹ️ Acerca de esta vista"):
         - Priorización de cobros
         - Eficiencia de agentes
         - Reportes y cartas de cobranza
-        """)
-    elif menu == "👥 Vendedores + CxC":
-        st.markdown("""
-        **Cruce ventas × cartera por vendedor**
-
-        - Ratio deuda vencida / ventas
-        - Score de calidad de cartera
-        - Ranking mixto volumen + calidad
-        - Alertas automáticas por vendedor
         """)
     elif menu == "🧰 Herramientas Financieras":
         st.markdown("""
@@ -2136,7 +2133,11 @@ elif menu == "📈 Desempeño Comercial":
     # Pasar parámetros de IA premium al módulo
     ia_habilitada = st.session_state.get("ia_premium_activada", False)
     api_key = st.session_state.get("openai_api_key", None)
-    main_kpi.run(habilitar_ia=ia_habilitada, openai_api_key=api_key)
+    tab_desempeno, tab_cartera = st.tabs(["Desempeño Comercial", "Vendedores + CxC"])
+    with tab_desempeno:
+        main_kpi.run(habilitar_ia=ia_habilitada, openai_api_key=api_key)
+    with tab_cartera:
+        vendedores_cxc.run()
 
 elif menu == "📊 Comparativo Año vs Año":
     if "df" in st.session_state:
@@ -2179,9 +2180,6 @@ elif menu == "💳 KPI Cartera CxC":
         kpi_cpc.run(st.session_state["archivo_excel"], habilitar_ia=ia_habilitada, openai_api_key=api_key)
     else:
         st.warning("⚠️ Primero sube un archivo para visualizar CXC.")
-
-elif menu == "👥 Vendedores + CxC":
-    vendedores_cxc.run()
 
 elif menu == "🧰 Herramientas Financieras":
     # Las herramientas financieras no requieren datos cargados
