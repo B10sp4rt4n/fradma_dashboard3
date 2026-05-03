@@ -104,7 +104,7 @@ def limpiar_columnas_texto(df, columnas=None, usar_aliases=True):
     Example:
         df = pd.DataFrame({
             'agente': ['José García', 'MARIA LOPEZ', 'José García'],
-            'valor_usd': [100, 200, 150]
+            'valor_mxn': [100, 200, 150]
         })
         df_limpio = limpiar_columnas_texto(df, columnas=['agente'])
         # agente ahora tiene: ['jose garcia', 'maria lopez', 'jose garcia']

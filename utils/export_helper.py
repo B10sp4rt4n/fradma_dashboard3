@@ -215,9 +215,9 @@ def crear_reporte_html(
     metricas_ventas = {}
     if df_ventas is not None and not df_ventas.empty and 'ventas' in secciones:
         try:
-            # Asegurar columna valor_usd
+            # Asegurar columna valor_mxn
             col_valor = None
-            for col in ['valor_usd', 'ventas_usd', 'ventas_usd_con_iva', 'importe', 'monto_usd']:
+            for col in ['valor_mxn', 'ventas_usd', 'ventas_usd_con_iva', 'importe', 'monto_usd']:
                 if col in df_ventas.columns:
                     col_valor = col
                     break

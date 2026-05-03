@@ -254,13 +254,13 @@ class TestPreparacionDatos:
     def test_renombra_valor_usd_a_ventas_usd(self):
         """Renombra columna para compatibilidad"""
         df = pd.DataFrame({
-            'valor_usd': [1000, 2000, 3000]
+            'valor_mxn': [1000, 2000, 3000]
         })
         
-        df_renamed = df.rename(columns={'valor_usd': 'ventas_usd'})
+        df_renamed = df.rename(columns={'valor_mxn': 'ventas_usd'})
         
         assert 'ventas_usd' in df_renamed.columns
-        assert 'valor_usd' not in df_renamed.columns
+        assert 'valor_mxn' not in df_renamed.columns
         
     def test_maneja_dataframe_cxc_vacio(self):
         """Retorna None si CxC está vacío"""

@@ -704,7 +704,7 @@ def validar_columnas_requeridas(df):
         "YTD por Líneas": {
             "obligatorias": ["fecha", "linea_de_negocio"],
             "variantes_obligatorias": {
-                "ventas_usd": ["ventas_usd", "ventas_usd_con_iva", "ventas_usd_sin_iva", "importe", "valor_usd", "monto_usd", "total_usd", "valor", "venta"]
+                "ventas_usd": ["ventas_usd", "ventas_usd_con_iva", "ventas_usd_sin_iva", "importe", "valor_mxn", "monto_usd", "total_usd", "valor", "venta"]
             },
             "recomendadas": ["vendedor", "agente", "ejecutivo", "cliente"],
             "opcionales": ["producto"]
@@ -712,7 +712,7 @@ def validar_columnas_requeridas(df):
         "YTD por Productos": {
             "obligatorias": ["fecha", "producto"],
             "variantes_obligatorias": {
-                "ventas_usd": ["ventas_usd", "ventas_usd_con_iva", "ventas_usd_sin_iva", "importe", "valor_usd", "monto_usd", "total_usd", "valor", "venta"]
+                "ventas_usd": ["ventas_usd", "ventas_usd_con_iva", "ventas_usd_sin_iva", "importe", "valor_mxn", "monto_usd", "total_usd", "valor", "venta"]
             },
             "recomendadas": ["vendedor", "agente", "ejecutivo", "cliente"],
             "opcionales": ["linea_de_negocio", "categoria", "familia"]
@@ -728,7 +728,7 @@ def validar_columnas_requeridas(df):
         "KPIs Generales": {
             "obligatorias": ["fecha"],
             "variantes_obligatorias": {
-                "valor_usd": ["valor_usd", "ventas_usd", "ventas_usd_con_iva", "importe"]
+                "valor_mxn": ["valor_mxn", "ventas_usd", "ventas_usd_con_iva", "importe"]
             },
             "recomendadas": ["agente", "vendedor", "ejecutivo"],
             "opcionales": ["linea_producto", "linea_de_negocio"]
@@ -736,7 +736,7 @@ def validar_columnas_requeridas(df):
         "Reporte Ejecutivo": {
             "obligatorias": ["fecha"],
             "variantes_obligatorias": {
-                "valor_usd": ["valor_usd", "ventas_usd", "ventas_usd_con_iva"],
+                "valor_mxn": ["valor_mxn", "ventas_usd", "ventas_usd_con_iva"],
                 "saldo_adeudado": ["saldo_adeudado", "saldo", "adeudo"]
             },
             "recomendadas": ["cliente"],
@@ -942,7 +942,7 @@ if archivo:
             df[col] = df[col].astype(str)
 
         # Detectar columna de ventas (solo USD)
-        columnas_ventas_usd = ["valor_usd", "ventas_usd", "ventas_usd_con_iva", "importe", "valor", "venta"]
+        columnas_ventas_usd = ["valor_mxn", "ventas_usd", "ventas_usd_con_iva", "importe", "valor", "venta"]
         columna_encontrada = next((col for col in columnas_ventas_usd if col in df.columns), None)
 
         # ── Info del archivo + validación en un único expander ───────────

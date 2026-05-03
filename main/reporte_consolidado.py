@@ -256,7 +256,7 @@ def _calcular_metricas_ventas(df_ventas, tipo_periodo):
         Dict con métricas de ventas
     """
     # Renombrar para compatibilidad
-    df_ventas_proc = df_ventas.rename(columns={'valor_usd': 'ventas_usd'})
+    df_ventas_proc = df_ventas.rename(columns={'valor_mxn': 'ventas_usd'})
     
     # Agrupar por período
     df_agrupado = agrupar_por_periodo(df_ventas_proc, tipo_periodo)
@@ -737,8 +737,8 @@ def run(df_ventas, df_cxc=None, habilitar_ia=False, openai_api_key=None):
     # =====================================================================
     # PASO 2: VALIDACIONES BÁSICAS
     # =====================================================================
-    if "valor_usd" not in df_ventas.columns or "fecha" not in df_ventas.columns:
-        st.error("❌ El DataFrame de ventas no tiene las columnas requeridas (valor_usd, fecha)")
+    if "valor_mxn" not in df_ventas.columns or "fecha" not in df_ventas.columns:
+        st.error("❌ El DataFrame de ventas no tiene las columnas requeridas (valor_mxn, fecha)")
         with st.expander("🔍 Ver columnas disponibles"):
             st.write("**Columnas detectadas:**")
             st.write(sorted(df_ventas.columns.tolist()))
@@ -746,8 +746,8 @@ def run(df_ventas, df_cxc=None, habilitar_ia=False, openai_api_key=None):
         return
     
     # Limpiar datos sin fecha o ventas
-    df_ventas_limpio = df_ventas.dropna(subset=['fecha', 'valor_usd'])
-    df_ventas_limpio = df_ventas_limpio[df_ventas_limpio['valor_usd'] > 0]
+    df_ventas_limpio = df_ventas.dropna(subset=['fecha', 'valor_mxn'])
+    df_ventas_limpio = df_ventas_limpio[df_ventas_limpio['valor_mxn'] > 0]
     
     if len(df_ventas_limpio) == 0:
         st.warning("⚠️ No hay datos de ventas válidos para procesar")
@@ -788,7 +788,7 @@ def run(df_ventas, df_cxc=None, habilitar_ia=False, openai_api_key=None):
     # PASO 4: CALCULAR MÉTRICAS (con datos ya filtrados)
     # =====================================================================
     # Renombrar para compatibilidad con funciones de agrupamiento
-    df_ventas_limpio = df_ventas_limpio.rename(columns={'valor_usd': 'ventas_usd'})
+    df_ventas_limpio = df_ventas_limpio.rename(columns={'valor_mxn': 'ventas_usd'})
     
     metricas_ventas = _calcular_metricas_ventas(df_ventas_limpio, config['tipo_periodo'])
     metricas_cxc_dict = _calcular_metricas_cxc(df_cxc)

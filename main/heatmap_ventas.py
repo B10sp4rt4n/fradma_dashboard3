@@ -50,7 +50,7 @@ def detectar_columna(df, posibles_nombres):
 def obtener_mapa_columnas():
     return {
         "linea": ["linea_prodcucto", "linea_producto", "linea_de_negocio", "linea producto", "linea_de_producto"],
-        "importe": ["valor_usd", "ventas_usd", "importe"],
+        "importe": ["valor_mxn", "ventas_usd", "importe"],
         "producto": ["producto", "articulo", "item", "descripcion", "producto_nombre", "producto nombre"],
         "cliente": ["cliente", "razon_social", "razon social", "deudor", "nombre_cliente", "nombre cliente"],
         "vendedor": ["vendedor", "agente", "ejecutivo", "vendedor_asignado", "vendedor asignado", "seller", "rep"],

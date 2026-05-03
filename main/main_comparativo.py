@@ -29,15 +29,15 @@ def _normalizar_df(df):
         if col_anio in df.columns and "año" not in df.columns:
             df = df.rename(columns={col_anio: "año"})
 
-    if "valor_usd" not in df.columns:
+    if "valor_mxn" not in df.columns:
         if "valor usd" in df.columns:
-            df = df.rename(columns={"valor usd": "valor_usd"})
+            df = df.rename(columns={"valor usd": "valor_mxn"})
         elif "ventas_usd" in df.columns:
-            df = df.rename(columns={"ventas_usd": "valor_usd"})
+            df = df.rename(columns={"ventas_usd": "valor_mxn"})
         elif "importe" in df.columns:
-            df = df.rename(columns={"importe": "valor_usd"})
+            df = df.rename(columns={"importe": "valor_mxn"})
 
-    if "valor_usd" not in df.columns:
+    if "valor_mxn" not in df.columns:
         return None
 
     if "fecha" in df.columns and ("año" not in df.columns or "mes" not in df.columns):
@@ -48,7 +48,7 @@ def _normalizar_df(df):
     if "año" not in df.columns or "mes" not in df.columns:
         return None
 
-    df["valor_usd"] = pd.to_numeric(df["valor_usd"], errors="coerce").fillna(0)
+    df["valor_mxn"] = pd.to_numeric(df["valor_mxn"], errors="coerce").fillna(0)
     df = df.dropna(subset=["año", "mes"]).copy()
     df["año"] = df["año"].astype(int)
     df["mes"] = df["mes"].astype(int)
@@ -56,7 +56,7 @@ def _normalizar_df(df):
 
 
 def _construir_historico(pivot_ventas):
-    tabla = pivot_ventas.pivot(index="año", columns="mes", values="valor_usd").fillna(0)
+    tabla = pivot_ventas.pivot(index="año", columns="mes", values="valor_mxn").fillna(0)
     for mes in range(1, 13):
         if mes not in tabla.columns:
             tabla[mes] = 0
@@ -71,8 +71,8 @@ def _ultimo_mes_con_datos(pivot_ventas, anio):
 
 
 def _construir_comparativo(pivot_ventas, anio_base, anio_comp, modo):
-    serie_base = pivot_ventas[pivot_ventas["año"] == anio_base].set_index("mes")["valor_usd"]
-    serie_comp = pivot_ventas[pivot_ventas["año"] == anio_comp].set_index("mes")["valor_usd"]
+    serie_base = pivot_ventas[pivot_ventas["año"] == anio_base].set_index("mes")["valor_mxn"]
+    serie_comp = pivot_ventas[pivot_ventas["año"] == anio_comp].set_index("mes")["valor_mxn"]
 
     ultimo_base = _ultimo_mes_con_datos(pivot_ventas, anio_base)
     ultimo_comp = _ultimo_mes_con_datos(pivot_ventas, anio_comp)
@@ -104,9 +104,9 @@ def _construir_comparativo(pivot_ventas, anio_base, anio_comp, modo):
 def _crear_chart_anual(df_chart):
     return alt.Chart(df_chart).mark_line(point=True).encode(
         x=alt.X("mes:O", title="Mes", sort=ORDEN_MESES),
-        y=alt.Y("valor_usd:Q", title="Ventas USD"),
+        y=alt.Y("valor_mxn:Q", title="Ventas USD"),
         color=alt.Color("año:N", title="Año"),
-        tooltip=["año", "mes", alt.Tooltip("valor_usd:Q", format=",.2f")],
+        tooltip=["año", "mes", alt.Tooltip("valor_mxn:Q", format=",.2f")],
     ).properties(height=380)
 
 
@@ -160,12 +160,12 @@ def run(df, año_base=None):
 
     df = _normalizar_df(df)
     if df is None:
-        st.error("No se pudieron identificar las columnas necesarias: valor_usd, año y mes/fecha.")
+        st.error("No se pudieron identificar las columnas necesarias: valor_mxn, año y mes/fecha.")
         return
 
-    pivot_ventas = df.groupby(["año", "mes"], as_index=False)["valor_usd"].sum()
+    pivot_ventas = df.groupby(["año", "mes"], as_index=False)["valor_mxn"].sum()
     historico = _construir_historico(pivot_ventas)
-    df_chart = historico.reset_index().melt(id_vars="año", var_name="mes", value_name="valor_usd")
+    df_chart = historico.reset_index().melt(id_vars="año", var_name="mes", value_name="valor_mxn")
 
     anios_disponibles = sorted(df["año"].dropna().unique(), reverse=True)
     if len(anios_disponibles) < 2:
@@ -322,10 +322,10 @@ def run(df, año_base=None):
     with tab_historico:
         st.subheader("Panorama histórico de todos los años")
 
-        df_heatmap = df.groupby(["año", "mes"], as_index=False)["valor_usd"].sum()
+        df_heatmap = df.groupby(["año", "mes"], as_index=False)["valor_mxn"].sum()
         df_heatmap["Mes"] = df_heatmap["mes"].map(MESES)
         df_heatmap["Año"] = df_heatmap["año"].astype(str)
-        df_heatmap = df_heatmap.rename(columns={"valor_usd": "Ventas USD"})
+        df_heatmap = df_heatmap.rename(columns={"valor_mxn": "Ventas USD"})
 
         vista_historica = st.radio(
             "Vista histórica principal",
@@ -333,8 +333,8 @@ def run(df, año_base=None):
             horizontal=True,
         )
 
-        df_acumulado = df.groupby(["año", "mes"], as_index=False)["valor_usd"].sum().sort_values(["año", "mes"])
-        df_acumulado["Ventas Acumuladas"] = df_acumulado.groupby("año")["valor_usd"].cumsum()
+        df_acumulado = df.groupby(["año", "mes"], as_index=False)["valor_mxn"].sum().sort_values(["año", "mes"])
+        df_acumulado["Ventas Acumuladas"] = df_acumulado.groupby("año")["valor_mxn"].cumsum()
         df_acumulado["Mes"] = df_acumulado["mes"].map(MESES)
         df_acumulado["Año"] = df_acumulado["año"].astype(str)
 
@@ -350,8 +350,8 @@ def run(df, año_base=None):
         resumen_anual = (
             df.groupby("año", as_index=False)
             .agg(
-                ventas_totales=("valor_usd", "sum"),
-                operaciones=("valor_usd", "count"),
+                ventas_totales=("valor_mxn", "sum"),
+                operaciones=("valor_mxn", "count"),
             )
             .sort_values("año", ascending=False)
         )

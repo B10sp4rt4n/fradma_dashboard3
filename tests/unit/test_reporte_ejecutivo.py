@@ -22,7 +22,7 @@ def df_ventas_mensual():
     return pd.DataFrame({
         'fecha': pd.to_datetime(['2024-01-01', '2024-01-15', '2024-01-20',
                                  '2024-02-01', '2024-02-10', '2024-02-15']),
-        'valor_usd': [1000, 1500, 2000, 2500, 3000, 3500]
+        'valor_mxn': [1000, 1500, 2000, 2500, 3000, 3500]
     })
 
 
@@ -45,35 +45,35 @@ class TestNormalizacionColumnas:
     """Valida normalización defensiva de columnas"""
     
     def test_renombra_ventas_usd_con_iva_a_valor_usd(self):
-        """Detecta 'ventas_usd_con_iva' y renombra a 'valor_usd'"""
+        """Detecta 'ventas_usd_con_iva' y renombra a 'valor_mxn'"""
         df = pd.DataFrame({
             'fecha': ['2024-01-01'],
             'ventas_usd_con_iva': [1160]
         })
         
-        if "valor_usd" not in df.columns:
+        if "valor_mxn" not in df.columns:
             for candidato in ["ventas_usd_con_iva", "ventas_usd", "importe"]:
                 if candidato in df.columns:
-                    df = df.rename(columns={candidato: "valor_usd"})
+                    df = df.rename(columns={candidato: "valor_mxn"})
                     break
         
-        assert "valor_usd" in df.columns
-        assert df["valor_usd"].iloc[0] == 1160
+        assert "valor_mxn" in df.columns
+        assert df["valor_mxn"].iloc[0] == 1160
         
     def test_convierte_valor_usd_a_numeric(self):
         """Convierte columna valor_usd a numérico"""
         df = pd.DataFrame({
-            'valor_usd': ['1,000', '2,500.50', 'N/A', '3000']
+            'valor_mxn': ['1,000', '2,500.50', 'N/A', '3000']
         })
         
-        df["valor_usd"] = pd.to_numeric(
-            df["valor_usd"].astype(str).str.replace(",", "").str.replace("$", ""),
+        df["valor_mxn"] = pd.to_numeric(
+            df["valor_mxn"].astype(str).str.replace(",", "").str.replace("$", ""),
             errors="coerce"
         ).fillna(0)
         
-        assert df["valor_usd"].iloc[0] == 1000
-        assert df["valor_usd"].iloc[1] == 2500.50
-        assert df["valor_usd"].iloc[2] == 0  # N/A → 0
+        assert df["valor_mxn"].iloc[0] == 1000
+        assert df["valor_mxn"].iloc[1] == 2500.50
+        assert df["valor_mxn"].iloc[2] == 0  # N/A → 0
         
     def test_renombra_saldo_a_saldo_adeudado(self):
         """Detecta 'saldo' y renombra a 'saldo_adeudado'"""
@@ -100,7 +100,7 @@ class TestKPIsVentas:
     
     def test_total_ventas(self, df_ventas_mensual):
         """Calcula suma total de ventas"""
-        total = df_ventas_mensual["valor_usd"].sum()
+        total = df_ventas_mensual["valor_mxn"].sum()
         
         assert total == 13500
         
@@ -112,7 +112,7 @@ class TestKPIsVentas:
         
     def test_ticket_promedio(self, df_ventas_mensual):
         """Calcula ticket promedio"""
-        total = df_ventas_mensual["valor_usd"].sum()
+        total = df_ventas_mensual["valor_mxn"].sum()
         ops = len(df_ventas_mensual)
         ticket = total / ops if ops > 0 else 0
         
@@ -125,7 +125,7 @@ class TestKPIsVentas:
         
         # Ventas por mes
         df['mes'] = df['fecha'].dt.to_period('M')
-        ventas_mes = df.groupby('mes')['valor_usd'].sum()
+        ventas_mes = df.groupby('mes')['valor_mxn'].sum()
         
         # Enero: 1000+1500+2000 = 4500
         # Febrero: 2500+3000+3500 = 9000
@@ -225,7 +225,7 @@ class TestComparacionPeriodos:
                 '2024-01-05', '2024-01-10', '2024-01-15',
                 '2024-02-05', '2024-02-10', '2024-02-15', '2024-02-20'
             ]),
-            'valor_usd': [1000, 1500, 2000, 2500, 3000, 3500, 4000]
+            'valor_mxn': [1000, 1500, 2000, 2500, 3000, 3500, 4000]
         })
         
         # Fecha máxima: 20 de febrero
@@ -241,7 +241,7 @@ class TestComparacionPeriodos:
         ventas_enero_equivalente = df[
             (df['fecha'] >= inicio_mes_anterior) & 
             (df['fecha'] <= fin_mes_anterior)
-        ]['valor_usd'].sum()
+        ]['valor_mxn'].sum()
         
         # Solo incluye hasta día 15 (1000+1500+2000=4500)
         assert ventas_enero_equivalente == 4500

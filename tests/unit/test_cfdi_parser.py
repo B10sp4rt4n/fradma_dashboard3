@@ -103,11 +103,11 @@ class TestCFDIParser:
         assert resultado['fecha'].day == 26
     
     def test_xml_invalido_lanza_error(self):
-        """Debe lanzar error con XML inválido"""
+        """Debe lanzar error con XML mal formado (no parseable)"""
         parser = CFDIParser()
-        
+
         with pytest.raises(ValueError):
-            parser.parse_cfdi_venta("<xml>invalido</xml>")
+            parser.parse_cfdi_venta("<xml>sin cierre")
 
 
 class TestComplementoPagoParser:

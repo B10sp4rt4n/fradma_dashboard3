@@ -24,7 +24,7 @@ class TestNormalizacionColumnas:
         df = pd.DataFrame({
             'aÃ±o': [2024, 2025],  # Encoding issue variant
             'mes': [1, 2],
-            'valor_usd': [1000, 2000]
+            'valor_mxn': [1000, 2000]
         })
         
         # Simular normalización del módulo
@@ -36,40 +36,40 @@ class TestNormalizacionColumnas:
         assert "año" in df.columns or "aÃ±o" in df.columns
         
     def test_normaliza_valor_usd_desde_ventas_usd(self):
-        """Renombra 'ventas_usd' a 'valor_usd'"""
+        """Renombra 'ventas_usd' a 'valor_mxn'"""
         df = pd.DataFrame({
             'año': [2024],
             'mes': [1],
             'ventas_usd': [5000]
         })
         
-        if "valor_usd" not in df.columns:
+        if "valor_mxn" not in df.columns:
             if "ventas_usd" in df.columns:
-                df = df.rename(columns={"ventas_usd": "valor_usd"})
+                df = df.rename(columns={"ventas_usd": "valor_mxn"})
         
-        assert "valor_usd" in df.columns
-        assert df["valor_usd"].iloc[0] == 5000
+        assert "valor_mxn" in df.columns
+        assert df["valor_mxn"].iloc[0] == 5000
         
     def test_normaliza_valor_usd_desde_importe(self):
-        """Renombra 'importe' a 'valor_usd'"""
+        """Renombra 'importe' a 'valor_mxn'"""
         df = pd.DataFrame({
             'año': [2024],
             'mes': [1],
             'importe': [3500]
         })
         
-        if "valor_usd" not in df.columns:
+        if "valor_mxn" not in df.columns:
             if "importe" in df.columns:
-                df = df.rename(columns={"importe": "valor_usd"})
+                df = df.rename(columns={"importe": "valor_mxn"})
         
-        assert "valor_usd" in df.columns
-        assert df["valor_usd"].iloc[0] == 3500
+        assert "valor_mxn" in df.columns
+        assert df["valor_mxn"].iloc[0] == 3500
         
     def test_extrae_anio_mes_desde_fecha(self):
         """Crea columnas año/mes desde fecha si no existen"""
         df = pd.DataFrame({
             'fecha': ['2024-03-15', '2024-04-20', '2025-01-10'],
-            'valor_usd': [1000, 2000, 3000]
+            'valor_mxn': [1000, 2000, 3000]
         })
         
         df["fecha"] = pd.to_datetime(df["fecha"], errors="coerce")
@@ -94,26 +94,26 @@ class TestAgregacionVentas:
         df = pd.DataFrame({
             'año': [2024, 2024, 2024, 2025],
             'mes': [1, 1, 2, 1],
-            'valor_usd': [1000, 1500, 2000, 3000]
+            'valor_mxn': [1000, 1500, 2000, 3000]
         })
         
-        pivot_ventas = df.groupby(["año", "mes"], as_index=False)["valor_usd"].sum()
+        pivot_ventas = df.groupby(["año", "mes"], as_index=False)["valor_mxn"].sum()
         
         assert len(pivot_ventas) == 3  # (2024,1), (2024,2), (2025,1)
         assert pivot_ventas[
             (pivot_ventas["año"] == 2024) & (pivot_ventas["mes"] == 1)
-        ]["valor_usd"].iloc[0] == 2500  # 1000 + 1500
+        ]["valor_mxn"].iloc[0] == 2500  # 1000 + 1500
         
     def test_tabla_pivot_año_x_mes(self):
         """Crea tabla con años como filas y meses como columnas"""
         pivot_ventas = pd.DataFrame({
             'año': [2024, 2024, 2025, 2025],
             'mes': [1, 2, 1, 2],
-            'valor_usd': [1000, 2000, 1500, 2500]
+            'valor_mxn': [1000, 2000, 1500, 2500]
         })
         
         tabla_fija = pivot_ventas.pivot(
-            index="año", columns="mes", values="valor_usd"
+            index="año", columns="mes", values="valor_mxn"
         ).fillna(0)
         
         assert tabla_fija.loc[2024, 1] == 1000
@@ -230,32 +230,32 @@ class TestCasosEspeciales:
         df = pd.DataFrame({
             'año': [2024],
             'mes': [1],
-            'valor_usd': ['5000.50']
+            'valor_mxn': ['5000.50']
         })
         
-        df["valor_usd"] = pd.to_numeric(df["valor_usd"], errors="coerce").fillna(0)
+        df["valor_mxn"] = pd.to_numeric(df["valor_mxn"], errors="coerce").fillna(0)
         
-        assert df["valor_usd"].iloc[0] == 5000.50
-        assert df["valor_usd"].dtype in [np.float64, np.int64]
+        assert df["valor_mxn"].iloc[0] == 5000.50
+        assert df["valor_mxn"].dtype in [np.float64, np.int64]
         
     def test_rellena_valores_nan_con_cero(self):
         """NaN en valor_usd se convierte a 0"""
         df = pd.DataFrame({
             'año': [2024, 2024],
             'mes': [1, 2],
-            'valor_usd': [1000, np.nan]
+            'valor_mxn': [1000, np.nan]
         })
         
-        df["valor_usd"] = pd.to_numeric(df["valor_usd"], errors="coerce").fillna(0)
+        df["valor_mxn"] = pd.to_numeric(df["valor_mxn"], errors="coerce").fillna(0)
         
-        assert df["valor_usd"].iloc[1] == 0.0
+        assert df["valor_mxn"].iloc[1] == 0.0
         
     def test_maneja_anios_desordenados(self):
         """Ordena años correctamente"""
         df = pd.DataFrame({
             'año': [2025, 2023, 2024, 2025],
             'mes': [1, 1, 1, 2],
-            'valor_usd': [1000, 2000, 3000, 4000]
+            'valor_mxn': [1000, 2000, 3000, 4000]
         })
         
         anios_disponibles = sorted(df["año"].dropna().unique())
@@ -267,7 +267,7 @@ class TestCasosEspeciales:
         df = pd.DataFrame({
             'año': [2024, 2024],
             'mes': [1, 2],
-            'valor_usd': [1000, 2000]
+            'valor_mxn': [1000, 2000]
         })
         
         anios_disponibles = sorted(df["año"].dropna().unique())
@@ -279,11 +279,11 @@ class TestCasosEspeciales:
         df = pd.DataFrame({
             'AÑO ': [2024],
             ' MES': [1],
-            ' VALOR_USD ': [1000]
+            ' VALOR_MXN ': [1000]
         })
         
         df.columns = df.columns.str.lower().str.strip()
         
         assert 'año' in df.columns or 'aÃ±o' in df.columns  # Encoding variant
         assert 'mes' in df.columns
-        assert 'valor_usd' in df.columns
+        assert 'valor_mxn' in df.columns

@@ -5,8 +5,8 @@ Garantiza aislamiento de tenant: solo se cargan CFDIs cuyo empresa_id
 coincide con el empresa_id del usuario autenticado.
 
 El DataFrame resultante usa el esquema estándar del dashboard:
-    fecha, valor_usd, cliente, receptor_rfc, linea_producto, agente,
-    año, mes, uuid_sat, serie, folio, moneda, tipo_cambio,
+    fecha, valor_mxn, cliente, receptor_rfc, linea_producto, agente,
+    año, mes, uuid_sat, serie, folio, moneda, tipo_cambio, forma_pago,
     tipo_comprobante, metodo_pago, emisor_rfc, emisor_nombre
 """
 
@@ -23,7 +23,7 @@ _COLUMN_MAP = {
     "receptor_rfc": "receptor_rfc",
     "linea_negocio": "linea_producto",
     "vendedor_asignado": "agente",
-    "total": "valor_usd",       # normalizado a MXN con tipo_cambio abajo
+    "total": "valor_mxn",       # normalizado a MXN con tipo_cambio abajo
     "uuid_sat": "uuid_sat",
     "serie": "serie",
     "folio": "folio",
@@ -35,6 +35,7 @@ _COLUMN_MAP = {
     "emisor_nombre": "emisor_nombre",
     "subtotal": "subtotal",
     "impuestos": "impuestos",
+    "forma_pago": "forma_pago",
 }
 
 
@@ -83,6 +84,7 @@ def cargar_cfdi_como_df(empresa_id: str, neon_url: str | None = None) -> pd.Data
             cv.emisor_nombre,
             cv.subtotal,
             cv.impuestos,
+            cv.forma_pago,
             cv.estatus
         FROM cfdi_ventas cv
         WHERE cv.empresa_id = %s
@@ -122,7 +124,7 @@ def cargar_cfdi_como_df(empresa_id: str, neon_url: str | None = None) -> pd.Data
     df["mes"] = df["fecha"].dt.month
 
     # Asegurar tipos numéricos
-    for col in ("valor_usd", "tipo_cambio", "subtotal", "impuestos"):
+    for col in ("valor_mxn", "tipo_cambio", "subtotal", "impuestos"):
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 

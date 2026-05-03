@@ -12,7 +12,7 @@ COLUMNAS_VENTAS = [
     'ventas_usd_con_iva',
     'ventas_usd',
     'importe',
-    'valor_usd',
+    'valor_mxn',
     'monto_usd',
     'total_usd',
     'valor',

@@ -98,13 +98,13 @@ class TestDetectarColumna:
         assert resultado == 'linea_de_negocio'
         
     def test_detecta_importe_desde_valor_usd(self):
-        """Detecta 'valor_usd' como variante de 'importe'"""
-        df = pd.DataFrame(columns=['linea', 'valor_usd', 'fecha'])
+        """Detecta 'valor_mxn' como variante de 'importe'"""
+        df = pd.DataFrame(columns=['linea', 'valor_mxn', 'fecha'])
         
-        posibles = ["importe", "valor_usd", "ventas_usd"]
+        posibles = ["importe", "valor_mxn", "ventas_usd"]
         resultado = self.detectar_columna(df, posibles)
         
-        assert resultado == 'valor_usd'
+        assert resultado == 'valor_mxn'
         
     def test_detecta_producto_desde_articulo(self):
         """Detecta 'articulo' como variante de 'producto'"""

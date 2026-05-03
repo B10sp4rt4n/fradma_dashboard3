@@ -25,12 +25,12 @@ def run():
 
     df["anio"] = pd.to_datetime(df["fecha"], errors="coerce").dt.year
     df["tipo_cambio"] = df["anio"].map(tipos_cambio).fillna(17.0)
-    df["valor_mn_calc"] = df["valor_usd"] * df["tipo_cambio"]
+    df["valor_mn_calc"] = df["valor_mxn"] * df["tipo_cambio"]
 
     # Mostrar dimensiones generales
     st.subheader("Resumen General de Ventas")
 
-    total_usd = df["valor_usd"].sum()
+    total_usd = df["valor_mxn"].sum()
     total_mn = df["valor_mn_calc"].sum()
     total_operaciones = len(df)
 
@@ -54,7 +54,7 @@ def run():
 
     # KPIs filtrados
     st.subheader("KPIs Filtrados")
-    total_filtrado_usd = df["valor_usd"].sum()
+    total_filtrado_usd = df["valor_mxn"].sum()
     total_filtrado_mn = df["valor_mn_calc"].sum()
     operaciones_filtradas = len(df)
 

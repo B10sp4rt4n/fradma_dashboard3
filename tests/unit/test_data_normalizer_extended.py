@@ -68,14 +68,14 @@ class TestNormalizarColumnaValor:
     def test_normaliza_valor_usd_existente(self):
         """Test: Si ya existe valor_usd, solo limpia valores."""
         df = pd.DataFrame({
-            'valor_usd': ['$5,000', '$12,500.75']
+            'valor_mxn': ['$5,000', '$12,500.75']
         })
         
         from utils.data_normalizer import normalizar_columna_valor
         df_norm = normalizar_columna_valor(df)
         
-        assert 'valor_usd' in df_norm.columns
-        assert df_norm['valor_usd'].dtype in [float, 'float64']
+        assert 'valor_mxn' in df_norm.columns
+        assert df_norm['valor_mxn'].dtype in [float, 'float64']
     
     def test_renombra_ventas_usd_candidata(self):
         """Test: Renombra ventas_usd a valor_usd."""
@@ -87,7 +87,7 @@ class TestNormalizarColumnaValor:
         from utils.data_normalizer import normalizar_columna_valor
         df_norm = normalizar_columna_valor(df)
         
-        assert 'valor_usd' in df_norm.columns
+        assert 'valor_mxn' in df_norm.columns
         assert 'ventas_usd' not in df_norm.columns
 
 

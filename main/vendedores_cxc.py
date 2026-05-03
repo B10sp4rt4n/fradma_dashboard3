@@ -62,7 +62,7 @@ def _detectar_col_vendedor(df: pd.DataFrame) -> str | None:
 def _detectar_col_ventas(df: pd.DataFrame) -> str | None:
     """Detecta columna de ventas con búsqueda flexible."""
     # Primera pasada: búsqueda exacta
-    for col in ("valor_usd", "ventas_usd", "ventas_usd_con_iva", "ventas_usd_sin_iva",
+    for col in ("valor_mxn", "ventas_usd", "ventas_usd_con_iva", "ventas_usd_sin_iva",
                 "importe", "monto_usd", "total_usd", "venta", "monto", "total"):
         if col in df.columns:
             return col
@@ -154,10 +154,10 @@ def run():
 
     # Normalizar columna de ventas
     col_ventas = _detectar_col_ventas(df_ventas)
-    if col_ventas and col_ventas != "valor_usd":
-        logger.info(f"Columna de ventas detectada: '{col_ventas}' → renombrada a 'valor_usd'")
-        df_ventas = df_ventas.rename(columns={col_ventas: "valor_usd"})
-        col_ventas = "valor_usd"
+    if col_ventas and col_ventas != "valor_mxn":
+        logger.info(f"Columna de ventas detectada: '{col_ventas}' → renombrada a 'valor_mxn'")
+        df_ventas = df_ventas.rename(columns={col_ventas: "valor_mxn"})
+        col_ventas = "valor_mxn"
 
     col_vendedor_v = _detectar_col_vendedor(df_ventas)
     if col_vendedor_v and col_vendedor_v != "vendedor":
@@ -532,8 +532,8 @@ def run():
     agg_ventas = (
         df_ventas.groupby("vendedor")
         .agg(
-            ventas_totales=("valor_usd", "sum"),
-            num_operaciones=("valor_usd", "count"),
+            ventas_totales=("valor_mxn", "sum"),
+            num_operaciones=("valor_mxn", "count"),
         )
         .reset_index()
     )
@@ -702,7 +702,7 @@ def run():
             # Resumen del filtro activo
             _total_base = len(df_v_base)
             _total_filtrado = len(df_v)
-            _monto_filtrado = df_v["valor_usd"].sum() if not df_v.empty else 0
+            _monto_filtrado = df_v["valor_mxn"].sum() if not df_v.empty else 0
             if _total_filtrado < _total_base:
                 st.info(
                     f"📌 Mostrando **{_total_filtrado}** de {_total_base} operaciones · "
@@ -730,7 +730,7 @@ def run():
                         col_cliente_v:      ("Cliente",          32, _ft),
                         "linea_de_negocio": ("Línea de Negocio", 20, _ft),
                         "producto":         ("Producto",         32, _ft),
-                        "valor_usd":        ("Monto ($)",        14, _fm),
+                        "valor_mxn":        ("Monto ($)",        14, _fm),
                         "ventas_usd":       ("Monto ($)",        14, _fm),
                     }
                     _cols_exp = [c for c in _col_map if c and c in df_v.columns]
@@ -769,16 +769,16 @@ def run():
             mejor_cliente = "—"
             if col_cliente_v and col_cliente_v in df_v.columns and not df_v.empty:
                 mejor_cliente = (
-                    df_v.groupby(col_cliente_v)["valor_usd"].sum().idxmax()
+                    df_v.groupby(col_cliente_v)["valor_mxn"].sum().idxmax()
                 )
         # Producto estrella
         mejor_producto = "—"
         if "producto" in df_v.columns and not df_v.empty:
-            mejor_producto = df_v.groupby("producto")["valor_usd"].sum().idxmax()
+            mejor_producto = df_v.groupby("producto")["valor_mxn"].sum().idxmax()
         # Línea de negocio dominante
         mejor_linea = "—"
         if "linea_de_negocio" in df_v.columns and not df_v.empty:
-            mejor_linea = df_v.groupby("linea_de_negocio")["valor_usd"].sum().idxmax()
+            mejor_linea = df_v.groupby("linea_de_negocio")["valor_mxn"].sum().idxmax()
 
         # --- CxC para este vendedor ---
         df_cxc_v = df_cxc_vend[df_cxc_vend["vendedor"] == vendedor_seleccionado_ficha]
@@ -817,7 +817,7 @@ def run():
 
             if col_cliente_v and col_cliente_v in df_v.columns and not df_v.empty:
                 top_clientes_venta = (
-                    df_v.groupby(col_cliente_v)["valor_usd"]
+                    df_v.groupby(col_cliente_v)["valor_mxn"]
                     .sum()
                     .sort_values(ascending=False)
                     .head(5)
@@ -832,7 +832,7 @@ def run():
             if "producto" in df_v.columns and not df_v.empty:
                 with st.expander("🔍 Top 5 productos"):
                     top_prod = (
-                        df_v.groupby("producto")["valor_usd"]
+                        df_v.groupby("producto")["valor_mxn"]
                         .sum()
                         .sort_values(ascending=False)
                         .head(5)
@@ -950,7 +950,7 @@ def run():
             df_v2 = df_v.copy()
             df_v2["mes_año"] = pd.to_datetime(df_v2["fecha"], errors="coerce").dt.to_period("M").astype(str)
             evol = (
-                df_v2.groupby("mes_año")["valor_usd"]
+                df_v2.groupby("mes_año")["valor_mxn"]
                 .sum()
                 .reset_index()
                 .sort_values("mes_año")
@@ -958,8 +958,8 @@ def run():
             if len(evol) > 1:
                 st.markdown("#### 📅 Evolución Mensual de Ventas")
                 fig_evol = px.bar(
-                    evol, x="mes_año", y="valor_usd",
-                    labels={"mes_año": "Mes", "valor_usd": "Ventas ($)"},
+                    evol, x="mes_año", y="valor_mxn",
+                    labels={"mes_año": "Mes", "valor_mxn": "Ventas ($)"},
                     color_discrete_sequence=["#1f77b4"],
                 )
                 fig_evol.update_layout(
@@ -1569,7 +1569,7 @@ def run():
                             "cliente":          ("Cliente",          30, "text"),
                             "linea_de_negocio": ("Línea de Negocio", 20, "text"),
                             "producto":         ("Producto",         30, "text"),
-                            "valor_usd":        ("Monto ($)",        14, "money"),
+                            "valor_mxn":        ("Monto ($)",        14, "money"),
                             "ventas_usd":       ("Monto ($)",        14, "money"),
                         }
                         cols_v_pres = [c for c in cols_ventas_map if c in df_ventas_d.columns]

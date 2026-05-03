@@ -430,12 +430,65 @@ def _run_nomina(empresa_id: str, empresa_nombre: str, neon_url: str):
 
 
 
+def _cargar_impuestos_por_concepto(empresa_id: str, neon_url: str) -> pd.DataFrame:
+    """
+    Consolida impuestos estimados por clave de producto SAT.
+
+    Usa cfdi_conceptos JOIN cfdi_ventas para distribuir la base gravable
+    por concepto según objeto_imp:
+      - '02' → gravado (tasa IVA implícita del comprobante)
+      - '01' → exento / no objeto
+    """
+    query = """
+        SELECT
+            cc.clave_prod_serv,
+            cc.descripcion,
+            cc.objeto_imp,
+            cc.categoria,
+            cv.linea_negocio,
+            COUNT(DISTINCT cc.cfdi_venta_id)                         AS num_facturas,
+            ROUND(SUM((cc.importe - COALESCE(cc.descuento,0))
+                      * COALESCE(cv.tipo_cambio,1)), 2)              AS base_mxn,
+            -- IVA estimado solo para conceptos gravados (objeto_imp = '02')
+            ROUND(SUM(
+                CASE WHEN cc.objeto_imp = '02'
+                     THEN (cc.importe - COALESCE(cc.descuento,0))
+                          * COALESCE(cv.tipo_cambio,1) * 0.16
+                     ELSE 0
+                END
+            ), 2)                                                     AS iva_estimado_mxn
+        FROM cfdi_conceptos cc
+        JOIN cfdi_ventas cv ON cv.id = cc.cfdi_venta_id
+        WHERE cv.empresa_id = %s
+          AND cv.tipo_comprobante = 'I'
+          AND cv.estatus = 'vigente'
+        GROUP BY cc.clave_prod_serv, cc.descripcion, cc.objeto_imp, cc.categoria, cv.linea_negocio
+        ORDER BY base_mxn DESC
+        LIMIT 500
+    """
+    conn = None
+    try:
+        conn = psycopg2.connect(neon_url)
+        cur = conn.cursor()
+        cur.execute(query, (empresa_id,))
+        rows = cur.fetchall()
+        cols = [d[0] for d in cur.description]
+        return pd.DataFrame(rows, columns=cols)
+    except Exception as e:
+        logger.error(f"Error cargando impuestos por concepto: {e}")
+        return pd.DataFrame()
+    finally:
+        if conn:
+            conn.close()
+
+
 def _run_ventas(empresa_id: str, empresa_nombre: str, neon_url: str):
     """Vista de desglose fiscal — Ventas / Ingresos (tipo_comprobante='I')."""
     with st.spinner("Consultando base de datos..."):
         df           = _cargar_fiscal(empresa_id, neon_url)
         df_tendencia = _cargar_tendencia_fiscal(empresa_id, neon_url)
         df_ret       = _cargar_retenciones(empresa_id, neon_url)
+        df_conceptos = _cargar_impuestos_por_concepto(empresa_id, neon_url)
 
     if df.empty:
         st.info("📭 No hay facturas de ingreso registradas para esta empresa.")
@@ -470,8 +523,9 @@ def _run_ventas(empresa_id: str, empresa_nombre: str, neon_url: str):
 
     st.markdown("---")
 
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(
-        ["📅 Tendencia mensual", "👥 Por Cliente", "📦 Por Línea de Negocio", "📄 Detalle", "🏦 Retenciones"]
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
+        ["📅 Tendencia mensual", "👥 Por Cliente", "📦 Por Línea de Negocio",
+         "📄 Detalle", "🏦 Retenciones", "🏷️ Por Concepto SAT"]
     )
 
     # ── Tab 1: Tendencia mensual ─────────────────────────────────────────────
@@ -815,6 +869,85 @@ def _run_ventas(empresa_id: str, empresa_nombre: str, neon_url: str):
                 "⬇️ Descargar CSV retenciones",
                 data=csv_ret,
                 file_name="retenciones.csv",
+                mime="text/csv",
+            )
+
+    # ── Tab 6: Por Concepto SAT ──────────────────────────────────────────────
+    with tab6:
+        st.subheader("Impuestos estimados por clave de concepto SAT")
+        st.caption(
+            "Base gravable e IVA estimado (16%) calculados desde `cfdi_conceptos`. "
+            "Los conceptos con **objeto_imp = '01'** son exentos."
+        )
+
+        if df_conceptos.empty:
+            st.info(
+                "📭 No hay datos de conceptos para esta empresa. "
+                "Verifica que los XMLs hayan sido ingresados con sus conceptos."
+            )
+        else:
+            for col in ["base_mxn", "iva_estimado_mxn", "num_facturas"]:
+                df_conceptos[col] = pd.to_numeric(df_conceptos[col], errors="coerce").fillna(0)
+
+            # KPIs
+            base_total_c  = df_conceptos["base_mxn"].sum()
+            iva_total_c   = df_conceptos["iva_estimado_mxn"].sum()
+            exentos_base  = df_conceptos.loc[df_conceptos["objeto_imp"] == "01", "base_mxn"].sum()
+            pct_exento    = (exentos_base / base_total_c * 100) if base_total_c else 0
+
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Base gravable total (MXN)", f"${base_total_c:,.0f}")
+            c2.metric("IVA estimado 16% (MXN)",    f"${iva_total_c:,.0f}")
+            c3.metric("Base exenta (MXN)",          f"${exentos_base:,.0f}",
+                      delta=f"{pct_exento:.1f}% del total", delta_color="off")
+
+            st.markdown("---")
+
+            # Gráfica top 10 por base gravable
+            top10 = df_conceptos.nlargest(10, "base_mxn")
+            fig_c = go.Figure(go.Bar(
+                x=top10["base_mxn"],
+                y=top10["clave_prod_serv"] + " — " + top10["descripcion"].str[:40],
+                orientation="h",
+                marker_color="#1565C0",
+                text=[f"${v:,.0f}" for v in top10["base_mxn"]],
+                textposition="outside",
+            ))
+            fig_c.update_layout(
+                title="Top 10 conceptos por base gravable (MXN)",
+                height=380,
+                xaxis_title="MXN",
+                yaxis={"autorange": "reversed"},
+                showlegend=False,
+            )
+            st.plotly_chart(fig_c, use_container_width=True)
+
+            # Tabla completa
+            disp_c = df_conceptos[[
+                "clave_prod_serv", "descripcion", "objeto_imp",
+                "categoria", "linea_negocio", "num_facturas",
+                "base_mxn", "iva_estimado_mxn",
+            ]].copy()
+            disp_c.columns = [
+                "Clave SAT", "Descripción", "Obj. Imp",
+                "Categoría", "Línea", "# Facturas",
+                "Base (MXN)", "IVA est. (MXN)",
+            ]
+            st.dataframe(
+                disp_c.style.format({
+                    "Base (MXN)":     "${:,.2f}",
+                    "IVA est. (MXN)": "${:,.2f}",
+                }),
+                use_container_width=True,
+                hide_index=True,
+                height=450,
+            )
+
+            csv_c = df_conceptos.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                "⬇️ Descargar CSV por concepto",
+                data=csv_c,
+                file_name="impuestos_por_concepto.csv",
                 mime="text/csv",
             )
 

@@ -20,7 +20,7 @@ def df_ventas_basico():
     """DataFrame básico de ventas con vendedores"""
     return pd.DataFrame({
         'fecha': pd.to_datetime(['2024-01-15', '2024-01-20', '2024-02-10', '2024-02-15']),
-        'valor_usd': [1000, 1500, 2000, 2500],
+        'valor_mxn': [1000, 1500, 2000, 2500],
         'agente': ['Juan', 'Pedro', 'Juan', 'Pedro'],
         'cliente': ['Cliente A', 'Cliente B', 'Cliente C', 'Cliente A'],
         'linea_producto': ['Hardware', 'Software', 'Hardware', 'Software']
@@ -32,7 +32,7 @@ def df_ventas_eficiencia():
     """Dataset para tests de eficiencia de vendedores"""
     return pd.DataFrame({
         'fecha': pd.to_datetime(['2024-01-01'] * 10 + ['2024-01-02'] * 5 + ['2024-01-03'] * 3),
-        'valor_usd': [1000] * 10 + [5000] * 5 + [500] * 3,
+        'valor_mxn': [1000] * 10 + [5000] * 5 + [500] * 3,
         'agente': ['Vendedor A'] * 10 + ['Vendedor B'] * 5 + ['Vendedor C'] * 3,
         'cliente': ['C1', 'C2', 'C1', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9'] + 
                    ['C10', 'C11', 'C10', 'C12', 'C13'] +
@@ -49,7 +49,7 @@ class TestKPIsBasicos:
     
     def test_total_ventas_suma_correcta(self, df_ventas_basico):
         """Calcula total de ventas USD"""
-        total_usd = df_ventas_basico["valor_usd"].sum()
+        total_usd = df_ventas_basico["valor_mxn"].sum()
         
         assert total_usd == 7000
         
@@ -64,14 +64,14 @@ class TestKPIsBasicos:
         df_filtrado = df_ventas_basico[df_ventas_basico["agente"] == "Juan"]
         
         assert len(df_filtrado) == 2
-        assert df_filtrado["valor_usd"].sum() == 3000
+        assert df_filtrado["valor_mxn"].sum() == 3000
         
     def test_filtra_por_linea_producto(self, df_ventas_basico):
         """Filtra ventas por línea de producto"""
         df_filtrado = df_ventas_basico[df_ventas_basico["linea_producto"] == "Hardware"]
         
         assert len(df_filtrado) == 2
-        assert df_filtrado["valor_usd"].sum() == 3000
+        assert df_filtrado["valor_mxn"].sum() == 3000
         
     def test_extrae_anio_desde_fecha(self, df_ventas_basico):
         """Crea columna año desde fecha"""
@@ -94,7 +94,7 @@ class TestRankingVendedores:
         """Ordena vendedores por total de ventas"""
         ranking = (
             df_ventas_basico.groupby("agente")
-            .agg(total_usd=("valor_usd", "sum"), operaciones=("valor_usd", "count"))
+            .agg(total_usd=("valor_mxn", "sum"), operaciones=("valor_mxn", "count"))
             .sort_values("total_usd", ascending=False)
             .reset_index()
         )
@@ -108,7 +108,7 @@ class TestRankingVendedores:
         """Cuenta operaciones por vendedor"""
         ranking = (
             df_ventas_basico.groupby("agente")
-            .agg(total_usd=("valor_usd", "sum"), operaciones=("valor_usd", "count"))
+            .agg(total_usd=("valor_mxn", "sum"), operaciones=("valor_mxn", "count"))
             .reset_index()
         )
         
@@ -122,7 +122,7 @@ class TestRankingVendedores:
         """Añade columna de ranking (1, 2, 3...)"""
         ranking = (
             df_ventas_basico.groupby("agente")
-            .agg(total_usd=("valor_usd", "sum"))
+            .agg(total_usd=("valor_mxn", "sum"))
             .sort_values("total_usd", ascending=False)
             .reset_index()
         )
@@ -142,7 +142,7 @@ class TestKPIsEficiencia:
     
     def test_ticket_promedio_calculo(self, df_ventas_basico):
         """Calcula ticket promedio (ventas / operaciones)"""
-        total_ventas = df_ventas_basico["valor_usd"].sum()
+        total_ventas = df_ventas_basico["valor_mxn"].sum()
         operaciones = len(df_ventas_basico)
         
         ticket_promedio = total_ventas / operaciones if operaciones > 0 else 0
@@ -158,7 +158,7 @@ class TestKPIsEficiencia:
     def test_ventas_por_cliente_promedio(self, df_ventas_basico):
         """Calcula ventas por cliente"""
         juan_data = df_ventas_basico[df_ventas_basico["agente"] == "Juan"]
-        total_ventas = juan_data["valor_usd"].sum()
+        total_ventas = juan_data["valor_mxn"].sum()
         clientes_unicos = juan_data["cliente"].nunique()
         
         ventas_por_cliente = total_ventas / clientes_unicos if clientes_unicos > 0 else 0
@@ -172,7 +172,7 @@ class TestKPIsEficiencia:
         for agente in df_ventas_eficiencia["agente"].unique():
             agente_data = df_ventas_eficiencia[df_ventas_eficiencia["agente"] == agente]
             
-            total_ventas = agente_data["valor_usd"].sum()
+            total_ventas = agente_data["valor_mxn"].sum()
             operaciones_count = len(agente_data)
             ticket_promedio = total_ventas / operaciones_count if operaciones_count > 0 else 0
             clientes_unicos = agente_data["cliente"].nunique()
@@ -215,7 +215,7 @@ class TestClasificacionVendedores:
         
     def test_calcula_mediana_ticket_promedio(self, df_ventas_eficiencia):
         """Calcula mediana de ticket promedio"""
-        vendedores_ticket = df_ventas_eficiencia.groupby("agente")["valor_usd"].mean()
+        vendedores_ticket = df_ventas_eficiencia.groupby("agente")["valor_mxn"].mean()
         mediana_ticket = vendedores_ticket.median()
         
         assert mediana_ticket == 1000.0  # (1000, 5000, 500) → 1000
@@ -308,18 +308,18 @@ class TestNormalizacionColumnas:
     """Valida normalización de nombres de columnas"""
     
     def test_renombra_ventas_usd_a_valor_usd(self):
-        """Detecta 'ventas_usd' y renombra a 'valor_usd'"""
+        """Detecta 'ventas_usd' y renombra a 'valor_mxn'"""
         df = pd.DataFrame({
             'fecha': ['2024-01-01'],
             'ventas_usd': [1000]
         })
         
-        if "valor_usd" not in df.columns:
+        if "valor_mxn" not in df.columns:
             if "ventas_usd" in df.columns:
-                df = df.rename(columns={"ventas_usd": "valor_usd"})
+                df = df.rename(columns={"ventas_usd": "valor_mxn"})
         
-        assert "valor_usd" in df.columns
-        assert df["valor_usd"].iloc[0] == 1000
+        assert "valor_mxn" in df.columns
+        assert df["valor_mxn"].iloc[0] == 1000
         
     def test_renombra_ventas_usd_con_iva_a_valor_usd(self):
         """Detecta 'ventas_usd_con_iva' y renombra"""
@@ -328,19 +328,19 @@ class TestNormalizacionColumnas:
             'ventas_usd_con_iva': [1160]
         })
         
-        if "valor_usd" not in df.columns:
+        if "valor_mxn" not in df.columns:
             if "ventas_usd_con_iva" in df.columns:
-                df = df.rename(columns={"ventas_usd_con_iva": "valor_usd"})
+                df = df.rename(columns={"ventas_usd_con_iva": "valor_mxn"})
         
-        assert "valor_usd" in df.columns
-        assert df["valor_usd"].iloc[0] == 1160
+        assert "valor_mxn" in df.columns
+        assert df["valor_mxn"].iloc[0] == 1160
         
     def test_detecta_columna_agente_vendedor_ejecutivo(self):
         """Busca dinámicamente 'agente', 'vendedor' o 'ejecutivo'"""
         df = pd.DataFrame({
             'fecha': ['2024-01-01'],
             'vendedor': ['Juan'],
-            'valor_usd': [1000]
+            'valor_mxn': [1000]
         })
         
         columna_agente = None

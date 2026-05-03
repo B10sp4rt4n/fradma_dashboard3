@@ -686,7 +686,7 @@ def run(df, habilitar_ia=False, openai_api_key=None):
     if 'ventas_usd' not in df.columns:
         # Variantes comunes de columna de ventas
         variantes_ventas = [
-            'valor_usd', 'ventas_usd_con_iva', 'venta_usd', 'ventas', 'venta',
+            'valor_mxn', 'ventas_usd_con_iva', 'venta_usd', 'ventas', 'venta',
             'importe_usd', 'importe', 'monto_usd', 'monto', 'total_usd', 'total'
         ]
         

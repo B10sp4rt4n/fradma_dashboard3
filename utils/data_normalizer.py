@@ -97,20 +97,20 @@ def normalizar_columna_saldo(df: pd.DataFrame, col_destino: str = 'saldo_adeudad
     return df
 
 
-def normalizar_columna_valor(df: pd.DataFrame, col_destino: str = 'valor_usd') -> pd.DataFrame:
+def normalizar_columna_valor(df: pd.DataFrame, col_destino: str = 'valor_mxn') -> pd.DataFrame:
     """
     Normaliza columnas de ventas/valor a un nombre estándar.
     
     Args:
         df: DataFrame con datos de ventas
-        col_destino: Nombre de columna destino (default: 'valor_usd')
+        col_destino: Nombre de columna destino (default: 'valor_mxn')
         
     Returns:
         DataFrame con columna normalizada
         
     Example:
         df = normalizar_columna_valor(df)
-        # Ahora df tiene columna 'valor_usd'
+        # Ahora df tiene columna 'valor_mxn'
     """
     df = df.copy()
     
@@ -266,7 +266,7 @@ def normalizar_datos_cxc(df_ventas: pd.DataFrame, df_cxc: pd.DataFrame) -> Tuple
     df_cxc = df_cxc.copy() if df_cxc is not None else pd.DataFrame()
     
     # Normalizar columna de valor en ventas
-    df_ventas = normalizar_columna_valor(df_ventas, col_destino='valor_usd')
+    df_ventas = normalizar_columna_valor(df_ventas, col_destino='valor_mxn')
     
     # Si no hay CxC separado, buscar en ventas
     if df_cxc.empty and detectar_columnas_cxc(df_ventas):

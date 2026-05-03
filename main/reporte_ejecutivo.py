@@ -88,7 +88,7 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
     # -----------------------------------------------------------------
 
     # Asegurar compatibilidad de columna monetaria (USD)
-    if "valor_usd" not in df_ventas.columns:
+    if "valor_mxn" not in df_ventas.columns:
         for candidato in [
             "ventas_usd_con_iva",
             "ventas_usd",
@@ -98,17 +98,17 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
             "valor",
         ]:
             if candidato in df_ventas.columns:
-                df_ventas = df_ventas.rename(columns={candidato: "valor_usd"})
+                df_ventas = df_ventas.rename(columns={candidato: "valor_mxn"})
                 break
 
-    if "valor_usd" in df_ventas.columns:
-        df_ventas["valor_usd"] = pd.to_numeric(df_ventas["valor_usd"], errors="coerce").fillna(0)
+    if "valor_mxn" in df_ventas.columns:
+        df_ventas["valor_mxn"] = pd.to_numeric(df_ventas["valor_mxn"], errors="coerce").fillna(0)
     else:
         # Degradar de forma segura: el reporte sigue cargando, pero sin ventas
-        df_ventas["valor_usd"] = 0
+        df_ventas["valor_mxn"] = 0
         st.warning(
             "⚠️ No se encontró columna de ventas en USD. "
-            "Se esperaba 'valor_usd' (o alternativas como 'ventas_usd' / 'ventas_usd_con_iva' / 'importe')."
+            "Se esperaba 'valor_mxn' (o alternativas como 'ventas_usd' / 'ventas_usd_con_iva' / 'importe')."
         )
 
     # Fecha (si existe) a datetime para cálculos mensuales
@@ -221,7 +221,7 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
             index=3,
             help="Filtra los datos de ventas que se usan en todo el reporte",
         )
-    
+
     # Aplicar filtro de periodo a ventas
     if "fecha" in df_ventas.columns and not df_ventas.empty:
         df_ventas["fecha"] = pd.to_datetime(df_ventas["fecha"], errors="coerce")
@@ -232,12 +232,33 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
         df_v = df_ventas
         fecha_min_datos = fecha_max_datos = None
 
+    # Filtro opcional: forma de pago
+    _FORMA_PAGO_LABELS = {
+        "01": "Efectivo", "02": "Cheque nominativo", "03": "Transferencia electrónica",
+        "04": "Tarjeta de crédito", "05": "Monedero electrónico",
+        "28": "Tarjeta de débito", "30": "Aplicación de anticipos",
+        "31": "Intermediario pagos", "99": "Por definir",
+    }
+    forma_pago_sel = "Todas"
+    if "forma_pago" in df_v.columns and df_v["forma_pago"].notna().any():
+        fps = sorted(df_v["forma_pago"].dropna().astype(str).unique())
+        fps_labels = [f"{fp} – {_FORMA_PAGO_LABELS.get(fp, fp)}" for fp in fps]
+        col_fp, _ = st.columns([2, 3])
+        with col_fp:
+            fp_sel_label = st.selectbox(
+                "💳 Forma de pago (opcional):", ["Todas"] + fps_labels
+            )
+        if fp_sel_label != "Todas":
+            forma_pago_sel = fp_sel_label.split(" – ")[0]
+            df_v = df_v[df_v["forma_pago"].astype(str) == forma_pago_sel]
+
     with col_info:
         if fecha_min_datos and fecha_max_datos:
             st.info(
                 f"📅 **{periodo_sel}**: "
                 f"{fecha_min_datos.strftime('%d/%m/%Y')} → {fecha_max_datos.strftime('%d/%m/%Y')}"
                 f"  |  **{len(df_v):,}** registros"
+                + (f"  |  💳 {fp_sel_label}" if forma_pago_sel != "Todas" else "")
             )
 
     st.markdown("---")
@@ -254,7 +275,7 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
     # ─────────────────────────────────────────────────────────────────────
     # CÁLCULOS COMPARTIDOS (necesarios en varias tabs)
     # ─────────────────────────────────────────────────────────────────────
-    total_ventas    = df_v["valor_usd"].sum() if not df_v.empty else 0
+    total_ventas    = df_v["valor_mxn"].sum() if not df_v.empty else 0
     total_ops       = len(df_v)
     ticket_promedio = total_ventas / total_ops if total_ops > 0 else 0
     clientes_unicos = df_v["cliente"].nunique() if "cliente" in df_v.columns else 0
@@ -272,10 +293,10 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
         fecha_limite_mes_anterior = mes_anterior.replace(
             day=min(dia_actual_en_mes, (mes_actual - timedelta(days=1)).day)
         )
-        ventas_mes_actual   = df_v[df_v["fecha"] >= mes_actual]["valor_usd"].sum()
+        ventas_mes_actual   = df_v[df_v["fecha"] >= mes_actual]["valor_mxn"].sum()
         ventas_mes_anterior = df_v[
             (df_v["fecha"] >= mes_anterior) & (df_v["fecha"] <= fecha_limite_mes_anterior)
-        ]["valor_usd"].sum()
+        ]["valor_mxn"].sum()
         variacion_ventas    = ((ventas_mes_actual - ventas_mes_anterior) / ventas_mes_anterior * 100) if ventas_mes_anterior > 0 else 0
         mes_actual_nombre   = fecha_max.strftime("%B %Y")
         mes_anterior_nombre = mes_anterior.strftime("%B %Y")
@@ -343,7 +364,7 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
     if total_adeudado > 0 and total_ventas > 0 and "fecha" in df_v.columns and not df_v.empty:
         _hoy_dso = pd.Timestamp.today().normalize()
         _hace_12m = _hoy_dso - pd.DateOffset(months=12)
-        _col_v = next((c for c in ["valor_usd", "ventas_usd", "ventas", "total"] if c in df_v.columns), None)
+        _col_v = next((c for c in ["valor_mxn", "ventas_usd", "ventas", "total"] if c in df_v.columns), None)
         if _col_v:
             _ventas_12m = df_v.loc[df_v["fecha"] >= _hace_12m, _col_v].sum()
             _ventas_base = _ventas_12m if _ventas_12m > 0 else total_ventas
@@ -445,7 +466,7 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
             if col_f2.button("🚀 Generar diagnóstico con IA", type="primary", use_container_width=True):
                 with st.spinner("🔄 Generando diagnóstico integral..."):
                     try:
-                        top_linea_ventas = df_v.groupby("linea_de_negocio")["valor_usd"].sum().idxmax() if "linea_de_negocio" in df_v.columns and not df_v.empty else "N/A"
+                        top_linea_ventas = df_v.groupby("linea_de_negocio")["valor_mxn"].sum().idxmax() if "linea_de_negocio" in df_v.columns and not df_v.empty else "N/A"
                         casos_urgentes   = int(df_cxc[df_cxc["dias_overdue"] > 90].shape[0]) if "dias_overdue" in df_cxc.columns else 0
                         insights = generar_insights_ejecutivo_consolidado(
                             total_ventas_periodo=total_ventas,
@@ -495,7 +516,7 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
         if "fecha" in df_v.columns and not df_v.empty:
             df_v_tmp = df_v.copy()
             df_v_tmp["mes"] = df_v_tmp["fecha"].dt.to_period("M").astype(str)
-            ventas_mes = df_v_tmp.groupby("mes").agg(Ventas=("valor_usd", "sum"), Ops=("valor_usd", "count")).reset_index()
+            ventas_mes = df_v_tmp.groupby("mes").agg(Ventas=("valor_mxn", "sum"), Ops=("valor_mxn", "count")).reset_index()
 
             # Obtener paleta de colores según modo
             _paleta = _obtener_paleta_colores(st.session_state.get("reporte_modo_monocromatico", False))
@@ -522,7 +543,7 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
             st.markdown("#### 🌟 Top 5 Vendedores")
             col_vendedor = next((c for c in ["agente", "vendedor"] if c in df_v.columns), None)
             if col_vendedor:
-                top_vend = df_v.groupby(col_vendedor).agg(Ventas=("valor_usd", "sum"), Ops=("valor_usd", "count")).reset_index()
+                top_vend = df_v.groupby(col_vendedor).agg(Ventas=("valor_mxn", "sum"), Ops=("valor_mxn", "count")).reset_index()
                 top_vend.columns = ["Vendedor", "Ventas", "Ops"]
                 top_vend["Ticket"] = top_vend["Ventas"] / top_vend["Ops"]
                 top_vend = top_vend.sort_values("Ventas", ascending=False).head(5)
@@ -537,7 +558,7 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
         with col_cli:
             st.markdown("#### 👥 Top 5 Clientes por Venta")
             if _col_cliente_v:
-                top_cli = df_v.groupby(_col_cliente_v).agg(Ventas=("valor_usd", "sum"), Ops=("valor_usd", "count")).reset_index()
+                top_cli = df_v.groupby(_col_cliente_v).agg(Ventas=("valor_mxn", "sum"), Ops=("valor_mxn", "count")).reset_index()
                 top_cli.columns = ["Cliente", "Ventas", "Ops"]
                 top_cli = top_cli.sort_values("Ventas", ascending=False).head(5)
                 top_cli_d = top_cli.copy()

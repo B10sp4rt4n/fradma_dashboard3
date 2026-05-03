@@ -100,9 +100,9 @@ def test_detectar_col_ventas_variantes():
     """Test: Detecta variantes de columna ventas."""
     from main.vendedores_cxc import _detectar_col_ventas
     
-    # Probar con 'valor_usd'
-    df_valor = pd.DataFrame({'valor_usd': [1000]})
-    assert _detectar_col_ventas(df_valor) == 'valor_usd'
+    # Probar con 'valor_mxn'
+    df_valor = pd.DataFrame({'valor_mxn': [1000]})
+    assert _detectar_col_ventas(df_valor) == 'valor_mxn'
     
     # Probar con 'importe'
     df_importe = pd.DataFrame({'importe': [2000]})

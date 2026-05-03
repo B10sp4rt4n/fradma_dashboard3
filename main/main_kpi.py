@@ -39,19 +39,19 @@ def run(habilitar_ia=False, openai_api_key=None):
     df = st.session_state["df"].copy()
 
     # Asegurar compatibilidad: valor_usd = ventas_usd_con_iva o ventas_usd
-    if "valor_usd" not in df.columns:
+    if "valor_mxn" not in df.columns:
         if "ventas_usd" in df.columns:
-            df = df.rename(columns={"ventas_usd": "valor_usd"})
+            df = df.rename(columns={"ventas_usd": "valor_mxn"})
         elif "ventas_usd_con_iva" in df.columns:
-            df = df.rename(columns={"ventas_usd_con_iva": "valor_usd"})
+            df = df.rename(columns={"ventas_usd_con_iva": "valor_mxn"})
 
-    if "valor_usd" not in df.columns:
-        st.error("No se encontró la columna 'valor_usd', 'ventas_usd' ni 'ventas_usd_con_iva'.")
+    if "valor_mxn" not in df.columns:
+        st.error("No se encontró la columna 'valor_mxn', 'ventas_usd' ni 'ventas_usd_con_iva'.")
         return
 
     df["anio"] = pd.to_datetime(df["fecha"], errors="coerce").dt.year
 
-    total_usd_base = df["valor_usd"].sum()
+    total_usd_base = df["valor_mxn"].sum()
     total_operaciones_base = len(df)
 
     # === Filtros opcionales ===
@@ -81,14 +81,37 @@ def run(habilitar_ia=False, openai_api_key=None):
     if linea_sel != "Todas" and columna_linea:
         df = df[df[columna_linea].astype(str) == linea_sel]
 
+    # Filtro adicional: forma de pago
+    _FORMA_PAGO_LABELS = {
+        "01": "Efectivo", "02": "Cheque nominativo", "03": "Transferencia electrónica",
+        "04": "Tarjeta de crédito", "05": "Monedero electrónico", "06": "Dinero electrónico",
+        "08": "Vales de despensa", "12": "Dación en pago", "13": "Pago por subrogación",
+        "14": "Pago por consignación", "15": "Condonación", "17": "Compensación",
+        "23": "Novación", "24": "Confusión", "25": "Remisión de deuda",
+        "26": "Prescripción o caducidad", "27": "A satisfacción del acreedor",
+        "28": "Tarjeta de débito", "29": "Tarjeta de servicios",
+        "30": "Aplicación de anticipos", "31": "Intermediario pagos",
+        "99": "Por definir",
+    }
+    forma_pago_sel = "Todas"
+    if "forma_pago" in df.columns:
+        fps = sorted(df["forma_pago"].dropna().astype(str).unique())
+        fps_labels = [f"{fp} – {_FORMA_PAGO_LABELS.get(fp, fp)}" for fp in fps]
+        fp_sel_label = st.selectbox(
+            "Forma de pago (opcional):", ["Todas"] + fps_labels
+        )
+        if fp_sel_label != "Todas":
+            forma_pago_sel = fp_sel_label.split(" – ")[0]
+            df = df[df["forma_pago"].astype(str) == forma_pago_sel]
+
     st.caption(
         f"Contexto activo: Ejecutivo = {agente_sel if columna_agente else 'No disponible'} | "
-        f"Línea = {linea_sel}"
+        f"Línea = {linea_sel} | Forma de pago = {forma_pago_sel}"
     )
 
     # KPIs del contexto filtrado
     st.subheader("KPIs del contexto")
-    total_filtrado_usd = df["valor_usd"].sum()
+    total_filtrado_usd = df["valor_mxn"].sum()
     operaciones_filtradas = len(df)
     ticket_promedio = total_filtrado_usd / operaciones_filtradas if operaciones_filtradas > 0 else 0
     vendedores_activos = df["agente"].nunique() if "agente" in df.columns else 0
@@ -148,7 +171,7 @@ def run(habilitar_ia=False, openai_api_key=None):
         for agente in df["agente"].unique():
             agente_data = df[df["agente"] == agente]
             
-            total_ventas = agente_data["valor_usd"].sum()
+            total_ventas = agente_data["valor_mxn"].sum()
             operaciones_count = len(agente_data)
             
             # Ticket promedio (ventas por operación)
@@ -382,14 +405,14 @@ def run(habilitar_ia=False, openai_api_key=None):
             ["Pie Chart", "Barras Horizontales", "Ventas por Año"]
         )
 
-        df_chart = df[["agente", "anio", "valor_usd"]].dropna()
+        df_chart = df[["agente", "anio", "valor_mxn"]].dropna()
 
         # Agrupación base para todos los gráficos
         resumen_agente = (
             df_chart.groupby(["agente", "anio"])
             .agg(
-                total_ventas=("valor_usd", "sum"),
-                operaciones=("valor_usd", "count")
+                total_ventas=("valor_mxn", "sum"),
+                operaciones=("valor_mxn", "count")
             )
             .reset_index()
         )
@@ -545,13 +568,13 @@ def run(habilitar_ia=False, openai_api_key=None):
                             df_analisis = df_analisis[df_analisis['linea_producto'].isin(lineas_filtrar)]
                     
                     # Preparar datos para el análisis con datos filtrados
-                    df_chart_filtrado = df_analisis[["agente", "anio", "valor_usd"]].dropna()
+                    df_chart_filtrado = df_analisis[["agente", "anio", "valor_mxn"]].dropna()
                     
                     resumen_agente_filtrado = (
                         df_chart_filtrado.groupby(["agente", "anio"])
                         .agg(
-                            total_ventas=("valor_usd", "sum"),
-                            operaciones=("valor_usd", "count")
+                            total_ventas=("valor_mxn", "sum"),
+                            operaciones=("valor_mxn", "count")
                         )
                         .reset_index()
                     )
@@ -681,7 +704,7 @@ def run(habilitar_ia=False, openai_api_key=None):
         
         **💰 Ventas USD**
         - **Definición**: Suma de las ventas dentro del contexto filtrado actual
-        - **Fórmula**: `Σ valor_usd (con filtros activos)`
+        - **Fórmula**: `Σ valor_mxn (con filtros activos)`
         - **Fuente**: Columna `ventas_usd`, `ventas_usd_con_iva` o `valor_usd`
         
         **📦 Operaciones**

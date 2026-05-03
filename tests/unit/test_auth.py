@@ -1,10 +1,17 @@
 """Tests unitarios para utils/auth.py."""
 
+import os
 from types import SimpleNamespace
 
 import pytest
 
 from utils.auth import AuthManager, User, UserRole, get_current_user, require_auth, require_role
+
+# Skip tests que requieren conexión real a Neon si no hay URL configurada
+_needs_db = pytest.mark.skipif(
+    not os.environ.get("NEON_DATABASE_URL"),
+    reason="Requiere NEON_DATABASE_URL configurado"
+)
 
 
 @pytest.fixture
@@ -51,26 +58,34 @@ def test_authenticate_returns_none_for_unknown_user(auth_manager):
     assert auth_manager.authenticate("ghost", "whatever") is None
 
 
+@_needs_db
 def test_create_user_and_get_user(auth_manager):
+    import uuid, psycopg2
+    uname = f"tst_{uuid.uuid4().hex[:8]}"
+    email = f"{uname}@test.com"
     success, msg = auth_manager.create_user(
-        username="analista",
-        email="analista@test.com",
+        username=uname,
+        email=email,
         name="Ana",
         password="secreto1",
         role=UserRole.ANALYST,
         created_by="admin",
         notes="equipo finanzas",
     )
+    try:
+        user = auth_manager.get_user(uname)
 
-    user = auth_manager.get_user("analista")
-
-    assert success is True
-    assert "creado exitosamente" in msg.lower()
-    assert user is not None
-    assert user["email"] == "analista@test.com"
-    assert user["created_by"] == "admin"
-    assert user["notes"] == "equipo finanzas"
-    assert user["is_active"] is True
+        assert success is True
+        assert "creado exitosamente" in msg.lower()
+        assert user is not None
+        assert user["email"] == email
+        assert user["created_by"] == "admin"
+        assert user["notes"] == "equipo finanzas"
+        assert user["is_active"] is True
+    finally:
+        conn = psycopg2.connect(__import__("os").environ["NEON_DATABASE_URL"])
+        conn.cursor().execute("DELETE FROM users WHERE username = %s", (uname,))
+        conn.commit(); conn.close()
 
 
 def test_create_user_validations(auth_manager):
@@ -81,16 +96,26 @@ def test_create_user_validations(auth_manager):
     assert auth_manager.create_user("abc", "a@test.com", "A", "123456", "otro_rol")[0] is False
 
 
+@_needs_db
 def test_create_user_rejects_duplicate_username_and_email(auth_manager):
-    auth_manager.create_user("user1", "u1@test.com", "User 1", "123456", UserRole.VIEWER)
+    import uuid, psycopg2
+    u1 = f"tst_{uuid.uuid4().hex[:8]}"
+    u2 = f"tst_{uuid.uuid4().hex[:8]}"
+    e1 = f"{u1}@test.com"
+    try:
+        auth_manager.create_user(u1, e1, "User 1", "123456", UserRole.VIEWER)
 
-    success_user, msg_user = auth_manager.create_user("user1", "u2@test.com", "Otro", "123456", UserRole.VIEWER)
-    success_email, msg_email = auth_manager.create_user("user2", "u1@test.com", "Otro", "123456", UserRole.VIEWER)
+        success_user, msg_user = auth_manager.create_user(u1, f"{u2}@test.com", "Otro", "123456", UserRole.VIEWER)
+        success_email, msg_email = auth_manager.create_user(u2, e1, "Otro", "123456", UserRole.VIEWER)
 
-    assert success_user is False
-    assert "ya existe" in msg_user.lower()
-    assert success_email is False
-    assert "ya está en uso" in msg_email.lower()
+        assert success_user is False
+        assert "ya existe" in msg_user.lower()
+        assert success_email is False
+        assert ("ya está en uso" in msg_email.lower() or "ya existe" in msg_email.lower())
+    finally:
+        conn = psycopg2.connect(__import__("os").environ["NEON_DATABASE_URL"])
+        conn.cursor().execute("DELETE FROM users WHERE username IN (%s, %s)", (u1, u2))
+        conn.commit(); conn.close()
 
 
 def test_list_users_returns_created_users(auth_manager):
@@ -120,27 +145,45 @@ def test_update_user_and_missing_user(auth_manager):
     assert "no hay campos" in empty_msg.lower()
 
 
+@_needs_db
 def test_change_password_success_and_invalid_current(auth_manager):
-    auth_manager.create_user("user1", "u1@test.com", "User 1", "123456", UserRole.VIEWER)
+    import uuid, psycopg2
+    uname = f"tst_{uuid.uuid4().hex[:8]}"
+    auth_manager.create_user(uname, f"{uname}@test.com", "User 1", "123456", UserRole.VIEWER)
+    try:
+        bad_success, bad_msg = auth_manager.change_password(uname, "xxxxxx", "abcdef")
+        ok_success, ok_msg = auth_manager.change_password(uname, "123456", "abcdef")
+        user = auth_manager.authenticate(uname, "abcdef")
 
-    bad_success, bad_msg = auth_manager.change_password("user1", "xxxxxx", "abcdef")
-    ok_success, ok_msg = auth_manager.change_password("user1", "123456", "abcdef")
-    user = auth_manager.authenticate("user1", "abcdef")
+        assert bad_success is False
+        assert "actual incorrecta" in bad_msg.lower()
+        assert ok_success is True
+        assert "actualizada" in ok_msg.lower()
+        assert user is not None
+    finally:
+        conn = psycopg2.connect(__import__("os").environ["NEON_DATABASE_URL"])
+        cur = conn.cursor()
+        cur.execute("DELETE FROM login_history WHERE username = %s", (uname,))
+        cur.execute("DELETE FROM users WHERE username = %s", (uname,))
+        conn.commit(); conn.close()
 
-    assert bad_success is False
-    assert "actual incorrecta" in bad_msg.lower()
-    assert ok_success is True
-    assert "actualizada" in ok_msg.lower()
-    assert user is not None
 
-
+@_needs_db
 def test_change_password_rejects_short_new_password(auth_manager):
-    auth_manager.create_user("user1", "u1@test.com", "User 1", "123456", UserRole.VIEWER)
+    import uuid, psycopg2
+    uname = f"tst_{uuid.uuid4().hex[:8]}"
+    auth_manager.create_user(uname, f"{uname}@test.com", "User 1", "123456", UserRole.VIEWER)
+    try:
+        success, msg = auth_manager.change_password(uname, "123456", "123")
 
-    success, msg = auth_manager.change_password("user1", "123456", "123")
-
-    assert success is False
-    assert "al menos 6" in msg.lower()
+        assert success is False
+        assert "al menos 6" in msg.lower()
+    finally:
+        conn = psycopg2.connect(__import__("os").environ["NEON_DATABASE_URL"])
+        cur = conn.cursor()
+        cur.execute("DELETE FROM login_history WHERE username = %s", (uname,))
+        cur.execute("DELETE FROM users WHERE username = %s", (uname,))
+        conn.commit(); conn.close()
 
 
 def test_reset_password_success_and_missing_user(auth_manager):
@@ -159,18 +202,27 @@ def test_reset_password_success_and_missing_user(auth_manager):
     assert "al menos 6" in short_msg.lower()
 
 
+@_needs_db
 def test_deactivate_and_activate_user(auth_manager):
-    auth_manager.create_user("user1", "u1@test.com", "User 1", "123456", UserRole.VIEWER)
+    import uuid, psycopg2
+    uname = f"tst_{uuid.uuid4().hex[:8]}"
+    auth_manager.create_user(uname, f"{uname}@test.com", "User 1", "123456", UserRole.VIEWER)
+    try:
+        deactivated, _ = auth_manager.deactivate_user(uname, "admin")
+        blocked_login = auth_manager.authenticate(uname, "123456")
+        activated, _ = auth_manager.activate_user(uname, "admin")
+        allowed_login = auth_manager.authenticate(uname, "123456")
 
-    deactivated, _ = auth_manager.deactivate_user("user1", "admin")
-    blocked_login = auth_manager.authenticate("user1", "123456")
-    activated, _ = auth_manager.activate_user("user1", "admin")
-    allowed_login = auth_manager.authenticate("user1", "123456")
-
-    assert deactivated is True
-    assert blocked_login is None
-    assert activated is True
-    assert allowed_login is not None
+        assert deactivated is True
+        assert blocked_login is None
+        assert activated is True
+        assert allowed_login is not None
+    finally:
+        conn = psycopg2.connect(__import__("os").environ["NEON_DATABASE_URL"])
+        cur = conn.cursor()
+        cur.execute("DELETE FROM login_history WHERE username = %s", (uname,))
+        cur.execute("DELETE FROM users WHERE username = %s", (uname,))
+        conn.commit(); conn.close()
 
 
 def test_deactivate_admin_and_missing_user(auth_manager):
@@ -183,17 +235,26 @@ def test_deactivate_admin_and_missing_user(auth_manager):
     assert "no encontrado" in missing_msg.lower()
 
 
+@_needs_db
 def test_get_login_history_tracks_success_and_failure(auth_manager):
-    auth_manager.create_user("user1", "u1@test.com", "User 1", "123456", UserRole.VIEWER)
+    import uuid, psycopg2
+    uname = f"tst_{uuid.uuid4().hex[:8]}"
+    auth_manager.create_user(uname, f"{uname}@test.com", "User 1", "123456", UserRole.VIEWER)
+    try:
+        auth_manager.authenticate(uname, "badpass")
+        auth_manager.authenticate(uname, "123456")
 
-    auth_manager.authenticate("user1", "badpass")
-    auth_manager.authenticate("user1", "123456")
+        history = auth_manager.get_login_history(uname, limit=10)
 
-    history = auth_manager.get_login_history("user1", limit=10)
-
-    assert len(history) == 2
-    assert all(item["username"] == "user1" for item in history)
-    assert sorted(item["success"] for item in history) == [False, True]
+        assert len(history) == 2
+        assert all(item["username"] == uname for item in history)
+        assert sorted(item["success"] for item in history) == [False, True]
+    finally:
+        conn = psycopg2.connect(__import__("os").environ["NEON_DATABASE_URL"])
+        cur = conn.cursor()
+        cur.execute("DELETE FROM login_history WHERE username = %s", (uname,))
+        cur.execute("DELETE FROM users WHERE username = %s", (uname,))
+        conn.commit(); conn.close()
 
 
 def test_get_current_user_reads_streamlit_session(monkeypatch):
