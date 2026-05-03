@@ -1,0 +1,177 @@
+erDiagram
+    raw_eventos {
+        uuid id PK
+        string sistema_origen
+        string entidad_origen
+        string id_origen
+        datetime fecha_extraccion
+        string hash_registro
+        json payload_json
+        string estado_proceso
+    }
+
+    dim_cliente {
+        uuid cliente_id PK
+        string cliente_master_key
+        string rfc
+        string nombre_fiscal
+        string nombre_comercial
+        string pais
+        string estado
+        boolean activo
+        datetime created_at
+        datetime updated_at
+    }
+
+    dim_vendedor {
+        uuid vendedor_id PK
+        string vendedor_master_key
+        string nombre
+        string email
+        string region
+        string canal
+        boolean activo
+        datetime created_at
+        datetime updated_at
+    }
+
+    dim_producto {
+        uuid producto_id PK
+        string producto_master_key
+        string sku
+        string nombre_producto
+        string linea_negocio
+        string categoria
+        boolean activo
+        datetime created_at
+        datetime updated_at
+    }
+
+    fact_oportunidad {
+        uuid oportunidad_id PK
+        string oportunidad_origen_id
+        string sistema_origen
+        uuid cliente_id FK
+        uuid vendedor_id FK
+        string etapa
+        numeric monto_estimado
+        date fecha_creacion
+        date fecha_cierre_estimada
+        date fecha_cierre_real
+        string estatus
+    }
+
+    fact_factura {
+        uuid factura_id PK
+        string factura_origen_id
+        string sistema_origen
+        uuid cliente_id FK
+        uuid vendedor_id FK
+        date fecha_emision
+        date fecha_vencimiento
+        numeric subtotal
+        numeric impuestos
+        numeric total
+        string moneda
+        string estatus
+    }
+
+    fact_factura_detalle {
+        uuid factura_detalle_id PK
+        uuid factura_id FK
+        uuid producto_id FK
+        numeric cantidad
+        numeric precio_unitario
+        numeric importe
+    }
+
+    fact_pago {
+        uuid pago_id PK
+        string pago_origen_id
+        string sistema_origen
+        uuid cliente_id FK
+        date fecha_pago
+        numeric monto_pago
+        string moneda
+        string referencia
+        string estatus
+    }
+
+    bridge_pago_factura {
+        uuid bridge_id PK
+        uuid pago_id FK
+        uuid factura_id FK
+        numeric monto_aplicado
+    }
+
+    fact_cartera_snapshot {
+        uuid cartera_snapshot_id PK
+        date fecha_corte
+        uuid cliente_id FK
+        uuid factura_id FK
+        uuid vendedor_id FK
+        numeric saldo_insoluto
+        integer dias_overdue
+        string bucket_antiguedad
+        string estatus_cartera
+    }
+
+    map_cliente_origen {
+        uuid map_id PK
+        string sistema_origen
+        string id_origen
+        uuid cliente_id FK
+        string metodo_match
+        numeric confianza_match
+        datetime created_at
+    }
+
+    map_vendedor_origen {
+        uuid map_id PK
+        string sistema_origen
+        string id_origen
+        uuid vendedor_id FK
+        string metodo_match
+        numeric confianza_match
+        datetime created_at
+    }
+
+    map_producto_origen {
+        uuid map_id PK
+        string sistema_origen
+        string id_origen
+        uuid producto_id FK
+        string metodo_match
+        numeric confianza_match
+        datetime created_at
+    }
+
+    dq_excepcion {
+        uuid excepcion_id PK
+        string tipo_excepcion
+        string sistema_origen
+        string entidad_origen
+        string id_origen
+        string descripcion
+        string severidad
+        string estado
+        datetime created_at
+        datetime resolved_at
+    }
+
+    raw_eventos ||--o{ dq_excepcion : genera
+    dim_cliente ||--o{ fact_oportunidad : tiene
+    dim_cliente ||--o{ fact_factura : recibe
+    dim_cliente ||--o{ fact_pago : realiza
+    dim_cliente ||--o{ fact_cartera_snapshot : concentra
+    dim_vendedor ||--o{ fact_oportunidad : gestiona
+    dim_vendedor ||--o{ fact_factura : vende
+    dim_vendedor ||--o{ fact_cartera_snapshot : origina
+    dim_producto ||--o{ fact_factura_detalle : participa
+    fact_factura ||--o{ fact_factura_detalle : contiene
+    fact_pago ||--o{ bridge_pago_factura : aplica
+    fact_factura ||--o{ bridge_pago_factura : recibe
+    fact_factura ||--o{ fact_cartera_snapshot : proyecta
+    dim_cliente ||--o{ map_cliente_origen : reconcilia
+    dim_vendedor ||--o{ map_vendedor_origen : reconcilia
+    dim_producto ||--o{ map_producto_origen : reconcilia

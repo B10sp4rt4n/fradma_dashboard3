@@ -2194,6 +2194,174 @@ def _render_chat_interface():
             with st.chat_message("assistant", avatar="🤖"):
                 _render_result_message(msg, msg_idx)
 
+    # ── Selector de perfil soberano ───────────────────────────────────────────
+    try:
+        from utils.sovereign_profiles import PERFILES, PERFIL_DEFAULT, get_perfil, TIPOS_COMPROBANTE, TIPOS_IMPUESTO, METODOS_PAGO
+        _perfiles_disponibles = PERFILES
+
+        # Inicializar perfil activo en session_state
+        if "sovereign_profile_key" not in st.session_state:
+            st.session_state["sovereign_profile_key"] = PERFIL_DEFAULT
+
+        with st.expander("🎯 Modo de análisis", expanded=True):
+            # ── Botones de perfil predefinido ─────────────────────────────
+            st.caption("Selecciona un perfil o personaliza los parámetros:")
+            _cols = st.columns(3)
+            _profile_keys = list(_perfiles_disponibles.keys())
+            for _i, _pkey in enumerate(_profile_keys):
+                _p = _perfiles_disponibles[_pkey]
+                with _cols[_i % 3]:
+                    _is_active = st.session_state["sovereign_profile_key"] == _pkey
+                    if st.button(
+                        f"{_p['icono']} {_p['label']}",
+                        key=f"profile_btn_{_pkey}",
+                        help=_p["descripcion"],
+                        use_container_width=True,
+                        type="primary" if _is_active else "secondary",
+):
+                        st.session_state["sovereign_profile_key"] = _pkey
+                        st.session_state.pop("sovereign_profile_custom", None)
+                        # Setear explícitamente cada checkbox con los valores del nuevo perfil
+                        for _tc in TIPOS_COMPROBANTE:
+                            st.session_state[f"sc_tipo_{_tc}"] = _tc in _p["tipos_comprobante"]
+                        for _ik in TIPOS_IMPUESTO:
+                            st.session_state[f"sc_imp_{_ik}"] = _ik in _p["impuestos"]
+                        for _mk in METODOS_PAGO:
+                            st.session_state[f"sc_mp_{_mk}"] = _mk in _p["metodos_pago"]
+                        st.session_state["sc_multi_moneda"] = _p.get("multi_moneda", False)
+                        st.rerun()
+
+            st.divider()
+
+            # ── Checkboxes de ajuste fino ─────────────────────────────────
+            _pkey_activo = st.session_state["sovereign_profile_key"]
+            _perfil_base = get_perfil(_pkey_activo)
+
+            # Inicializar valores de checkboxes en session_state si no existen (primera carga)
+            for _tc in TIPOS_COMPROBANTE:
+                if f"sc_tipo_{_tc}" not in st.session_state:
+                    st.session_state[f"sc_tipo_{_tc}"] = _tc in _perfil_base.get("tipos_comprobante", [])
+            for _ik in TIPOS_IMPUESTO:
+                if f"sc_imp_{_ik}" not in st.session_state:
+                    st.session_state[f"sc_imp_{_ik}"] = _ik in _perfil_base.get("impuestos", [])
+            for _mk in METODOS_PAGO:
+                if f"sc_mp_{_mk}" not in st.session_state:
+                    st.session_state[f"sc_mp_{_mk}"] = _mk in _perfil_base.get("metodos_pago", [])
+            if "sc_multi_moneda" not in st.session_state:
+                st.session_state["sc_multi_moneda"] = _perfil_base.get("multi_moneda", False)
+
+            _col_a, _col_b, _col_c = st.columns(3)
+
+            with _col_a:
+                st.caption("**Tipo de comprobante**")
+                _tipos_sel = []
+                for _tc, _tc_label in TIPOS_COMPROBANTE.items():
+                    if _tc == "T":
+                        continue
+                    if st.checkbox(_tc_label, key=f"sc_tipo_{_tc}"):
+                        _tipos_sel.append(_tc)
+
+            with _col_b:
+                st.caption("**Impuestos**")
+                _imp_sel = []
+                for _ik, _il in TIPOS_IMPUESTO.items():
+                    if st.checkbox(_il, key=f"sc_imp_{_ik}"):
+                        _imp_sel.append(_ik)
+
+            with _col_c:
+                st.caption("**Método de pago**")
+                _mp_sel = []
+                for _mk, _ml in METODOS_PAGO.items():
+                    if st.checkbox(_ml, key=f"sc_mp_{_mk}"):
+                        _mp_sel.append(_mk)
+
+                st.caption("**Moneda**")
+                _multi_moneda = st.checkbox(
+                    "Multi-moneda (USD/EUR → MXN)",
+                    key="sc_multi_moneda",
+                )
+
+            # Construir perfil activo con ajustes del usuario
+            _perfil_activo = {
+                **_perfil_base,
+                "tipos_comprobante": _tipos_sel,
+                "impuestos":         _imp_sel,
+                "metodos_pago":      _mp_sel,
+                "multi_moneda":      _multi_moneda,
+            }
+            st.session_state["sovereign_profile_custom"] = _perfil_activo
+            st.session_state["sovereign_profile_activo"] = _perfil_activo
+
+            # Badge de scope activo
+            _scope_parts = []
+            if _tipos_sel:
+                _scope_parts.append("Tipos: " + ", ".join(_tipos_sel))
+            if _imp_sel:
+                _scope_parts.append("Imp: " + ", ".join(_imp_sel))
+            if _mp_sel:
+                _scope_parts.append("Pago: " + ", ".join(_mp_sel))
+            st.caption("📌 Scope activo: " + (" · ".join(_scope_parts) if _scope_parts else "Sin restricciones"))
+
+    except ImportError:
+        st.session_state["sovereign_profile_activo"] = None
+
+    # ── Selector de período soberano ──────────────────────────────────────────
+    _sovereign = st.session_state.get("sovereign_index", {})
+    _meses = _sovereign.get("meses", [])
+
+    if _meses:
+        with st.expander("📅 Período de análisis", expanded=True):
+            _col_slider, _col_gran = st.columns([3, 1])
+
+            with _col_slider:
+                _desde_default = st.session_state.get("sovereign_desde", _meses[0])
+                _hasta_default = st.session_state.get("sovereign_hasta", _meses[-1])
+                # Asegurar que los defaults existen en la lista
+                if _desde_default not in _meses:
+                    _desde_default = _meses[0]
+                if _hasta_default not in _meses:
+                    _hasta_default = _meses[-1]
+
+                _rango = st.select_slider(
+                    "Selecciona el rango de meses",
+                    options=_meses,
+                    value=(_desde_default, _hasta_default),
+                    key="sovereign_slider",
+                    label_visibility="collapsed",
+                )
+                st.session_state["sovereign_desde"] = _rango[0]
+                st.session_state["sovereign_hasta"] = _rango[1]
+
+            with _col_gran:
+                _gran = st.radio(
+                    "Granularidad",
+                    options=["mensual", "trimestral", "anual", "total"],
+                    index=["mensual", "trimestral", "anual", "total"].index(
+                        st.session_state.get("sovereign_granularidad", "mensual")
+                    ),
+                    key="sovereign_granularidad",
+                    help="Cómo se agrupa el tiempo en las consultas",
+                )
+
+            # Construir y guardar el período activo
+            from utils.sovereign_periods import get_active_period
+            _periodo_activo = get_active_period(
+                _sovereign,
+                st.session_state["sovereign_desde"],
+                st.session_state["sovereign_hasta"],
+                st.session_state["sovereign_granularidad"],
+            )
+            st.session_state["sovereign_periodo_activo"] = _periodo_activo
+
+            if _periodo_activo:
+                st.caption(
+                    f"📌 **{_periodo_activo['label']}** · "
+                    f"{_periodo_activo['desde']} → {_periodo_activo['hasta']} · "
+                    f"granularidad: *{_periodo_activo['granularidad']}*"
+                )
+    else:
+        st.session_state["sovereign_periodo_activo"] = {}
+
     # Verificar si hay pregunta pendiente (de ejemplo)
     pending = st.session_state.pop("nl2sql_pending_question", None)
 
@@ -2208,6 +2376,27 @@ def _render_chat_interface():
         question = pending
 
     if question:
+        # ── Validador pre-vuelo ───────────────────────────────────────────
+        from utils.sovereign_periods import validate_question
+        _periodo_activo = st.session_state.get("sovereign_periodo_activo", {})
+        _val = validate_question(question, _periodo_activo, _sovereign)
+
+        if _val["nivel"] == "bloqueo":
+            with st.chat_message("assistant", avatar="🤖"):
+                st.error(_val["mensaje"])
+                if _val.get("sugerencia"):
+                    st.info(_val["sugerencia"])
+            st.session_state["nl2sql_messages"].append({
+                "role": "assistant",
+                "content": f"{_val['mensaje']}\n\n{_val.get('sugerencia', '')}",
+                "type": "error",
+            })
+            return
+
+        if _val["nivel"] == "aviso":
+            with st.chat_message("assistant", avatar="🤖"):
+                st.warning(_val["mensaje"])
+
         # Mostrar pregunta del usuario
         with st.chat_message("user", avatar="🧑‍💼"):
             st.markdown(question)
@@ -2225,7 +2414,13 @@ def _render_chat_interface():
                     st.session_state.get("empresa_id")          # seteado en login por usuario
                     or st.session_state.get("nl2sql_empresa_id")  # override manual (superadmin)
                 )
-                result = engine.ask(question, empresa_id=empresa_id)
+                result = engine.ask(
+                    question,
+                    empresa_id=empresa_id,
+                    periodo_soberano=st.session_state.get("sovereign_periodo_activo"),
+                    sovereign_index=st.session_state.get("sovereign_index"),
+                    sovereign_profile=st.session_state.get("sovereign_profile_activo"),
+                )
 
             # --- ROI Tracking ---
             _track_query_roi(result)
@@ -2450,7 +2645,11 @@ def _render_history():
                     f"📊 {result.chart_suggestion}"
                 )
             else:
-                st.error(result.error)
+                # Aviso de perfil soberano → naranja, no rojo
+                if result.error and result.error.startswith("🎯"):
+                    st.warning(result.error)
+                else:
+                    st.error(result.error)
                 if result.sql:
                     st.code(result.sql, language="sql")
 

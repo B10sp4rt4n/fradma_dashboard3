@@ -733,23 +733,11 @@ def mostrar_info_usuario():
     with col_logout:
         if st.button("🚪", help="Cerrar sesión", key="btn_logout_sidebar"):
             logger.info(f"Logout: {user.username}")
+            st.cache_data.clear()
             st.session_state.clear()
             st.rerun()
     
     st.sidebar.markdown("---")
-    
-    # Panel de administración (solo admins)
-    if user.can_manage_users():
-        with st.sidebar.expander("⚙️ Administración", expanded=False):
-            admin_option = st.radio(
-                "Opciones",
-                ["Usuarios", "Configuración"],
-                label_visibility="collapsed"
-            )
-            
-            # Marcar que se debe mostrar el panel en el main
-            st.session_state['show_admin_panel'] = True
-            st.session_state['admin_panel_option'] = admin_option
 
 
 if __name__ == "__main__":

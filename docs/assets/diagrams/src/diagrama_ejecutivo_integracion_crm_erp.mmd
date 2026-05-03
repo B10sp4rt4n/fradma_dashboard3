@@ -1,0 +1,21 @@
+flowchart LR
+    A[Sistemas Comerciales y Operativos<br/>CRM ERP CFDI Bancos] --> B[Conectores]
+    B --> C[Raw y Trazabilidad]
+    C --> D[Normalizacion y Matching]
+    D --> E[Modelo Unificado]
+    E --> F[Dashboards Ejecutivos]
+    E --> G[Alertas y Cobranza]
+    E --> H[Forecast y ROI]
+
+    I[Objetivo<br/>una sola version confiable del negocio] --> E
+    J[Beneficios<br/>menos trabajo manual mas control mejor decision] --> F
+
+    classDef source fill:#1f3c5c,color:#fff,stroke:#0d2238
+    classDef process fill:#2f6b4f,color:#fff,stroke:#1d4d37
+    classDef output fill:#5a3d7a,color:#fff,stroke:#3b2752
+    classDef note fill:#7a5c2e,color:#fff,stroke:#533d1b
+
+    class A source
+    class B,C,D,E process
+    class F,G,H output
+    class I,J note

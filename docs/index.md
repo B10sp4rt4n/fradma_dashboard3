@@ -21,6 +21,9 @@ Usa la barra de búsqueda en la parte superior para encontrar cualquier tema. La
 | Sección | Descripción |
 |---------|-------------|
 | [Arquitectura](ARCHITECTURE.md) | Diseño técnico y decisiones de la plataforma |
+| [Integración CRM ERP](ARQUITECTURA_INTEGRACION_CRM_ERP.md) | Arquitectura propuesta para integrar CRMs, ERPs y fuentes financieras |
+| [Modelo Físico CRM ERP](MODELO_FISICO_INTEGRACION_CRM_ERP.md) | Tablas sugeridas, relaciones y data marts para implementar la integración |
+| [Diagrama Ejecutivo CRM ERP](DIAGRAMA_EJECUTIVO_INTEGRACION_CRM_ERP.md) | Vista de una sola página para dirección y patrocinadores del proyecto |
 | [Análisis Integrado](ANALISIS_PLATAFORMA_INTEGRADA.md) | Análisis completo con métricas reales Feb 2026 |
 | [Guía Multi-Usuario](GUIA_USUARIO_MULTIUSUARIO.md) | Cómo gestionar usuarios y roles |
 | [Columnas Requeridas](COLUMNAS_REQUERIDAS.md) | Formato de datos para importación |

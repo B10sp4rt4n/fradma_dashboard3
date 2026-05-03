@@ -41,6 +41,19 @@ except ImportError:
     OPENAI_AVAILABLE = False
 
 from utils.logger import configurar_logger
+try:
+    from utils.sovereign_periods import build_prompt_context as _sp_build_prompt
+except ImportError:
+    _sp_build_prompt = None
+
+try:
+    from utils.sovereign_profiles import (
+        build_sovereign_profile_context as _sp_profile_ctx,
+        apply_profile_sql_filter as _apply_profile_filter,
+    )
+except ImportError:
+    _sp_profile_ctx = None
+    _apply_profile_filter = None
 
 logger = configurar_logger("nl2sql", nivel="INFO")
 
@@ -469,25 +482,86 @@ class NL2SQLEngine:
     # -----------------------------------------------------------------
     # 1. Generación de SQL
     # -----------------------------------------------------------------
-    def generate_sql(self, question: str, empresa_id: Optional[str] = None) -> str:
+    def _normalize_question_dates(self, question: str) -> str:
+        """Usa la IA para normalizar expresiones de fecha abreviadas/compactas.
+
+        Convierte variantes como 'feb26', 'abr25 a nov25', 'febraur 26' a su
+        forma canónica 'febrero 2026', 'abril 2025 a noviembre 2025', etc.
+        Modelos pequeños como gpt-4o-mini son suficientes — la tarea es trivial.
+        Devuelve la pregunta original si la IA falla o no hay cambio.
+        """
+        _prompt = (
+            "Eres un normalizador de fechas en español. Reescribe ÚNICAMENTE las "
+            "expresiones de fecha/mes/año de la oración del usuario, expandiéndolas "
+            "a su forma completa (nombre de mes completo + año de 4 dígitos). "
+            "No cambies nada más de la oración. No expliques nada. Devuelve solo la "
+            "oración reescrita.\n\n"
+            "Ejemplos:\n"
+            "- 'feb26 a nov26' → 'febrero 2026 a noviembre 2026'\n"
+            "- 'abr25 a nov 25' → 'abril 2025 a noviembre 2025'\n"
+            "- 'ventas ene24 a dic24' → 'ventas enero 2024 a diciembre 2024'\n"
+            "- 'febraur26' → 'febrero 2026'\n"
+            "- 'ventas de 2025' → 'ventas de 2025'\n"
+        )
+        try:
+            resp = self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": _prompt},
+                    {"role": "user", "content": question},
+                ],
+                temperature=0.0,
+                max_tokens=150,
+            )
+            normalized = resp.choices[0].message.content.strip()
+            if normalized and normalized != question:
+                logger.info(f"Fecha normalizada por IA: '{question}' → '{normalized}'")
+            return normalized or question
+        except Exception:
+            return question
+
+    def generate_sql(self, question: str, empresa_id: Optional[str] = None,
+                       sovereign_context: str = "",
+                       periodo_soberano: Optional[dict] = None) -> str:
         """
         Genera SQL a partir de una pregunta en lenguaje natural.
 
         Args:
             question: Pregunta en español
             empresa_id: UUID de empresa para filtrar (opcional)
+            sovereign_context: Contexto temporal soberano pre-inyectado
+            periodo_soberano: Dict con desde/hasta_excl del slider soberano.
+                              Si se provee, se usa como filtro determinista y
+                              se omite _ensure_month_filter.
 
         Returns:
             Query SQL generado
         """
-        system_prompt = self._build_system_prompt(empresa_id)
+        # Normalizar expresiones de fecha abreviadas/compactas con IA
+        # (ej: 'feb26 a nov26' → 'febrero 2026 a noviembre 2026')
+        question = self._normalize_question_dates(question)
+
+        system_prompt = self._build_system_prompt(empresa_id, sovereign_context=sovereign_context)
+
+        # ── Cuando hay período soberano, forzar al modelo a usar fechas exactas ──
+        # Inyectamos instrucción en el mensaje del usuario para que el modelo
+        # NUNCA genere EXTRACT(MONTH/YEAR) y use siempre fecha_emision >= / <
+        user_message = question
+        if periodo_soberano:
+            _desde = periodo_soberano.get("desde", "")
+            _hasta = periodo_soberano.get("hasta_excl", "")
+            user_message = (
+                f"[FILTRO OBLIGATORIO: fecha_emision >= '{_desde}' AND fecha_emision < '{_hasta}'. "
+                f"NUNCA uses EXTRACT(MONTH FROM fecha_emision) ni EXTRACT(YEAR FROM fecha_emision). "
+                f"Usa SIEMPRE el rango de fechas exacto indicado.]\n\n{question}"
+            )
 
         try:
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": question},
+                    {"role": "user", "content": user_message},
                 ],
                 temperature=0.0,  # Determinístico para SQL
                 max_tokens=800,
@@ -498,8 +572,37 @@ class NL2SQLEngine:
             # Limpiar el SQL (remover markdown code blocks si existen)
             sql = self._clean_sql(raw_sql)
 
-            # Garantizar que si se mencionó un mes, el filtro esté en el SQL
-            sql = self._ensure_month_filter(question, sql)
+            # ── Detectar respuesta de rechazo por perfil soberano ──────────
+            # El modelo puede anteponer el mensaje de fuera-de-perfil y luego
+            # generar SQL de todas formas. Detectamos esa frase y la propagamos
+            # como ValueError controlado para que ask() la muestre como aviso,
+            # no como error de seguridad.
+            _out_of_profile_markers = [
+                "fuera del perfil activo",
+                "fuera del scope",
+                "está fuera del perfil",
+                "out of scope",
+            ]
+            _sql_lower = sql.lower()
+            if any(m in _sql_lower for m in _out_of_profile_markers):
+                _active_profile = getattr(self, "_active_sovereign_profile", None)
+                _label = _active_profile.get("label", "activo") if _active_profile else "activo"
+                raise ValueError(f"PERFIL_SCOPE: Esa consulta está fuera del perfil activo ({_label}).")
+
+
+            # _apply_sovereign_filter actúa como red de seguridad aunque el modelo
+            # ya debería haber usado el rango correcto por la instrucción de arriba
+            if periodo_soberano:
+                sql = self._apply_sovereign_filter(sql, periodo_soberano)
+            else:
+                # Garantizar que si se mencionó un mes, el filtro esté en el SQL
+                sql = self._ensure_month_filter(question, sql)
+
+            # ── Filtro de perfil soberano (tipo comprobante + método pago) ─
+            # Se aplica siempre que haya un perfil activo, como segunda red de seguridad
+            _active_profile = getattr(self, "_active_sovereign_profile", None)
+            if _active_profile and _apply_profile_filter:
+                sql = _apply_profile_filter(sql, _active_profile)
 
             try:
                 logger.info(f"SQL generado: {sql[:100]}...")
@@ -509,6 +612,9 @@ class NL2SQLEngine:
 
         except UnicodeEncodeError as e:
             raise ValueError(f"Error de codificación: {e}")
+        except ValueError:
+            # Re-lanzar ValueError tal cual (incluye PERFIL_SCOPE:) sin envolver
+            raise
         except Exception as e:
             try:
                 logger.error(f"Error generando SQL: {e}")
@@ -516,7 +622,7 @@ class NL2SQLEngine:
                 logger.error("Error generando SQL (detalles no imprimibles)")
             raise ValueError(f"Error al generar SQL: {e}")
 
-    def _build_system_prompt(self, empresa_id: Optional[str] = None) -> str:
+    def _build_system_prompt(self, empresa_id: Optional[str] = None, sovereign_context: str = "") -> str:
         """Construye el system prompt para generación de SQL."""
         empresa_filter = ""
         if empresa_id:
@@ -524,7 +630,7 @@ class NL2SQLEngine:
 IMPORTANTE: Filtra SIEMPRE por empresa_id = '{empresa_id}' en las tablas que tengan empresa_id.
 """
 
-        return f"""Eres un experto en SQL PostgreSQL para un sistema de facturación electrónica CFDI de México.
+        return f"""{sovereign_context}Eres un experto en SQL PostgreSQL para un sistema de facturación electrónica CFDI de México.
 
 Tu ÚNICA tarea es generar una consulta SQL SELECT válida a partir de la pregunta del usuario.
 
@@ -540,10 +646,27 @@ REGLAS ESTRICTAS:
 9. Responde SOLO con la consulta SQL, sin explicación ni markdown. NO uses emojis ni caracteres especiales.
 10. SIEMPRE intenta generar una consulta SQL válida. NUNCA generes el fallback de "Pregunta no compatible". Si la pregunta es genérica (ej: "qué gráficas me ofreces", "qué estadísticas tienes", "qué puedes hacer", "muéstrame análisis"), genera un resumen estadístico completo de cfdi_ventas con COUNT, AVG, MIN, MAX, STDDEV, PERCENTILE_CONT(0.25), PERCENTILE_CONT(0.5), PERCENTILE_CONT(0.75) sobre el campo total. Si la pregunta es sobre capacidades o ayuda, genera igualmente ese resumen estadístico como demostración.
 11. Cuando pregunten por "empresas", "clientes" o "quién compró", busca en receptor_nombre de cfdi_ventas.
-12. Para meses por nombre, usa EXTRACT(MONTH FROM fecha_emision) = N. Mapeo COMPLETO:
-  enero/ene=1, febrero/feb=2, marzo/mar=3, abril/abr=4, mayo/may=5, junio/jun=6,
-  julio/jul=7, agosto/ago=8, septiembre/sep/sept=9, octubre/oct=10, noviembre/nov=11, diciembre/dic=12.
-  SIEMPRE aplica el filtro de mes cuando el usuario lo mencione, incluso si pide un tipo de gráfica (pie, dona, pay, pastel, barras, etc.). El filtro de mes NUNCA es opcional.
+12. Para filtros de fecha USA SIEMPRE fecha_emision >= 'YYYY-MM-DD' AND fecha_emision < 'YYYY-MM-DD'. NUNCA uses EXTRACT(MONTH FROM fecha_emision) ni EXTRACT(YEAR FROM fecha_emision) para filtrar rangos. EXTRACT solo se permite en el SELECT para agrupar (ej: DATE_TRUNC('month', fecha_emision)).
+  Mapeo de mes a número (solo para referencia interna): enero/ene=1, febrero/feb=2, marzo/mar=3, abril/abr=4, mayo/may=5, junio/jun=6, julio/jul=7, agosto/ago=8, septiembre/sep/sept=9, octubre/oct=10, noviembre/nov=11, diciembre/dic=12.
+
+**PATRÓN OBLIGATORIO — Porcentaje de ventas mes a mes:**
+Cuando el usuario pida "porcentaje de ventas mes a mes" o "distribución mensual" o "pay/pie por mes", usa EXACTAMENTE este patrón:
+```sql
+WITH ventas_mes AS (
+  SELECT DATE_TRUNC('month', fecha_emision) AS mes,
+         SUM(total * COALESCE(tipo_cambio, 1)) AS total_mxn
+  FROM cfdi_ventas
+  WHERE empresa_id = '<empresa_id>'
+    AND fecha_emision >= 'FECHA_INICIO' AND fecha_emision < 'FECHA_FIN'
+  GROUP BY 1
+)
+SELECT mes,
+       ROUND(total_mxn::numeric, 2) AS ventas,
+       ROUND(total_mxn * 100.0 / SUM(total_mxn) OVER (), 2) AS porcentaje
+FROM ventas_mes
+ORDER BY mes;
+```
+NUNCA pongas ORDER BY dentro de la CTE ventas_mes (PostgreSQL no lo permite en CTEs con window functions). El ORDER BY va solo en el SELECT final.
 13. Para estadísticas usa funciones de PostgreSQL: AVG() para promedio/media, PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY col) para mediana, STDDEV() o STDDEV_POP() para desviación estándar, VARIANCE() para varianza, MIN() y MAX() para rango, MODE() WITHIN GROUP (ORDER BY col) para moda.
 14. Cuando pidan "estadísticas", "resumen estadístico" o "análisis estadístico", genera una consulta que incluya COUNT, AVG, MIN, MAX, STDDEV y PERCENTILE_CONT(0.5) del campo numérico relevante.
 15. Para percentiles usa PERCENTILE_CONT(0.25/0.50/0.75) WITHIN GROUP (ORDER BY columna).
@@ -776,6 +899,9 @@ SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quart
         sql = re.sub(r'```\s*$', '', sql)
         sql = sql.strip()
 
+        # Normalizar operadores Unicode que el modelo puede generar
+        sql = sql.replace("≥", ">=").replace("≤", "<=").replace("≠", "<>")
+
         # --- FIX: PERCENTILE_CONT/MODE con OVER() no es válido en PostgreSQL ---
         # Detectar: PERCENTILE_CONT(...) WITHIN GROUP (...) OVER (...)
         # Esto es un "ordered-set aggregate" y no soporta window functions
@@ -847,33 +973,149 @@ SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quart
         m = re.search(r'\b(20[2-3]\d)\b', question)
         return int(m.group(1)) if m else None
 
+    @staticmethod
+    def _normalize_year(y: str) -> int:
+        """Convierte año de 2 o 4 dígitos a entero de 4 dígitos. '25' → 2025, '2025' → 2025."""
+        n = int(y)
+        return 2000 + n if n < 100 else n
+
     def _detect_date_range(self, question: str) -> Optional[tuple]:
-        """Detecta rangos de meses como 'enero a diciembre 2025' o 'enero 2025 a dic 2025'."""
+        """Detecta rangos de meses como 'ene a dic 2025', 'abr 25 a nov 25'.
+        Acepta años de 2 dígitos ('25' → 2025) o 4 dígitos ('2025').
+        La pregunta ya llega normalizada por _normalize_question_dates.
+        """
         q = question.lower()
-        # Patrón 1: "enero a diciembre 2025" (año al final)
-        pattern1 = r'(\w+)\s+(?:a|al|hasta|-)\s+(\w+)\s+(20[2-3]\d)'
-        # Patrón 2: "enero 2025 a dic 2025" (año después de cada mes)
-        pattern2 = r'(\w+)\s+(20[2-3]\d)\s+(?:a|al|hasta|-)\s+(\w+)\s+(20[2-3]\d)'
-        # Patrón 3: "reporte 2025" o "ventas del 2025" (año completo sin meses)
-        pattern3 = r'\b(?:reporte|ventas|facturaci[oó]n|informe|resumen)\b.*?\b(20[2-3]\d)\b'
+        _yr = r'(20[2-3]\d|\d{2})'  # año 2-digit o 4-digit
+        # Patrón 1: "enero a diciembre 2025" o "abril a nov 25" (año al final, mismo para ambos)
+        pattern1 = rf'(\w+)\s+(?:a|al|hasta|-)\s+(\w+)\s+{_yr}(?!\d)'
+        # Patrón 2: "enero 2025 a dic 2025" o "abr 25 a nov 25" (año tras cada mes)
+        pattern2 = rf'(\w+)\s+{_yr}(?!\d)\s+(?:a|al|hasta|-)\s+(\w+)\s+{_yr}(?!\d)'
 
         m2 = re.search(pattern2, q)
         if m2:
-            start_name, year1, end_name, year2 = m2.group(1), int(m2.group(2)), m2.group(3), int(m2.group(4))
+            start_name, y1_raw, end_name, y2_raw = m2.group(1), m2.group(2), m2.group(3), m2.group(4)
             start_month = self._MONTH_MAP.get(start_name)
             end_month = self._MONTH_MAP.get(end_name)
             if start_month and end_month:
-                return (year1, start_month, end_month)
+                return (self._normalize_year(y1_raw), start_month,
+                        self._normalize_year(y2_raw), end_month)
 
         m1 = re.search(pattern1, q)
         if m1:
-            start_name, end_name, year = m1.group(1), m1.group(2), int(m1.group(3))
+            start_name, end_name, yr_raw = m1.group(1), m1.group(2), m1.group(3)
             start_month = self._MONTH_MAP.get(start_name)
             end_month = self._MONTH_MAP.get(end_name)
             if start_month and end_month:
-                return (year, start_month, end_month)
+                year = self._normalize_year(yr_raw)
+                return (year, start_month, year, end_month)
 
         return None
+
+    def _apply_sovereign_filter(self, sql: str, periodo_soberano: dict) -> str:
+        """Garantiza que el SQL nunca consulte fuera del rango soberano.
+
+        Estrategia de «techo»:
+        1. Si el modelo ya generó filtros de fecha → clampea al rango soberano
+           (las fechas del modelo se respetan si caen dentro del rango).
+        2. Si el modelo NO generó filtros de fecha → inyecta el rango soberano
+           completo como safety net.
+
+        Detecta la tabla principal para usar la columna de fecha correcta:
+          - cfdi_ventas  → fecha_emision
+          - cfdi_pagos   → fecha_pago
+          - otras        → no inyecta filtro de fecha (evita errores de columna)
+        """
+        desde = periodo_soberano.get("desde")       # "YYYY-MM-DD"
+        hasta_excl = periodo_soberano.get("hasta_excl")  # "YYYY-MM-DD"
+        if not desde or not hasta_excl:
+            return sql
+
+        # ── Normalizar operadores Unicode que el modelo pueda generar ───────
+        sql = sql.replace("≥", ">=").replace("≤", "<=").replace("≠", "<>")
+
+        # ── Detectar columna de fecha según tabla principal ─────────────────
+        sql_upper = sql.upper()
+        if "CFDI_PAGOS" in sql_upper and "CFDI_VENTAS" not in sql_upper:
+            fecha_col = "fecha_pago"
+        elif "CFDI_VENTAS" in sql_upper:
+            fecha_col = "fecha_emision"
+        else:
+            logger.info("_apply_sovereign_filter: tabla no reconocida, omitiendo inyección de fecha")
+            return sql
+
+        # ── Extraer fechas literales que el modelo ya generó ────────────────
+        _date_pattern = re.compile(
+            fecha_col + r"\s*(?:>=|>|<=|<|=)\s*'(\d{4}-\d{2}-\d{2})'",
+            re.IGNORECASE,
+        )
+        model_dates = _date_pattern.findall(sql)
+
+        if model_dates:
+            # ── Clampear: ajustar fechas del modelo para que no salgan del rango soberano
+            def _clamp_date(d: str) -> str:
+                if d < desde:
+                    return desde
+                if d > hasta_excl:
+                    return hasta_excl
+                return d
+
+            def _replace_date(m: re.Match) -> str:
+                original = m.group(0)
+                date_val = m.group(1)
+                clamped = _clamp_date(date_val)
+                if clamped != date_val:
+                    logger.info(f"Sovereign clamp: {date_val} → {clamped}")
+                return original.replace(date_val, clamped)
+
+            sql = _date_pattern.sub(_replace_date, sql)
+            logger.info(f"Filtro soberano (clamp): fechas del modelo ajustadas al rango {desde} → {hasta_excl}")
+
+        else:
+            # ── No hay filtros de fecha del modelo → inyectar rango completo ─
+            range_clause = f"{fecha_col} >= '{desde}' AND {fecha_col} < '{hasta_excl}'"
+
+            # Limpiar posibles EXTRACT temporales del modelo
+            for _ in range(4):
+                sql = re.sub(
+                    r'\s*AND\s+EXTRACT\s*\(\s*(?:MONTH|YEAR)\s+FROM\s+' + fecha_col + r'\s*\)\s*=\s*(?:EXTRACT\s*\([^)]*\)(?:\s*-\s*\d+)?|\d+)',
+                    '', sql, flags=re.IGNORECASE
+                )
+                sql = re.sub(
+                    r'EXTRACT\s*\(\s*(?:MONTH|YEAR)\s+FROM\s+' + fecha_col + r'\s*\)\s*=\s*(?:EXTRACT\s*\([^)]*\)(?:\s*-\s*\d+)?|\d+)\s*AND\s*',
+                    '', sql, flags=re.IGNORECASE
+                )
+                sql = re.sub(
+                    r'EXTRACT\s*\(\s*(?:MONTH|YEAR)\s+FROM\s+' + fecha_col + r'\s*\)\s*=\s*(?:EXTRACT\s*\([^)]*\)(?:\s*-\s*\d+)?|\d+)',
+                    '', sql, flags=re.IGNORECASE
+                )
+
+            # Reparar WHERE malformado
+            sql = re.sub(r'WHERE\s+(GROUP|ORDER|LIMIT|HAVING)', r'\1', sql, flags=re.IGNORECASE)
+            sql = re.sub(r'WHERE\s+AND\b', 'WHERE', sql, flags=re.IGNORECASE)
+            sql = re.sub(r'WHERE\s*;', ';', sql, flags=re.IGNORECASE)
+            sql = re.sub(r'\bAND\s+AND\b', 'AND', sql, flags=re.IGNORECASE)
+            sql = re.sub(r'\s+AND\s+(GROUP|ORDER|LIMIT|HAVING)\b', r' \1', sql, flags=re.IGNORECASE)
+
+            # Inyectar rango soberano
+            sql_upper = sql.upper()
+            if 'WHERE' in sql_upper:
+                idx = sql_upper.index('WHERE') + len('WHERE')
+                sql = sql[:idx] + f' {range_clause} AND' + sql[idx:]
+            elif 'GROUP BY' in sql_upper:
+                idx = sql_upper.index('GROUP BY')
+                sql = sql[:idx] + f'WHERE {range_clause} ' + sql[idx:]
+            elif 'ORDER BY' in sql_upper:
+                idx = sql_upper.index('ORDER BY')
+                sql = sql[:idx] + f'WHERE {range_clause} ' + sql[idx:]
+            elif 'LIMIT' in sql_upper:
+                idx = sql_upper.index('LIMIT')
+                sql = sql[:idx] + f'WHERE {range_clause} ' + sql[idx:]
+            else:
+                sql = sql.rstrip(';') + f' WHERE {range_clause};'
+
+            logger.info(f"Filtro soberano inyectado (sin fechas del modelo): {desde} → {hasta_excl}")
+
+        return sql
 
     def _ensure_month_filter(self, question: str, sql: str) -> str:
         """Si la pregunta menciona un mes pero el SQL no lo filtra, inyecta el WHERE.
@@ -888,14 +1130,15 @@ SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quart
         explicit_year = self._detect_explicit_year(question)
         date_range = self._detect_date_range(question)
 
-        # --- Caso 1: Rango de meses con año ("enero a diciembre 2025") ---
+        # --- Caso 1: Rango de meses con año ("enero a diciembre 2025" o "ene 2024 a feb 2026") ---
         if date_range:
-            year, start_month, end_month = date_range
-            start_date = f"{year}-{start_month:02d}-01"
+            # Siempre 4 valores: (year_inicio, mes_inicio, year_fin, mes_fin)
+            year_start, start_month, year_end, end_month = date_range
+            start_date = f"{year_start}-{start_month:02d}-01"
             if end_month == 12:
-                end_date = f"{year + 1}-01-01"
+                end_date = f"{year_end + 1}-01-01"
             else:
-                end_date = f"{year}-{end_month + 1:02d}-01"
+                end_date = f"{year_end}-{end_month + 1:02d}-01"
             range_clause = f"fecha_emision >= '{start_date}' AND fecha_emision < '{end_date}'"
 
             # Remover todas las condiciones EXTRACT(MONTH/YEAR FROM fecha_emision) = ...
@@ -914,9 +1157,10 @@ SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quart
                     '', sql, flags=re.IGNORECASE
                 )
             # Limpiar WHERE vacío o malformado
-            sql = re.sub(r'WHERE\s+(GROUP|ORDER|LIMIT)', r'\1', sql, flags=re.IGNORECASE)
+            sql = re.sub(r'WHERE\s+(GROUP|ORDER|LIMIT|HAVING)', r'\1', sql, flags=re.IGNORECASE)
             sql = re.sub(r'WHERE\s+AND\b', 'WHERE', sql, flags=re.IGNORECASE)
             sql = re.sub(r'WHERE\s*;', ';', sql, flags=re.IGNORECASE)
+            sql = re.sub(r'\s+AND\s+(GROUP|ORDER|LIMIT|HAVING)\b', r' \1', sql, flags=re.IGNORECASE)
 
             sql_upper = sql.upper()
             if 'WHERE' in sql_upper:
@@ -1758,7 +2002,10 @@ Si el usuario pidió explícitamente una orientación (ej: "vertical", "horizont
     def ask(
         self,
         question: str,
-        empresa_id: Optional[str] = None
+        empresa_id: Optional[str] = None,
+        periodo_soberano: Optional[dict] = None,
+        sovereign_index: Optional[dict] = None,
+        sovereign_profile: Optional[dict] = None,
     ) -> NL2SQLResult:
         """
         Pipeline completo: pregunta → SQL → ejecución → interpretación.
@@ -1766,6 +2013,9 @@ Si el usuario pidió explícitamente una orientación (ej: "vertical", "horizont
         Args:
             question: Pregunta en lenguaje natural (español)
             empresa_id: UUID de empresa para filtrar (opcional)
+            periodo_soberano: Dict con desde/hasta/hasta_excl/granularidad del slider soberano
+            sovereign_index: Índice completo de períodos del dataset
+            sovereign_profile: Perfil soberano activo (de sovereign_profiles.PERFILES)
 
         Returns:
             NL2SQLResult con todos los datos
@@ -1773,9 +2023,42 @@ Si el usuario pidió explícitamente una orientación (ej: "vertical", "horizont
         start_time = time.time()
         result = NL2SQLResult(question=question, sql="")
 
+        # Construir contexto soberano de perfil (semántico)
+        _profile_ctx = ""
+        if sovereign_profile and _sp_profile_ctx:
+            try:
+                _profile_ctx = _sp_profile_ctx(sovereign_profile)
+            except Exception:
+                _profile_ctx = ""
+
+        # Construir contexto soberano temporal
+        _sovereign_ctx = _profile_ctx
+        if periodo_soberano and _sp_build_prompt:
+            try:
+                _sovereign_ctx = _profile_ctx + _sp_build_prompt(periodo_soberano, sovereign_index or {})
+            except Exception:
+                _sovereign_ctx = _profile_ctx
+
+        # Guardar perfil activo en el engine para que generate_sql lo use como filtro post-generación
+        self._active_sovereign_profile = sovereign_profile
+
         try:
             # Paso 1: Generar SQL
-            sql = self.generate_sql(question, empresa_id)
+            try:
+                sql = self.generate_sql(question, empresa_id,
+                                        sovereign_context=_sovereign_ctx,
+                                        periodo_soberano=periodo_soberano or None)
+            except ValueError as ve:
+                _ve_str = str(ve)
+                if _ve_str.startswith("PERFIL_SCOPE:"):
+                    # El modelo reconoció que la pregunta está fuera del perfil activo
+                    _msg = _ve_str[len("PERFIL_SCOPE:"):].strip()
+                    result.interpretation = _msg
+                    result.error = f"🎯 {_msg}"
+                    result.execution_time = time.time() - start_time
+                    self.history.append(result)
+                    return result
+                raise
 
             # Paso 1b: Detectar uso incorrecto de tabla `empresas` para clientes
             # Si se detecta, regenerar con instrucción explícita de corrección
@@ -1876,7 +2159,13 @@ Si el usuario pidió explícitamente una orientación (ej: "vertical", "horizont
             result.chart_spec = chart_spec
 
         except ValueError as e:
-            result.error = f"❌ Error generando SQL: {e}"
+            _e_str = str(e)
+            if "PERFIL_SCOPE:" in _e_str:
+                _msg = _e_str.split("PERFIL_SCOPE:", 1)[1].strip()
+                result.interpretation = _msg
+                result.error = f"🎯 {_msg}"
+            else:
+                result.error = f"❌ Error generando SQL: {e}"
         except RuntimeError as e:
             result.error = f"⚠️ Error de ejecución: {e}"
         except Exception as e:

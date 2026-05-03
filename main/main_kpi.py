@@ -1,3 +1,5 @@
+import io
+
 import streamlit as st
 import pandas as pd
 import altair as alt
@@ -9,8 +11,26 @@ from utils.auth import get_current_user
 
 logger = configurar_logger("main_kpi", nivel="INFO")
 
+
+def _detectar_columna(df, candidatos):
+    for col in df.columns:
+        if col.lower() in candidatos:
+            return col
+    return None
+
+
+def _detectar_columna_existente(df, candidatos):
+    return next((col for col in candidatos if col in df.columns), None)
+
+
+def _dataframe_to_excel_bytes(df):
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="ranking")
+    return output.getvalue()
+
 def run(habilitar_ia=False, openai_api_key=None):
-    st.title("📈 KPIs Generales")
+    st.title("📈 Desempeño Comercial")
 
     if "df" not in st.session_state:
         st.warning("Primero debes cargar un archivo CSV o Excel en el menú lateral.")
@@ -31,27 +51,15 @@ def run(habilitar_ia=False, openai_api_key=None):
 
     df["anio"] = pd.to_datetime(df["fecha"], errors="coerce").dt.year
 
-    # Mostrar dimensiones generales
-    st.subheader("Resumen General de Ventas")
-
-    total_usd = df["valor_usd"].sum()
-    total_operaciones = len(df)
-
-    col1, col2 = st.columns(2)
-    col1.metric("Total Ventas USD", f"${total_usd:,.2f}",
-                help="📐 Suma total de ventas en USD de todos los registros en el archivo")
-    col2.metric("Operaciones", f"{total_operaciones:,}",
-                help="📐 Número total de transacciones/facturas registradas")
+    total_usd_base = df["valor_usd"].sum()
+    total_operaciones_base = len(df)
 
     # === Filtros opcionales ===
-    st.subheader("Filtros por Ejecutivo")
+    st.subheader("Filtros del análisis")
 
-    # Buscar dinámicamente si la columna se llama 'agente', 'vendedor' o 'ejecutivo'
-    columna_agente = None
-    for col in df.columns:
-        if col.lower() in ["agente", "vendedor", "ejecutivo"]:
-            columna_agente = col
-            break
+    columna_agente = _detectar_columna(df, {"agente", "vendedor", "ejecutivo"})
+    columna_linea = _detectar_columna_existente(df, ["linea_de_negocio", "linea_producto"])
+    columna_cliente = _detectar_columna_existente(df, ["cliente", "receptor_nombre", "razon_social"])
 
     if columna_agente:
         df["agente"] = df[columna_agente]  # Ya normalizado en app.py
@@ -63,52 +71,77 @@ def run(habilitar_ia=False, openai_api_key=None):
     else:
         st.warning("⚠️ No se encontró columna 'agente', 'vendedor' o 'ejecutivo'.")
 
-    # Filtro adicional: línea de producto
-    linea_producto = df["linea_producto"].dropna().unique() if "linea_producto" in df.columns else []
-    linea_sel = st.selectbox("Selecciona Línea de Producto (opcional):", ["Todas"] + list(linea_producto)) if len(linea_producto) > 0 else "Todas"
+    # Filtro adicional: línea de negocio o producto
+    if columna_linea:
+        lineas = sorted(df[columna_linea].dropna().astype(str).unique())
+        linea_sel = st.selectbox("Selecciona Línea (opcional):", ["Todas"] + list(lineas))
+    else:
+        linea_sel = "Todas"
 
-    if linea_sel != "Todas" and "linea_producto" in df.columns:
-        df = df[df["linea_producto"] == linea_sel]
+    if linea_sel != "Todas" and columna_linea:
+        df = df[df[columna_linea].astype(str) == linea_sel]
 
-    # KPIs filtrados
-    st.subheader("KPIs Filtrados")
+    st.caption(
+        f"Contexto activo: Ejecutivo = {agente_sel if columna_agente else 'No disponible'} | "
+        f"Línea = {linea_sel}"
+    )
+
+    # KPIs del contexto filtrado
+    st.subheader("KPIs del contexto")
     total_filtrado_usd = df["valor_usd"].sum()
     operaciones_filtradas = len(df)
+    ticket_promedio = total_filtrado_usd / operaciones_filtradas if operaciones_filtradas > 0 else 0
+    vendedores_activos = df["agente"].nunique() if "agente" in df.columns else 0
+    clientes_unicos = df[columna_cliente].nunique() if columna_cliente else 0
+    operaciones_promedio_vendedor = (
+        operaciones_filtradas / vendedores_activos
+        if vendedores_activos > 0 else 0
+    )
 
-    colf1, colf2 = st.columns(2)
-    colf1.metric("Ventas USD (filtro)", f"${total_filtrado_usd:,.2f}",
-                 help="📐 Total de ventas después de aplicar filtros de ejecutivo/línea")
-    colf2.metric("Operaciones (filtro)", f"{operaciones_filtradas:,}",
-                 help="📐 Número de transacciones que cumplen con los filtros aplicados")
-
-    # Tabla de detalle
-    st.subheader("Detalle de ventas")
-    st.dataframe(df.sort_values("fecha", ascending=False).head(50))
-
-    # Ranking de vendedores
-    if "agente" in df.columns:
-        st.subheader("🏆 Ranking de Vendedores")
-
-        ranking = (
-            df.groupby("agente")
-            .agg(total_usd=("valor_usd", "sum"), operaciones=("valor_usd", "count"))
-            .sort_values("total_usd", ascending=False)
-            .reset_index()
+    colf1, colf2, colf3, colf4 = st.columns(4)
+    colf1.metric(
+        "💰 Ventas USD",
+        f"${total_filtrado_usd:,.2f}",
+        delta=f"{(total_filtrado_usd / total_usd_base * 100):.1f}% del total" if total_usd_base > 0 else None,
+        help="📐 Total de ventas después de aplicar filtros"
+    )
+    colf2.metric(
+        "📦 Operaciones",
+        f"{operaciones_filtradas:,}",
+        delta=(
+            f"{operaciones_promedio_vendedor:,.0f} prom./vendedor"
+            if vendedores_activos > 0 else None
+        ),
+        help="📐 Número total de transacciones que cumplen los filtros"
+    )
+    colf3.metric(
+        "💳 Ticket Prom./Operación",
+        f"${ticket_promedio:,.2f}",
+        help="📐 Promedio ponderado del contexto: ventas totales / operaciones"
+    )
+    if columna_cliente:
+        colf4.metric(
+            "👥 Clientes Únicos",
+            f"{clientes_unicos:,}",
+            help="📐 Clientes distintos dentro del contexto filtrado"
+        )
+    else:
+        colf4.metric(
+            "👤 Vendedores Activos",
+            f"{vendedores_activos:,}",
+            help="📐 Vendedores con actividad dentro del contexto filtrado"
         )
 
-        ranking.insert(0, "Ranking", range(1, len(ranking) + 1))
-        ranking["total_usd"] = ranking["total_usd"].round(0)
+    with st.expander("📋 Ver detalle de ventas filtradas", expanded=False):
+        st.dataframe(df.sort_values("fecha", ascending=False).head(50), use_container_width=True)
 
-        st.dataframe(ranking.style.format({
-            "total_usd": "${:,.2f}",
-            "operaciones": "{:,}"
-        }))
-        
+    # Ranking de vendedores
+    if "agente" in df.columns and df["agente"].nunique() > 1:
+        st.subheader("🏆 Ranking de Vendedores")
+
         # =====================================================================
         # KPIs DE EFICIENCIA POR VENDEDOR
         # =====================================================================
-        st.subheader("⚡ KPIs de Eficiencia por Vendedor")
-        
         # Calcular métricas de eficiencia
         vendedores_eficiencia = []
         
@@ -139,23 +172,112 @@ def run(habilitar_ia=False, openai_api_key=None):
             })
         
         df_eficiencia_ventas = pd.DataFrame(vendedores_eficiencia)
-        
-        # Clasificar vendedores
-        # Alto volumen = muchas operaciones, Alto ticket = mayor valor por operación
+
         mediana_ops = df_eficiencia_ventas['operaciones'].median()
         mediana_ticket = df_eficiencia_ventas['ticket_promedio'].median()
-        
+
         def clasificar_vendedor(row):
             if row['operaciones'] > mediana_ops and row['ticket_promedio'] > mediana_ticket:
-                return "🌟 Elite (Alto Volumen + Alto Ticket)"
+                return "🌟 Elite"
             elif row['operaciones'] > mediana_ops:
                 return "📊 Alto Volumen"
             elif row['ticket_promedio'] > mediana_ticket:
-                return "💎 Alto Ticket (Eficiencia)"
+                return "💎 Alto Ticket"
             else:
                 return "🔄 En Desarrollo"
-        
+
         df_eficiencia_ventas['clasificacion'] = df_eficiencia_ventas.apply(clasificar_vendedor, axis=1)
+
+        criterio_labels = {
+            "total_ventas": "Ventas Totales",
+            "operaciones": "Operaciones",
+            "ticket_promedio": "Ticket Promedio",
+            "ventas_por_cliente": "Venta por Cliente",
+        }
+        criterio_ranking = st.selectbox(
+            "Ordenar ranking por:",
+            options=list(criterio_labels.keys()),
+            format_func=lambda key: criterio_labels[key],
+            key="ranking_criterio_kpi",
+        )
+
+        ranking_df = (
+            df_eficiencia_ventas
+            .sort_values(criterio_ranking, ascending=False)
+            .reset_index(drop=True)
+            .copy()
+        )
+        ranking_df.insert(0, "ranking", range(1, len(ranking_df) + 1))
+
+        podio = ranking_df.head(3)
+        podio_cols = st.columns(3)
+        medallas = ["🥇", "🥈", "🥉"]
+        for idx, (_, row) in enumerate(podio.iterrows()):
+            with podio_cols[idx]:
+                cont = st.container(border=True)
+                cont.markdown(f"### {medallas[idx]} {row['agente']}")
+                cont.metric("Ventas", f"${row['total_ventas']:,.0f}")
+                cont.caption(
+                    f"Ops: {int(row['operaciones'])} | Ticket: ${row['ticket_promedio']:,.0f} | "
+                    f"Clientes: {int(row['clientes_unicos']) if row['clientes_unicos'] > 0 else 0}"
+                )
+                cont.caption(row['clasificacion'])
+
+        ranking_export = ranking_df[[
+            "ranking", "agente", "total_ventas", "operaciones", "ticket_promedio",
+            "clientes_unicos", "ventas_por_cliente", "clasificacion"
+        ]].copy()
+        ranking_export.columns = [
+            "Ranking", "Vendedor", "Ventas Totales", "Operaciones", "Ticket Promedio",
+            "Clientes", "Venta por Cliente", "Clasificacion"
+        ]
+
+        col_descarga_1, col_descarga_2 = st.columns(2)
+        with col_descarga_1:
+            st.download_button(
+                "Descargar ranking CSV",
+                data=ranking_export.to_csv(index=False).encode("utf-8-sig"),
+                file_name="ranking_vendedores.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
+        with col_descarga_2:
+            st.download_button(
+                "Descargar ranking Excel",
+                data=_dataframe_to_excel_bytes(ranking_export),
+                file_name="ranking_vendedores.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
+
+        ranking_display = ranking_export.copy()
+        ranking_display["Medalla"] = ranking_display["Ranking"].map({1: "🥇", 2: "🥈", 3: "🥉"}).fillna("")
+        ranking_display = ranking_display[[
+            "Ranking", "Medalla", "Vendedor", "Ventas Totales", "Operaciones",
+            "Ticket Promedio", "Clientes", "Venta por Cliente", "Clasificacion"
+        ]]
+        ranking_styler = (
+            ranking_display.style
+            .format({
+                "Ranking": "{:,.0f}",
+                "Ventas Totales": "${:,.0f}",
+                "Operaciones": "{:,.0f}",
+                "Ticket Promedio": "${:,.2f}",
+                "Clientes": "{:,.0f}",
+                "Venta por Cliente": "${:,.2f}",
+            })
+            .bar(subset=["Ventas Totales", "Operaciones"], color="#ff4b4b")
+        )
+        st.markdown(
+            ranking_styler.hide(axis="index").to_html(),
+            unsafe_allow_html=True,
+        )
+
+        st.subheader("⚡ KPIs de Eficiencia por Vendedor")
+        st.caption(
+            "Estos indicadores comparan vendedores entre sí. "
+            "No equivalen al ticket promedio por operación mostrado arriba."
+        )
         
         # Mostrar métricas principales
         col_ef1, col_ef2, col_ef3, col_ef4 = st.columns(4)
@@ -163,16 +285,16 @@ def run(habilitar_ia=False, openai_api_key=None):
         mejor_ticket = df_eficiencia_ventas.loc[df_eficiencia_ventas['ticket_promedio'].idxmax()]
         mayor_volumen = df_eficiencia_ventas.loc[df_eficiencia_ventas['operaciones'].idxmax()]
         
-        col_ef1.metric("💰 Mejor Ticket Promedio", 
+        col_ef1.metric("💰 Mejor Ticket por Vendedor", 
                       f"${mejor_ticket['ticket_promedio']:,.2f}",
                       delta=mejor_ticket['agente'])
-        col_ef2.metric("📊 Mayor Volumen Ops", 
+        col_ef2.metric("📊 Mayor Volumen de Ops", 
                       f"{mayor_volumen['operaciones']:,.0f}",
                       delta=mayor_volumen['agente'])
-        col_ef3.metric("💵 Ticket Prom. General", 
+        col_ef3.metric("💵 Ticket Prom. por Vendedor", 
                       f"${df_eficiencia_ventas['ticket_promedio'].mean():,.2f}")
-        col_ef4.metric("🎯 Ops Promedio", 
-                      f"{df_eficiencia_ventas['operaciones'].mean():,.0f}")
+        col_ef4.metric("👤 Vendedores Evaluados", 
+                      f"{len(df_eficiencia_ventas):,.0f}")
         
         # Matriz de Eficiencia vs Volumen
         st.write("### 📈 Matriz de Eficiencia vs Volumen")
@@ -202,30 +324,13 @@ def run(habilitar_ia=False, openai_api_key=None):
         fig_matriz.update_layout(height=500)
         st.plotly_chart(fig_matriz, width='stretch')
         
-        # Tabla detallada de eficiencia
-        st.write("### 📋 Tabla Detallada de Eficiencia")
-        
-        df_ef_display = df_eficiencia_ventas.sort_values('total_ventas', ascending=False).copy()
-        
-        # Formatear columnas
-        df_ef_table = df_ef_display[['agente', 'total_ventas', 'operaciones', 'ticket_promedio', 
-                                     'clientes_unicos', 'ventas_por_cliente', 'clasificacion']].copy()
-        
-        df_ef_table['total_ventas'] = df_ef_table['total_ventas'].apply(lambda x: f"${x:,.2f}")
-        df_ef_table['ticket_promedio'] = df_ef_table['ticket_promedio'].apply(lambda x: f"${x:,.2f}")
-        df_ef_table['ventas_por_cliente'] = df_ef_table['ventas_por_cliente'].apply(
-            lambda x: f"${x:,.2f}" if x > 0 else "N/A"
-        )
-        df_ef_table['clientes_unicos'] = df_ef_table['clientes_unicos'].apply(
-            lambda x: f"{int(x)}" if x > 0 else "N/A"
-        )
-        
-        df_ef_table.columns = [
-            'Vendedor', 'Ventas Totales', 'Operaciones', 'Ticket Promedio',
-            'Clientes', 'Venta/Cliente', 'Clasificación'
-        ]
-        
-        st.dataframe(df_ef_table, width='stretch', hide_index=True)
+        # Resumen ejecutivo por cuadrantes
+        st.write("### 🧭 Mapa de Cuadrantes")
+        q1, q2, q3, q4 = st.columns(4)
+        q1.metric("🌟 Elite", f"{(df_eficiencia_ventas['clasificacion'] == '🌟 Elite').sum()}")
+        q2.metric("📊 Alto Volumen", f"{(df_eficiencia_ventas['clasificacion'] == '📊 Alto Volumen').sum()}")
+        q3.metric("💎 Alto Ticket", f"{(df_eficiencia_ventas['clasificacion'] == '💎 Alto Ticket').sum()}")
+        q4.metric("🔄 En Desarrollo", f"{(df_eficiencia_ventas['clasificacion'] == '🔄 En Desarrollo').sum()}")
         
         # Insights y recomendaciones
         st.write("### 💡 Insights y Recomendaciones")
@@ -233,7 +338,7 @@ def run(habilitar_ia=False, openai_api_key=None):
         elite = df_eficiencia_ventas[df_eficiencia_ventas['clasificacion'].str.contains('Elite')]
         alto_vol = df_eficiencia_ventas[df_eficiencia_ventas['clasificacion'].str.contains('Alto Volumen') & 
                                        ~df_eficiencia_ventas['clasificacion'].str.contains('Elite')]
-        alta_ef = df_eficiencia_ventas[df_eficiencia_ventas['clasificacion'].str.contains('Alta Eficiencia')]
+        alta_ef = df_eficiencia_ventas[df_eficiencia_ventas['clasificacion'].str.contains('Alto Ticket')]
         en_desarrollo = df_eficiencia_ventas[df_eficiencia_ventas['clasificacion'].str.contains('Desarrollo')]
         
         col_ins1, col_ins2 = st.columns(2)
@@ -265,6 +370,8 @@ def run(habilitar_ia=False, openai_api_key=None):
                     st.write(f"- {v['agente']}: ${v['total_ventas']:,.2f} total")
         
         st.write("---")
+    elif "agente" in df.columns and df["agente"].nunique() == 1:
+        st.info("El contexto filtrado deja un solo vendedor; se omite el ranking comparativo.")
 
     # Gráficos por agente
     if "agente" in df.columns and not df.empty:
@@ -296,14 +403,74 @@ def run(habilitar_ia=False, openai_api_key=None):
                     operaciones=("operaciones", "sum")
                 )
                 .reset_index()
+                .sort_values("total_ventas", ascending=False)
             )
             pie_data["ventas_moneda"] = pie_data["total_ventas"].apply(lambda x: f"${x:,.2f}")
+            pie_data["pct_ventas"] = pie_data["total_ventas"] / pie_data["total_ventas"].sum()
+            pie_data["etiqueta_visible"] = pie_data.apply(
+                lambda row: f"{row['agente']}<br>{row['pct_ventas']:.1%}"
+                if row["pct_ventas"] >= 0.02 else "",
+                axis=1,
+            )
 
-            chart = alt.Chart(pie_data).mark_arc(innerRadius=50).encode(
-                theta="total_ventas:Q",
-                color="agente:N",
-                tooltip=["agente:N", "ventas_moneda:N", "operaciones:Q"]
-            ).properties(title="Participación de Vendedores (USD)")
+            chart = px.pie(
+                pie_data,
+                names="agente",
+                values="total_ventas",
+                title="Participación de Vendedores (USD)",
+                custom_data=["ventas_moneda", "operaciones", "pct_ventas", "etiqueta_visible"],
+                hole=0.35,
+            )
+            chart.update_traces(
+                pull=[0.03] * len(pie_data),
+                domain=dict(x=[0.0, 0.68], y=[0.02, 0.98]),
+                textposition="outside",
+                texttemplate="%{customdata[3]}",
+                textfont_size=14,
+                hovertemplate=(
+                    "<b>%{label}</b><br>"
+                    "Ventas: %{customdata[0]}<br>"
+                    "Operaciones: %{customdata[1]:,.0f}<br>"
+                    "Participación: %{customdata[2]:.1%}<extra></extra>"
+                )
+            )
+            chart.update_layout(
+                showlegend=False,
+                height=680,
+                margin=dict(t=70, b=40, l=70, r=140),
+                uniformtext_minsize=13,
+                uniformtext_mode="hide",
+            )
+
+            tabla_pct_html = (
+                pie_data[["agente", "ventas_moneda", "pct_ventas"]]
+                .rename(columns={
+                    "agente": "Vendedor",
+                    "ventas_moneda": "Ventas",
+                    "pct_ventas": "% Ventas",
+                })
+                .assign(**{"% Ventas": lambda df_tmp: df_tmp["% Ventas"].map(lambda v: f"{v:.1%}")})
+                .to_html(index=False, escape=False, classes="pie-summary-table", justify="center")
+            )
+            tabla_pct_bloque_html = f"""
+            <div style=\"height: 680px; display: flex; align-items: center; justify-content: center;\">
+                <div style=\"width: 100%; max-width: 360px;\">
+                    <h4 style=\"text-align: center; margin: 0 0 16px 0;\">% de ventas</h4>
+                    <style>
+                        .pie-summary-table {{
+                            margin: 0 auto;
+                            border-collapse: collapse;
+                        }}
+                        .pie-summary-table th,
+                        .pie-summary-table td {{
+                            text-align: center;
+                            vertical-align: middle;
+                        }}
+                    </style>
+                    <div style=\"display: flex; justify-content: center; text-align: center;\">{tabla_pct_html}</div>
+                </div>
+            </div>
+            """
 
         elif chart_type == "Barras Horizontales":
             bar_data = (
@@ -332,7 +499,14 @@ def run(habilitar_ia=False, openai_api_key=None):
                 tooltip=["anio:N", "agente:N", "ventas_moneda:N", "operaciones:Q"]
             ).properties(title="Ventas por Vendedor en el Tiempo")
 
-        st.altair_chart(chart, width='stretch')    
+        if chart_type == "Pie Chart":
+            col_chart, col_tabla = st.columns([2.4, 1])
+            with col_chart:
+                st.plotly_chart(chart, width='stretch')
+            with col_tabla:
+                st.markdown(tabla_pct_bloque_html, unsafe_allow_html=True)
+        else:
+            st.altair_chart(chart, width='stretch')    
     st.markdown("---")
     
     # =====================================================================
@@ -397,10 +571,17 @@ def run(habilitar_ia=False, openai_api_key=None):
                     ).fillna(0)
                     
                     num_vendedores = len(resumen_por_vendedor)
-                    ticket_promedio_general = resumen_por_vendedor["total_ventas"].sum() / resumen_por_vendedor["operaciones"].sum()
+                    total_operaciones_equipo = resumen_por_vendedor["operaciones"].sum()
+                    total_ventas_equipo = resumen_por_vendedor["total_ventas"].sum()
+                    ticket_promedio_general = (
+                        total_ventas_equipo / total_operaciones_equipo if total_operaciones_equipo > 0 else 0
+                    )
                     
-                    # Calcular eficiencia general (simplificado)
-                    eficiencia_general = 100 * (resumen_por_vendedor["total_ventas"].sum() / (resumen_por_vendedor["operaciones"].sum() * ticket_promedio_general))
+                    # Señal útil para IA: porcentaje del equipo con ticket arriba del promedio general
+                    eficiencia_general = (
+                        (resumen_por_vendedor["ticket_promedio"] >= ticket_promedio_general).mean() * 100
+                        if num_vendedores > 0 and ticket_promedio_general > 0 else 0
+                    )
                     
                     # Top y bottom performers
                     sorted_vendedores = resumen_por_vendedor.sort_values("total_ventas", ascending=False)
@@ -496,21 +677,26 @@ def run(habilitar_ia=False, openai_api_key=None):
     # =====================================================================
     with st.expander("📐 **Definiciones y Fórmulas de KPIs**"):
         st.markdown("""
-        ### 📊 Métricas Generales
+        ### 📊 KPIs del Contexto
         
-        **💰 Total Ventas USD**
-        - **Definición**: Suma de todas las ventas registradas en dólares
-        - **Fórmula**: `Σ valor_usd (todos los registros)`
+        **💰 Ventas USD**
+        - **Definición**: Suma de las ventas dentro del contexto filtrado actual
+        - **Fórmula**: `Σ valor_usd (con filtros activos)`
         - **Fuente**: Columna `ventas_usd`, `ventas_usd_con_iva` o `valor_usd`
         
         **📦 Operaciones**
-        - **Definición**: Número total de transacciones/facturas
-        - **Fórmula**: `COUNT(registros)`
+        - **Definición**: Número de transacciones/facturas dentro del contexto filtrado
+        - **Fórmula**: `COUNT(registros filtrados)`
         - **Nota**: Cada fila = 1 operación
         
-        **🎯 Ventas USD (filtro)**
-        - **Definición**: Total de ventas después de aplicar filtros de ejecutivo/línea
-        - **Uso**: Analizar desempeño segmentado
+        **💳 Ticket Promedio**
+        - **Definición**: Valor promedio por operación dentro del contexto activo
+        - **Fórmula**: `Ventas USD / Operaciones`
+        - **Uso**: Detectar calidad del ingreso, no solo volumen
+
+        **👥 Clientes Únicos / 👤 Vendedores Activos**
+        - **Definición**: Cuarta métrica contextual según la disponibilidad de columnas
+        - **Uso**: Medir cobertura comercial del subconjunto analizado
         
         ---
         
@@ -596,7 +782,7 @@ def run(habilitar_ia=False, openai_api_key=None):
         ### 📝 Notas Importantes
         
         - **Columna de agente**: Se detecta automáticamente como `agente`, `vendedor` o `ejecutivo`
-        - **Filtros**: Aplicables por ejecutivo y línea de producto
+        - **Filtros**: Aplicables por ejecutivo y por `linea_de_negocio` o `linea_producto`
         - **Años**: Se extrae automáticamente de la columna `fecha`
         - **Mediana vs Promedio**: Se usa mediana para evitar distorsión por outliers
         """)

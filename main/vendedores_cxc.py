@@ -592,60 +592,64 @@ def run():
     pct_cobertura = (cartera_asociada_vendedores / total_cartera_cxc * 100) if total_cartera_cxc > 0 else 0
     cartera_sin_asociar = total_cartera_cxc - cartera_asociada_vendedores
 
+    tab_general, tab_particular = st.tabs(["General", "Particular"])
+
     # ── UI: Resumen general ───────────────────────────────────────────────────
-    st.subheader("📊 Resumen General")
-    
-    # Mostrar alerta de cobertura si es baja
-    if pct_cobertura < 80:
-        st.info(
-            f"ℹ️ **Cobertura de matching:** {pct_cobertura:.1f}% de la cartera CxC pudo asociarse a vendedores. "
-            f"${cartera_sin_asociar:,.0f} no se pudo asociar (posibles clientes sin match o sin vendedor)."
+    with tab_general:
+        st.subheader("📊 Resumen General")
+        
+        # Mostrar alerta de cobertura si es baja
+        if pct_cobertura < 80:
+            st.info(
+                f"ℹ️ **Cobertura de matching:** {pct_cobertura:.1f}% de la cartera CxC pudo asociarse a vendedores. "
+                f"${cartera_sin_asociar:,.0f} no se pudo asociar (posibles clientes sin match o sin vendedor)."
+            )
+
+        col1, col2, col3, col4, col5 = st.columns(5)
+        col1.metric("Vendedores analizados", len(df_cruce))
+        col2.metric(
+            "💰 Ventas Totales",
+            f"${df_cruce['ventas_totales'].sum():,.0f}",
+        )
+        col3.metric(
+            "📋 Cartera Asociada",
+            f"${cartera_asociada_vendedores:,.0f}",
+            delta=f"{pct_cobertura:.1f}% de CxC total"
+        )
+        col4.metric(
+            "📊 CxC Total Sistema",
+            f"${total_cartera_cxc:,.0f}",
+        )
+        mejor = df_cruce.loc[df_cruce["score_calidad"].idxmax()]
+        col5.metric(
+            "🏆 Mejor Calidad",
+            mejor["vendedor"],
+            delta=f"Score {mejor['score_calidad']:.0f}/100",
         )
 
-    col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("Vendedores analizados", len(df_cruce))
-    col2.metric(
-        "💰 Ventas Totales",
-        f"${df_cruce['ventas_totales'].sum():,.0f}",
-    )
-    col3.metric(
-        "📋 Cartera Asociada",
-        f"${cartera_asociada_vendedores:,.0f}",
-        delta=f"{pct_cobertura:.1f}% de CxC total"
-    )
-    col4.metric(
-        "📊 CxC Total Sistema",
-        f"${total_cartera_cxc:,.0f}",
-    )
-    mejor = df_cruce.loc[df_cruce["score_calidad"].idxmax()]
-    col5.metric(
-        "🏆 Mejor Calidad",
-        mejor["vendedor"],
-        delta=f"Score {mejor['score_calidad']:.0f}/100",
-    )
-
     # ── FICHA INTEGRAL POR VENDEDOR ───────────────────────────────────────────
-    st.subheader("🧑‍💼 Ficha Integral por Vendedor")
-    st.caption(
-        "Selecciona un vendedor para ver su desempeño comercial completo: "
-        "ventas, clientes, productos, cartera y plan de acción."
-    )
+    with tab_particular:
+        st.subheader("🧑‍💼 Ficha Integral por Vendedor")
+        st.caption(
+            "Selecciona un vendedor para ver su desempeño comercial completo: "
+            "ventas, clientes, productos, cartera y plan de acción."
+        )
 
-    vendedor_seleccionado_ficha = st.selectbox(
-        "Selecciona un vendedor",
-        options=df_cruce.sort_values("ventas_totales", ascending=False)["vendedor"].tolist(),
-        key="ficha_vendedor_select",
-    )
+        vendedor_seleccionado_ficha = st.selectbox(
+            "Selecciona un vendedor",
+            options=df_cruce.sort_values("ventas_totales", ascending=False)["vendedor"].tolist(),
+            key="ficha_vendedor_select",
+        )
 
-    if vendedor_seleccionado_ficha:
-        fila = df_cruce[df_cruce["vendedor"] == vendedor_seleccionado_ficha].iloc[0]
+        if vendedor_seleccionado_ficha:
+            fila = df_cruce[df_cruce["vendedor"] == vendedor_seleccionado_ficha].iloc[0]
 
-        # --- Datos de ventas para este vendedor ---
-        df_v_base = df_ventas[df_ventas["vendedor"] == vendedor_seleccionado_ficha].copy()
+            # --- Datos de ventas para este vendedor ---
+            df_v_base = df_ventas[df_ventas["vendedor"] == vendedor_seleccionado_ficha].copy()
 
-        # ── Filtros dentro de la ficha ────────────────────────────────────────
-        with st.expander("🔎 Filtrar operaciones del vendedor", expanded=False):
-            _fcol1, _fcol2, _fcol3 = st.columns(3)
+            # ── Filtros dentro de la ficha ────────────────────────────────────────
+            with st.expander("🔎 Filtrar operaciones del vendedor", expanded=False):
+                _fcol1, _fcol2, _fcol3 = st.columns(3)
 
             # Rango de fechas
             _fecha_min = _fecha_max = None
@@ -761,12 +765,12 @@ def run():
             else:
                 st.warning("Sin operaciones con los filtros aplicados.")
 
-        # Mejor cliente por ventas
-        mejor_cliente = "—"
-        if col_cliente_v and col_cliente_v in df_v.columns and not df_v.empty:
-            mejor_cliente = (
-                df_v.groupby(col_cliente_v)["valor_usd"].sum().idxmax()
-            )
+            # Mejor cliente por ventas
+            mejor_cliente = "—"
+            if col_cliente_v and col_cliente_v in df_v.columns and not df_v.empty:
+                mejor_cliente = (
+                    df_v.groupby(col_cliente_v)["valor_usd"].sum().idxmax()
+                )
         # Producto estrella
         mejor_producto = "—"
         if "producto" in df_v.columns and not df_v.empty:
@@ -1027,644 +1031,644 @@ def run():
                 unsafe_allow_html=True,
             )
 
-    st.write("---")
-    # ── Tabla comparativa ─────────────────────────────────────────────────────
-    st.subheader("📋 Tabla Comparativa por Vendedor")
+    with tab_general:
+        st.write("---")
+        # ── Tabla comparativa ─────────────────────────────────────────────────────
+        st.subheader("📋 Tabla Comparativa por Vendedor")
 
-    df_tabla = df_cruce[[
-        "vendedor", "ventas_totales", "ticket_promedio", "num_operaciones",
-        "cartera_total", "cartera_vencida", "pct_vencida",
-        "ratio_deuda_ventas", "dias_max", "score_calidad", "nivel_calidad"
-    ]].copy()
+        df_tabla = df_cruce[[
+            "vendedor", "ventas_totales", "ticket_promedio", "num_operaciones",
+            "cartera_total", "cartera_vencida", "pct_vencida",
+            "ratio_deuda_ventas", "dias_max", "score_calidad", "nivel_calidad"
+        ]].copy()
+        df_tabla_display = df_tabla.copy()
+        for col_monto in ("ventas_totales", "ticket_promedio", "cartera_total", "cartera_vencida"):
+            df_tabla_display[col_monto] = df_tabla_display[col_monto].map(
+                lambda value: f"${value:,.0f}" if pd.notna(value) else ""
+            )
+        df_tabla_display["num_operaciones"] = df_tabla_display["num_operaciones"].map(
+            lambda value: f"{int(value):,}" if pd.notna(value) else ""
+        )
 
-    st.dataframe(
-        df_tabla,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "vendedor":          st.column_config.TextColumn("Vendedor",         width="medium"),
-            "ventas_totales":    st.column_config.NumberColumn("Ventas ($)",      width="medium", format="$%.0f"),
-            "ticket_promedio":   st.column_config.NumberColumn("Ticket Prom ($)", width="medium", format="$%.0f"),
-            "num_operaciones":   st.column_config.NumberColumn("# Ops",           width="small"),
-            "cartera_total":     st.column_config.NumberColumn("Cartera ($)",     width="medium", format="$%.0f"),
-            "cartera_vencida":   st.column_config.NumberColumn("Vencida ($)",     width="medium", format="$%.0f"),
-            "pct_vencida":       st.column_config.NumberColumn("% Vencida",       width="small",  format="%.1f%%"),
-            "ratio_deuda_ventas":st.column_config.ProgressColumn(
-                                    "Deuda/Ventas %", width="medium",
-                                    min_value=0, max_value=100, format="%.1f%%"),
-            "dias_max":          st.column_config.NumberColumn("Días Máx",        width="small"),
-            "score_calidad":     st.column_config.ProgressColumn(
-                                    "Score Calidad", width="medium",
-                                    min_value=0, max_value=100, format="%.0f"),
-            "nivel_calidad":     st.column_config.TextColumn("Nivel",            width="small"),
-        },
-    )
+        st.dataframe(
+            df_tabla_display,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "vendedor":          st.column_config.TextColumn("Vendedor",         width="medium"),
+                "ventas_totales":    st.column_config.TextColumn("Ventas ($)",      width="medium"),
+                "ticket_promedio":   st.column_config.TextColumn("Ticket Prom ($)", width="medium"),
+                "num_operaciones":   st.column_config.TextColumn("# Ops",           width="small"),
+                "cartera_total":     st.column_config.TextColumn("Cartera ($)",     width="medium"),
+                "cartera_vencida":   st.column_config.TextColumn("Vencida ($)",     width="medium"),
+                "pct_vencida":       st.column_config.NumberColumn("% Vencida",       width="small",  format="%.1f%%"),
+                "ratio_deuda_ventas":st.column_config.ProgressColumn(
+                                        "Deuda/Ventas %", width="medium",
+                                        min_value=0, max_value=100, format="%.1f%%"),
+                "dias_max":          st.column_config.NumberColumn("Días Máx",        width="small"),
+                "score_calidad":     st.column_config.ProgressColumn(
+                                        "Score Calidad", width="medium",
+                                        min_value=0, max_value=100, format="%.0f"),
+                "nivel_calidad":     st.column_config.TextColumn("Nivel",            width="small"),
+            },
+        )
 
-    with st.expander("ℹ️ ¿Cómo interpretar estas métricas?"):
-        st.markdown("""
-        | Columna | Qué mide |
-        |---------|----------|
-        | **Deuda/Ventas %** | Cartera vencida ÷ ventas totales. Si es alto, el vendedor cierra ventas pero no ayuda a cobrar |
-        | **Score Calidad** | Score ponderado 0-100 que penaliza más la deuda antigua:<br>• Vigente = 100 pts<br>• 1-30 días = 85 pts<br>• 31-60 días = 60 pts<br>• 61-90 días = 30 pts<br>• >90 días = 0 pts |
-        | **Días Máx** | La factura más vencida de los clientes de ese vendedor |
-        | **% Vencida** | Del total de cartera que generó el vendedor, cuánto está vencido |
+    with tab_general:
+        with st.expander("ℹ️ ¿Cómo interpretar estas métricas?"):
+            st.markdown("""
+            | Columna | Qué mide |
+            |---------|----------|
+            | **Deuda/Ventas %** | Cartera vencida ÷ ventas totales. Si es alto, el vendedor cierra ventas pero no ayuda a cobrar |
+            | **Score Calidad** | Score ponderado 0-100 que penaliza más la deuda antigua:<br>• Vigente = 100 pts<br>• 1-30 días = 85 pts<br>• 31-60 días = 60 pts<br>• 61-90 días = 30 pts<br>• >90 días = 0 pts |
+            | **Días Máx** | La factura más vencida de los clientes de ese vendedor |
+            | **% Vencida** | Del total de cartera que generó el vendedor, cuánto está vencido |
 
-        **Señales de alerta:**
-        - 🔴 Score < 40 → revisar política de crédito para ese vendedor
-        - 🟠 Score 40-65 → monitorear de cerca, tiene deuda antigua
-        - 🟡 Score 65-85 → aceptable, pero hay espacio de mejora
-        - 🟢 Score ≥85 → excelente gestión de cartera
-        - Deuda/Ventas > 20% → el vendedor puede estar aceptando malos pagadores para cerrar ventas
-        """)
+            **Señales de alerta:**
+            - 🔴 Score < 40 → revisar política de crédito para ese vendedor
+            - 🟠 Score 40-65 → monitorear de cerca, tiene deuda antigua
+            - 🟡 Score 65-85 → aceptable, pero hay espacio de mejora
+            - 🟢 Score ≥85 → excelente gestión de cartera
+            - Deuda/Ventas > 20% → el vendedor puede estar aceptando malos pagadores para cerrar ventas
+            """)
 
-    # ── Gráfico: Ventas vs Score (bubble = cartera total) ────────────────
-    st.subheader("📈 Cuadrante: Ventas vs Calidad de Cartera")
+        # ── Gráfico: Ventas vs Score (bubble = cartera total) ────────────────
+        st.subheader("📈 Cuadrante: Ventas vs Calidad de Cartera")
 
-    # Crear datos para hover personalizado
-    df_cruce['hover_text'] = df_cruce.apply(
-        lambda row: (
-            f"<b>{row['vendedor']}</b><br>"
-            f"Ventas: ${row['ventas_totales']:,.0f}<br>"
-            f"Cartera: ${row['cartera_total']:,.0f}<br>"
-            f"Score: {row['score_calidad']:.1f}/100<br>"
-            f"<br><b>Composición de Cartera:</b><br>"
-            f"Vigente: {row['pct_vigente']:.1f}%<br>"
-            f"1-30 días: {row['pct_1_30']:.1f}%<br>"
-            f"31-60 días: {row['pct_31_60']:.1f}%<br>"
-            f"61-90 días: {row['pct_61_90']:.1f}%<br>"
-            f">90 días: {row['pct_mas_90']:.1f}%"
-        ), axis=1
-    )
+        # Crear datos para hover personalizado
+        df_cruce['hover_text'] = df_cruce.apply(
+            lambda row: (
+                f"<b>{row['vendedor']}</b><br>"
+                f"Ventas: ${row['ventas_totales']:,.0f}<br>"
+                f"Cartera: ${row['cartera_total']:,.0f}<br>"
+                f"Score: {row['score_calidad']:.1f}/100<br>"
+                f"<br><b>Composición de Cartera:</b><br>"
+                f"Vigente: {row['pct_vigente']:.1f}%<br>"
+                f"1-30 días: {row['pct_1_30']:.1f}%<br>"
+                f"31-60 días: {row['pct_31_60']:.1f}%<br>"
+                f"61-90 días: {row['pct_61_90']:.1f}%<br>"
+                f">90 días: {row['pct_mas_90']:.1f}%"
+            ), axis=1
+        )
 
-    fig_scatter = px.scatter(
-        df_cruce,
-        x="ventas_totales",
-        y="score_calidad",
-        size="cartera_total",
-        color="nivel_calidad",
-        hover_name="vendedor",
-        custom_data=['hover_text'],
-        color_discrete_map={
+        fig_scatter = px.scatter(
+            df_cruce,
+            x="ventas_totales",
+            y="score_calidad",
+            size="cartera_total",
+            color="nivel_calidad",
+            hover_name="vendedor",
+            custom_data=['hover_text'],
+            color_discrete_map={
+                "🟢 Excelente": "#4CAF50",
+                "🟡 Aceptable": "#FFEB3B",
+                "🟠 Riesgo":    "#FF9800",
+                "🔴 Crítico":   "#F44336",
+            },
+            labels={
+                "ventas_totales": "Ventas Totales ($)",
+                "score_calidad": "Score de Calidad (0-100)",
+                "cartera_total":  "Cartera Total ($)",
+                "nivel_calidad":  "Calidad",
+            },
+            title="",
+        )
+
+        fig_scatter.update_traces(
+            hovertemplate='%{customdata[0]}<extra></extra>'
+        )
+
+        media_score = df_cruce["score_calidad"].mean()
+        fig_scatter.add_hline(
+            y=media_score, line_dash="dash", line_color="gray",
+            annotation_text=f"Promedio {media_score:.1f}", annotation_position="top right",
+        )
+        
+        fig_scatter.update_layout(
+            height=440, 
+            plot_bgcolor="rgba(0,0,0,0)", 
+            paper_bgcolor="rgba(0,0,0,0)",
+            yaxis=dict(range=[0, 105])
+        )
+        
+        st.plotly_chart(fig_scatter, use_container_width=True)
+
+        st.caption(
+            "💡 **Esquina superior derecha** = Ideal (altas ventas + alta calidad de cartera). "
+            "**Esquina inferior derecha** = Alto riesgo (altas ventas + baja calidad). "
+            "El tamaño del círculo representa la cartera total pendiente."
+        )
+
+    with tab_general:
+        # ── Gráfico: Composición de Cartera por Antigüedad ───────────────────────
+        st.subheader("📊 Composición de Cartera por Antigüedad")
+        
+        # Preparar datos para gráfico 100% apilado
+        df_composicion = df_cruce.sort_values("score_calidad", ascending=False).head(15).copy()
+        
+        fig_antiguedad = go.Figure()
+        
+        # Agregar barras en orden de antigüedad (de menos a más grave)
+        fig_antiguedad.add_trace(go.Bar(
+            name='Vigente (≤0 días)',
+            x=df_composicion['vendedor'],
+            y=df_composicion['pct_vigente'],
+            marker_color='#4CAF50',
+            text=df_composicion['pct_vigente'].apply(lambda x: f'{x:.1f}%' if x > 3 else ''),
+            textposition='inside',
+            hovertemplate='Vigente: %{y:.1f}%<extra></extra>'
+        ))
+        
+        fig_antiguedad.add_trace(go.Bar(
+            name='1-30 días',
+            x=df_composicion['vendedor'],
+            y=df_composicion['pct_1_30'],
+            marker_color='#8BC34A',
+            text=df_composicion['pct_1_30'].apply(lambda x: f'{x:.1f}%' if x > 3 else ''),
+            textposition='inside',
+            hovertemplate='1-30 días: %{y:.1f}%<extra></extra>'
+        ))
+        
+        fig_antiguedad.add_trace(go.Bar(
+            name='31-60 días',
+            x=df_composicion['vendedor'],
+            y=df_composicion['pct_31_60'],
+            marker_color='#FFEB3B',
+            text=df_composicion['pct_31_60'].apply(lambda x: f'{x:.1f}%' if x > 3 else ''),
+            textposition='inside',
+            hovertemplate='31-60 días: %{y:.1f}%<extra></extra>'
+        ))
+        
+        fig_antiguedad.add_trace(go.Bar(
+            name='61-90 días',
+            x=df_composicion['vendedor'],
+            y=df_composicion['pct_61_90'],
+            marker_color='#FF9800',
+            text=df_composicion['pct_61_90'].apply(lambda x: f'{x:.1f}%' if x > 3 else ''),
+            textposition='inside',
+            hovertemplate='61-90 días: %{y:.1f}%<extra></extra>'
+        ))
+        
+        fig_antiguedad.add_trace(go.Bar(
+            name='>90 días (Crítica)',
+            x=df_composicion['vendedor'],
+            y=df_composicion['pct_mas_90'],
+            marker_color='#F44336',
+            text=df_composicion['pct_mas_90'].apply(lambda x: f'{x:.1f}%' if x > 3 else ''),
+            textposition='inside',
+            hovertemplate='>90 días: %{y:.1f}%<extra></extra>'
+        ))
+        
+        fig_antiguedad.update_layout(
+            barmode='stack',
+            title='Distribución de Cartera por Antigüedad (Top 15 vendedores por score)',
+            xaxis_title='',
+            yaxis_title='Porcentaje de Cartera (%)',
+            yaxis=dict(range=[0, 100]),
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1
+            ),
+            height=450,
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            hovermode='x unified'
+        )
+        
+        st.plotly_chart(fig_antiguedad, use_container_width=True)
+        
+        st.caption(
+            "📌 **Interpretación:** Barras verdes = cartera saludable. Amarillo/naranja = requiere atención. "
+            "Rojo = cartera crítica (>90 días) que impacta fuertemente el score."
+        )
+        
+        # ── Pie Chart: Composición de Cartera (Opcional) ─────────────────────────
+        with st.expander("🥧 Ver composición de cartera como gráfico circular"):
+            st.markdown("#### Composición de Cartera por Antigüedad")
+            
+            # Selector: Global o por vendedor
+            col_selector1, col_selector2 = st.columns([1, 2])
+            
+            with col_selector1:
+                vista_pie = st.radio(
+                    "Vista:",
+                    ["Global (Todo)", "Por Vendedor"],
+                    key="vista_pie_cartera"
+                )
+            
+            with col_selector2:
+                if vista_pie == "Por Vendedor":
+                    vendedor_seleccionado = st.selectbox(
+                        "Selecciona vendedor:",
+                        options=df_cruce.sort_values("cartera_total", ascending=False)["vendedor"].tolist(),
+                        key="vendedor_pie_select"
+                    )
+            
+            # Calcular datos para el pie chart
+            if vista_pie == "Global (Todo)":
+                cartera_vigente_total = df_cruce["cartera_vigente"].sum()
+                cartera_1_30_total = df_cruce["cartera_1_30"].sum()
+                cartera_31_60_total = df_cruce["cartera_31_60"].sum()
+                cartera_61_90_total = df_cruce["cartera_61_90"].sum()
+                cartera_mas_90_total = df_cruce["cartera_alto_riesgo"].sum()
+                titulo_pie = "Composición Global de Cartera"
+            else:
+                vendedor_data = df_cruce[df_cruce["vendedor"] == vendedor_seleccionado].iloc[0]
+                cartera_vigente_total = vendedor_data["cartera_vigente"]
+                cartera_1_30_total = vendedor_data["cartera_1_30"]
+                cartera_31_60_total = vendedor_data["cartera_31_60"]
+                cartera_61_90_total = vendedor_data["cartera_61_90"]
+                cartera_mas_90_total = vendedor_data["cartera_alto_riesgo"]
+                titulo_pie = f"Composición de Cartera - {vendedor_seleccionado}"
+            
+            labels = ['Vigente (≤0 días)', '1-30 días', '31-60 días', '61-90 días', '>90 días (Crítica)']
+            values = [cartera_vigente_total, cartera_1_30_total, cartera_31_60_total,
+                      cartera_61_90_total, cartera_mas_90_total]
+            colors = ['#4CAF50', '#8BC34A', '#FFEB3B', '#FF9800', '#F44336']
+            
+            datos_pie = [(l, v, c) for l, v, c in zip(labels, values, colors) if v > 0]
+            
+            if datos_pie:
+                labels_filtrados, values_filtrados, colors_filtrados = zip(*datos_pie)
+                
+                fig_pie = go.Figure(data=[go.Pie(
+                    labels=labels_filtrados,
+                    values=values_filtrados,
+                    marker=dict(colors=colors_filtrados),
+                    hole=0.4,
+                    textinfo='label+percent',
+                    textposition='auto',
+                    hovertemplate='<b>%{label}</b><br>$%{value:,.0f}<br>%{percent}<extra></extra>'
+                )])
+                
+                fig_pie.update_layout(
+                    title=titulo_pie,
+                    height=500,
+                    showlegend=True,
+                    legend=dict(
+                        orientation="v",
+                        yanchor="middle",
+                        y=0.5,
+                        xanchor="left",
+                        x=1.05
+                    )
+                )
+                
+                st.plotly_chart(fig_pie, use_container_width=True)
+                
+                total_cartera = sum(values_filtrados)
+                col_stat1, col_stat2, col_stat3 = st.columns(3)
+                col_stat1.metric("Cartera Total", f"${total_cartera:,.0f}")
+                col_stat2.metric("Categorías", len(labels_filtrados))
+                
+                if vista_pie == "Global (Todo)":
+                    pct_vigente = (cartera_vigente_total / total_cartera * 100) if total_cartera > 0 else 0
+                    pct_1_30 = (cartera_1_30_total / total_cartera * 100) if total_cartera > 0 else 0
+                    pct_31_60 = (cartera_31_60_total / total_cartera * 100) if total_cartera > 0 else 0
+                    pct_61_90 = (cartera_61_90_total / total_cartera * 100) if total_cartera > 0 else 0
+                    pct_mas_90 = (cartera_mas_90_total / total_cartera * 100) if total_cartera > 0 else 0
+                    score_calc, nivel_calc = _score_calidad(pct_vigente, pct_1_30, pct_31_60, pct_61_90, pct_mas_90)
+                    col_stat3.metric("Score Global", f"{score_calc:.1f}/100", delta=nivel_calc)
+                else:
+                    col_stat3.metric("Score", f"{vendedor_data['score_calidad']:.1f}/100",
+                                   delta=vendedor_data['nivel_calidad'])
+            else:
+                st.info("No hay datos de cartera para mostrar")
+
+        # ── Gráfico: Score de calidad ranking ────────────────────────────────────
+        st.subheader("🏅 Ranking de Calidad de Cartera")
+
+        df_rank = df_cruce.sort_values("score_calidad", ascending=True)
+        colores_rank = df_rank["nivel_calidad"].map({
             "🟢 Excelente": "#4CAF50",
             "🟡 Aceptable": "#FFEB3B",
             "🟠 Riesgo":    "#FF9800",
             "🔴 Crítico":   "#F44336",
-        },
-        labels={
-            "ventas_totales": "Ventas Totales ($)",
-            "score_calidad": "Score de Calidad (0-100)",
-            "cartera_total":  "Cartera Total ($)",
-            "nivel_calidad":  "Calidad",
-        },
-        title="",
-    )
+        }).fillna("#9E9E9E")
 
-    # Actualizar hover template
-    fig_scatter.update_traces(
-        hovertemplate='%{customdata[0]}<extra></extra>'
-    )
-
-    # Línea de referencia: media del score
-    media_score = df_cruce["score_calidad"].mean()
-    fig_scatter.add_hline(
-        y=media_score, line_dash="dash", line_color="gray",
-        annotation_text=f"Promedio {media_score:.1f}", annotation_position="top right",
-    )
-    
-    # Configurar rango del eje Y
-    fig_scatter.update_layout(
-        height=440, 
-        plot_bgcolor="rgba(0,0,0,0)", 
-        paper_bgcolor="rgba(0,0,0,0)",
-        yaxis=dict(range=[0, 105])
-    )
-    
-    st.plotly_chart(fig_scatter, use_container_width=True)
-
-    st.caption(
-        "💡 **Esquina superior derecha** = Ideal (altas ventas + alta calidad de cartera). "
-        "**Esquina inferior derecha** = Alto riesgo (altas ventas + baja calidad). "
-        "El tamaño del círculo representa la cartera total pendiente."
-    )
-
-    # ── Gráfico: Composición de Cartera por Antigüedad ───────────────────────
-    st.subheader("📊 Composición de Cartera por Antigüedad")
-    
-    # Preparar datos para gráfico 100% apilado
-    df_composicion = df_cruce.sort_values("score_calidad", ascending=False).head(15).copy()
-    
-    fig_antiguedad = go.Figure()
-    
-    # Agregar barras en orden de antigüedad (de menos a más grave)
-    fig_antiguedad.add_trace(go.Bar(
-        name='Vigente (≤0 días)',
-        x=df_composicion['vendedor'],
-        y=df_composicion['pct_vigente'],
-        marker_color='#4CAF50',
-        text=df_composicion['pct_vigente'].apply(lambda x: f'{x:.1f}%' if x > 3 else ''),
-        textposition='inside',
-        hovertemplate='Vigente: %{y:.1f}%<extra></extra>'
-    ))
-    
-    fig_antiguedad.add_trace(go.Bar(
-        name='1-30 días',
-        x=df_composicion['vendedor'],
-        y=df_composicion['pct_1_30'],
-        marker_color='#8BC34A',
-        text=df_composicion['pct_1_30'].apply(lambda x: f'{x:.1f}%' if x > 3 else ''),
-        textposition='inside',
-        hovertemplate='1-30 días: %{y:.1f}%<extra></extra>'
-    ))
-    
-    fig_antiguedad.add_trace(go.Bar(
-        name='31-60 días',
-        x=df_composicion['vendedor'],
-        y=df_composicion['pct_31_60'],
-        marker_color='#FFEB3B',
-        text=df_composicion['pct_31_60'].apply(lambda x: f'{x:.1f}%' if x > 3 else ''),
-        textposition='inside',
-        hovertemplate='31-60 días: %{y:.1f}%<extra></extra>'
-    ))
-    
-    fig_antiguedad.add_trace(go.Bar(
-        name='61-90 días',
-        x=df_composicion['vendedor'],
-        y=df_composicion['pct_61_90'],
-        marker_color='#FF9800',
-        text=df_composicion['pct_61_90'].apply(lambda x: f'{x:.1f}%' if x > 3 else ''),
-        textposition='inside',
-        hovertemplate='61-90 días: %{y:.1f}%<extra></extra>'
-    ))
-    
-    fig_antiguedad.add_trace(go.Bar(
-        name='>90 días (Crítica)',
-        x=df_composicion['vendedor'],
-        y=df_composicion['pct_mas_90'],
-        marker_color='#F44336',
-        text=df_composicion['pct_mas_90'].apply(lambda x: f'{x:.1f}%' if x > 3 else ''),
-        textposition='inside',
-        hovertemplate='>90 días: %{y:.1f}%<extra></extra>'
-    ))
-    
-    fig_antiguedad.update_layout(
-        barmode='stack',
-        title='Distribución de Cartera por Antigüedad (Top 15 vendedores por score)',
-        xaxis_title='',
-        yaxis_title='Porcentaje de Cartera (%)',
-        yaxis=dict(range=[0, 100]),
-        legend=dict(
+        fig_rank = go.Figure(go.Bar(
+            x=df_rank["score_calidad"],
+            y=df_rank["vendedor"],
             orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
-        ),
-        height=450,
-        plot_bgcolor='rgba(0,0,0,0)',
-        paper_bgcolor='rgba(0,0,0,0)',
-        hovermode='x unified'
-    )
-    
-    st.plotly_chart(fig_antiguedad, use_container_width=True)
-    
-    st.caption(
-        "📌 **Interpretación:** Barras verdes = cartera saludable. Amarillo/naranja = requiere atención. "
-        "Rojo = cartera crítica (>90 días) que impacta fuertemente el score."
-    )
-    
-    # ── Pie Chart: Composición de Cartera (Opcional) ─────────────────────────
-    with st.expander("🥧 Ver composición de cartera como gráfico circular"):
-        st.markdown("#### Composición de Cartera por Antigüedad")
-        
-        # Selector: Global o por vendedor
-        col_selector1, col_selector2 = st.columns([1, 2])
-        
-        with col_selector1:
-            vista_pie = st.radio(
-                "Vista:",
-                ["Global (Todo)", "Por Vendedor"],
-                key="vista_pie_cartera"
-            )
-        
-        with col_selector2:
-            if vista_pie == "Por Vendedor":
-                vendedor_seleccionado = st.selectbox(
-                    "Selecciona vendedor:",
-                    options=df_cruce.sort_values("cartera_total", ascending=False)["vendedor"].tolist(),
-                    key="vendedor_pie_select"
-                )
-        
-        # Calcular datos para el pie chart
-        if vista_pie == "Global (Todo)":
-            # Sumar todos los montos por categoría
-            cartera_vigente_total = df_cruce["cartera_vigente"].sum()
-            cartera_1_30_total = df_cruce["cartera_1_30"].sum()
-            cartera_31_60_total = df_cruce["cartera_31_60"].sum()
-            cartera_61_90_total = df_cruce["cartera_61_90"].sum()
-            cartera_mas_90_total = df_cruce["cartera_alto_riesgo"].sum()
-            titulo_pie = "Composición Global de Cartera"
-        else:
-            # Obtener datos del vendedor seleccionado
-            vendedor_data = df_cruce[df_cruce["vendedor"] == vendedor_seleccionado].iloc[0]
-            cartera_vigente_total = vendedor_data["cartera_vigente"]
-            cartera_1_30_total = vendedor_data["cartera_1_30"]
-            cartera_31_60_total = vendedor_data["cartera_31_60"]
-            cartera_61_90_total = vendedor_data["cartera_61_90"]
-            cartera_mas_90_total = vendedor_data["cartera_alto_riesgo"]
-            titulo_pie = f"Composición de Cartera - {vendedor_seleccionado}"
-        
-        # Crear pie chart
-        labels = ['Vigente (≤0 días)', '1-30 días', '31-60 días', '61-90 días', '>90 días (Crítica)']
-        values = [cartera_vigente_total, cartera_1_30_total, cartera_31_60_total, 
-                  cartera_61_90_total, cartera_mas_90_total]
-        colors = ['#4CAF50', '#8BC34A', '#FFEB3B', '#FF9800', '#F44336']
-        
-        # Filtrar valores mayores a 0 para mejor visualización
-        datos_pie = [(l, v, c) for l, v, c in zip(labels, values, colors) if v > 0]
-        
-        if datos_pie:
-            labels_filtrados, values_filtrados, colors_filtrados = zip(*datos_pie)
-            
-            fig_pie = go.Figure(data=[go.Pie(
-                labels=labels_filtrados,
-                values=values_filtrados,
-                marker=dict(colors=colors_filtrados),
-                hole=0.4,
-                textinfo='label+percent',
-                textposition='auto',
-                hovertemplate='<b>%{label}</b><br>$%{value:,.0f}<br>%{percent}<extra></extra>'
-            )])
-            
-            fig_pie.update_layout(
-                title=titulo_pie,
-                height=500,
-                showlegend=True,
-                legend=dict(
-                    orientation="v",
-                    yanchor="middle",
-                    y=0.5,
-                    xanchor="left",
-                    x=1.05
-                )
-            )
-            
-            st.plotly_chart(fig_pie, use_container_width=True)
-            
-            # Mostrar estadísticas
-            total_cartera = sum(values_filtrados)
-            col_stat1, col_stat2, col_stat3 = st.columns(3)
-            col_stat1.metric("Cartera Total", f"${total_cartera:,.0f}")
-            col_stat2.metric("Categorías", len(labels_filtrados))
-            
-            # Calcular score para este vendedor/global
-            if vista_pie == "Global (Todo)":
-                pct_vigente = (cartera_vigente_total / total_cartera * 100) if total_cartera > 0 else 0
-                pct_1_30 = (cartera_1_30_total / total_cartera * 100) if total_cartera > 0 else 0
-                pct_31_60 = (cartera_31_60_total / total_cartera * 100) if total_cartera > 0 else 0
-                pct_61_90 = (cartera_61_90_total / total_cartera * 100) if total_cartera > 0 else 0
-                pct_mas_90 = (cartera_mas_90_total / total_cartera * 100) if total_cartera > 0 else 0
-                score_calc, nivel_calc = _score_calidad(pct_vigente, pct_1_30, pct_31_60, pct_61_90, pct_mas_90)
-                col_stat3.metric("Score Global", f"{score_calc:.1f}/100", delta=nivel_calc)
-            else:
-                col_stat3.metric("Score", f"{vendedor_data['score_calidad']:.1f}/100", 
-                               delta=vendedor_data['nivel_calidad'])
-        else:
-            st.info("No hay datos de cartera para mostrar")
-
-
-    # ── Gráfico: Score de calidad ranking ────────────────────────────────────
-    st.subheader("🏅 Ranking de Calidad de Cartera")
-
-    df_rank = df_cruce.sort_values("score_calidad", ascending=True)
-    colores_rank = df_rank["nivel_calidad"].map({
-        "🟢 Excelente": "#4CAF50",
-        "🟡 Aceptable": "#FFEB3B",
-        "🟠 Riesgo":    "#FF9800",
-        "🔴 Crítico":   "#F44336",
-    }).fillna("#9E9E9E")
-
-    fig_rank = go.Figure(go.Bar(
-        x=df_rank["score_calidad"],
-        y=df_rank["vendedor"],
-        orientation="h",
-        marker_color=colores_rank,
-        text=df_rank["score_calidad"].apply(lambda s: f"{s:.0f}/100"),
-        textposition="outside",
-        hovertemplate="%{y}<br>Score: %{x:.0f}<br>% Vencida: " +
-                      df_rank["pct_vencida"].apply(lambda p: f"{p:.1f}%").values + "<extra></extra>",
-    ))
-    fig_rank.update_layout(
-        title="Score de Calidad de Cartera por Vendedor (mayor = mejor)",
-        xaxis=dict(range=[0, 115], title="Score (0–100)"),
-        yaxis_title="",
-        height=max(350, len(df_rank) * 45),
-        plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(0,0,0,0)",
-    )
-    st.plotly_chart(fig_rank, use_container_width=True)
-
-    # ── Gráfico: Composición de cartera por vendedor (stacked bar) ───────────
-    st.subheader("📊 Composición de Cartera por Vendedor")
-
-    df_stack = df_cruce.sort_values("cartera_total", ascending=False).head(15)
-
-    fig_stack = go.Figure()
-    fig_stack.add_trace(go.Bar(
-        name="Vigente",
-        x=df_stack["vendedor"],
-        y=df_stack["cartera_vigente"],
-        marker_color="#4CAF50",
-        hovertemplate="%{x}<br>Vigente: $%{y:,.0f}<extra></extra>",
-    ))
-    fig_stack.add_trace(go.Bar(
-        name="Vencida (no crítica)",
-        x=df_stack["vendedor"],
-        y=df_stack["cartera_vencida"] - df_stack["cartera_alto_riesgo"],
-        marker_color="#FF9800",
-        hovertemplate="%{x}<br>Vencida: $%{y:,.0f}<extra></extra>",
-    ))
-    fig_stack.add_trace(go.Bar(
-        name=">90 días (alto riesgo)",
-        x=df_stack["vendedor"],
-        y=df_stack["cartera_alto_riesgo"],
-        marker_color="#F44336",
-        hovertemplate="%{x}<br>Alto riesgo: $%{y:,.0f}<extra></extra>",
-    ))
-    fig_stack.update_layout(
-        barmode="stack",
-        title="Composición de Cartera por Vendedor (Top 15)",
-        xaxis_title="",
-        yaxis_title="Saldo ($)",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        height=420,
-        plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(0,0,0,0)",
-    )
-    st.plotly_chart(fig_stack, use_container_width=True)
-
-    # ── Alertas automáticas ───────────────────────────────────────────────────
-    st.subheader("🚨 Alertas de Vendedores")
-
-    # Vendedores con alta morosidad (>40% vencida)
-    vendedores_alerta = df_cruce[df_cruce["pct_vencida"] > 40].copy()
-    
-    if len(vendedores_alerta) > 0:
-        st.markdown("🔴 **Vendedores con alta morosidad (>40% de cartera vencida)**")
-        
-        # Crear tabla de composición
-        tabla_alertas = vendedores_alerta[[
-            'vendedor', 'cartera_vencida', 'pct_vencida',
-            'pct_vigente', 'pct_1_30', 'pct_31_60', 'pct_61_90', 'pct_mas_90'
-        ]].copy()
-        
-        # Ordenar por % vencida descendente
-        tabla_alertas = tabla_alertas.sort_values('pct_vencida', ascending=False)
-        
-        # Formatear para display
-        tabla_alertas['cartera_vencida'] = tabla_alertas['cartera_vencida'].apply(lambda x: f"${x:,.0f}")
-        tabla_alertas['pct_vencida'] = tabla_alertas['pct_vencida'].apply(lambda x: f"{x:.1f}%")
-        tabla_alertas['pct_vigente'] = tabla_alertas['pct_vigente'].apply(lambda x: f"{x:.1f}%")
-        tabla_alertas['pct_1_30'] = tabla_alertas['pct_1_30'].apply(lambda x: f"{x:.1f}%")
-        tabla_alertas['pct_31_60'] = tabla_alertas['pct_31_60'].apply(lambda x: f"{x:.1f}%")
-        tabla_alertas['pct_61_90'] = tabla_alertas['pct_61_90'].apply(lambda x: f"{x:.1f}%")
-        tabla_alertas['pct_mas_90'] = tabla_alertas['pct_mas_90'].apply(lambda x: f"{x:.1f}%")
-        
-        # Renombrar columnas
-        tabla_alertas.columns = [
-            'Vendedor', 'Monto Vencido', '% Vencida Total',
-            'Vigente', '1-30 días', '31-60 días', '61-90 días', '>90 días'
-        ]
-        
-        st.dataframe(tabla_alertas, hide_index=True, use_container_width=True)
-        st.write("")
-    
-    # Otras alertas
-    otras_alertas = []
-    for _, row in df_cruce.iterrows():
-        if row["pct_vencida"] <= 40 and row["ratio_deuda_ventas"] > 20:
-            otras_alertas.append(
-                f"🟠 **{row['vendedor']}**: ratio deuda/ventas de {row['ratio_deuda_ventas']:.1f}% "
-                f"— posible aceptación de clientes de alto riesgo"
-            )
-        elif row["pct_vencida"] <= 40 and row["dias_max"] > 120:
-            otras_alertas.append(
-                f"🟡 **{row['vendedor']}**: factura más vencida con {row['dias_max']:.0f} días — "
-                "revisar cliente específico"
-            )
-    
-    if otras_alertas:
-        for a in otras_alertas:
-            st.markdown(a)
-    
-    if len(vendedores_alerta) == 0 and len(otras_alertas) == 0:
-        st.success("✅ Todos los vendedores tienen indicadores dentro de rangos normales.")
-
-    # ── Exportación ───────────────────────────────────────────────────────────
-    st.write("---")
-    st.subheader("⬇️ Exportar Reporte")
-
-    user = get_current_user()
-    puede_exportar = user and user.can_export()
-
-    if puede_exportar:
-        # ── Opción de filtrar por vendedor ────────────────────────────────────
-        col_exp1, col_exp2 = st.columns([2, 1])
-        with col_exp1:
-            vendedores_opciones = ["Todos los vendedores"] + sorted(df_cruce["vendedor"].tolist())
-            vendedor_filtro_exp = st.selectbox(
-                "Filtrar exportación por vendedor:",
-                options=vendedores_opciones,
-                key="vendedor_exportacion_select",
-            )
-        with col_exp2:
-            st.write("")
-            st.write("")
-            st.caption("El Excel incluye: Resumen, Ventas y CxC")
-
-        # Filtrar según selección
-        if vendedor_filtro_exp == "Todos los vendedores":
-            df_ventas_exp  = df_ventas.copy()
-            df_cxc_exp     = df_cxc_vend.copy()
-            df_resumen_exp = df_cruce.copy()
-            sufijo_archivo = "todos"
-        else:
-            df_ventas_exp  = df_ventas[df_ventas["vendedor"] == vendedor_filtro_exp].copy()
-            df_cxc_exp     = df_cxc_vend[df_cxc_vend["vendedor"] == vendedor_filtro_exp].copy()
-            df_resumen_exp = df_cruce[df_cruce["vendedor"] == vendedor_filtro_exp].copy()
-            sufijo_archivo = vendedor_filtro_exp.replace(" ", "_")[:30]
-
-        # ── Generar Excel en memoria ──────────────────────────────────────────
-        def _generar_excel(df_resumen: pd.DataFrame, df_ventas_d: pd.DataFrame,
-                           df_cxc_d: pd.DataFrame) -> bytes:
-            buffer = io.BytesIO()
-            with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
-                wb = writer.book
-
-                # ── Formatos ──────────────────────────────────────────────────
-                fmt_header   = wb.add_format({"bold": True, "bg_color": "#1F4E79",
-                                              "font_color": "white", "border": 1})
-                fmt_money    = wb.add_format({"num_format": "$#,##0.00", "border": 1})
-                fmt_pct      = wb.add_format({"num_format": "0.00%", "border": 1})
-                fmt_num      = wb.add_format({"num_format": "#,##0", "border": 1})
-                fmt_text     = wb.add_format({"border": 1})
-                fmt_date     = wb.add_format({"num_format": "yyyy-mm-dd", "border": 1})
-                fmt_title    = wb.add_format({"bold": True, "font_size": 14,
-                                              "font_color": "#1F4E79"})
-                fmt_subtitle = wb.add_format({"italic": True, "font_color": "#666666"})
-
-                # ══════════════════════════════════════════════════════════════
-                # HOJA 1 — RESUMEN POR VENDEDOR
-                # ══════════════════════════════════════════════════════════════
-                hoja_resumen = "Resumen Vendedores"
-                cols_resumen = {
-                    "vendedor":           ("Vendedor",           20, "text"),
-                    "ventas_totales":     ("Ventas Totales ($)", 18, "money"),
-                    "num_operaciones":    ("# Operaciones",      14, "num"),
-                    "ticket_promedio":    ("Ticket Promedio ($)", 18, "money"),
-                    "cartera_total":      ("Cartera Total ($)",  18, "money"),
-                    "cartera_vigente":    ("Vigente ($)",        16, "money"),
-                    "cartera_vencida":    ("Vencida ($)",        16, "money"),
-                    "cartera_1_30":       ("1-30 días ($)",      15, "money"),
-                    "cartera_31_60":      ("31-60 días ($)",     15, "money"),
-                    "cartera_61_90":      ("61-90 días ($)",     15, "money"),
-                    "cartera_alto_riesgo":(">90 días ($)",       15, "money"),
-                    "pct_vencida":        ("% Vencida",          12, "pct"),
-                    "ratio_deuda_ventas": ("Ratio Deuda/Ventas", 18, "pct"),
-                    "score_calidad":      ("Score Calidad",      13, "num"),
-                    "nivel_calidad":      ("Nivel",              12, "text"),
-                    "dias_max":           ("Días Máx Vencido",   16, "num"),
-                }
-
-                cols_presentes = [c for c in cols_resumen if c in df_resumen.columns]
-                df_r = df_resumen[cols_presentes].copy()
-                # Convertir % a decimal para formato %
-                for col_p in ("pct_vencida", "ratio_deuda_ventas", "pct_vigente",
-                              "pct_1_30", "pct_31_60", "pct_61_90", "pct_mas_90"):
-                    if col_p in df_r.columns:
-                        df_r[col_p] = df_r[col_p] / 100
-
-                df_r.to_excel(writer, sheet_name=hoja_resumen, startrow=3, index=False, header=False)
-                ws_r = writer.sheets[hoja_resumen]
-                ws_r.write(0, 0, "Reporte de Vendedores + CxC", fmt_title)
-                ws_r.write(1, 0, f"Generado: {now_mx().strftime('%d/%m/%Y %H:%M')}", fmt_subtitle)
-
-                for col_i, col_key in enumerate(cols_presentes):
-                    label, ancho, tipo = cols_resumen[col_key]
-                    ws_r.write(2, col_i, label, fmt_header)
-                    ws_r.set_column(col_i, col_i, ancho)
-                    fmt_celda = {"text": fmt_text, "money": fmt_money,
-                                 "pct": fmt_pct, "num": fmt_num}.get(tipo, fmt_text)
-                    for row_i, val in enumerate(df_r[col_key]):
-                        ws_r.write(row_i + 3, col_i, val, fmt_celda)
-
-                ws_r.freeze_panes(3, 1)
-                ws_r.autofilter(2, 0, 2 + len(df_r), len(cols_presentes) - 1)
-
-                # ══════════════════════════════════════════════════════════════
-                # HOJA 2 — OPERACIONES DE VENTAS
-                # ══════════════════════════════════════════════════════════════
-                if not df_ventas_d.empty:
-                    cols_ventas_map = {
-                        "vendedor":         ("Vendedor",         22, "text"),
-                        "fecha":            ("Fecha",            14, "date"),
-                        "factura":          ("Factura",          14, "text"),
-                        "cliente":          ("Cliente",          30, "text"),
-                        "linea_de_negocio": ("Línea de Negocio", 20, "text"),
-                        "producto":         ("Producto",         30, "text"),
-                        "valor_usd":        ("Monto ($)",        14, "money"),
-                        "ventas_usd":       ("Monto ($)",        14, "money"),
-                    }
-                    cols_v_pres = [c for c in cols_ventas_map if c in df_ventas_d.columns]
-                    df_v = df_ventas_d[cols_v_pres].copy()
-
-                    df_v.to_excel(writer, sheet_name="Operaciones Ventas",
-                                  startrow=3, index=False, header=False)
-                    ws_v = writer.sheets["Operaciones Ventas"]
-                    ws_v.write(0, 0, "Detalle de Operaciones de Ventas", fmt_title)
-                    ws_v.write(1, 0, f"Total registros: {len(df_v)}", fmt_subtitle)
-
-                    for col_i, col_key in enumerate(cols_v_pres):
-                        label, ancho, tipo = cols_ventas_map[col_key]
-                        ws_v.write(2, col_i, label, fmt_header)
-                        ws_v.set_column(col_i, col_i, ancho)
-                        fmt_celda = {"text": fmt_text, "money": fmt_money,
-                                     "date": fmt_date, "num": fmt_num}.get(tipo, fmt_text)
-                        for row_i, val in enumerate(df_v[col_key]):
-                            ws_v.write(row_i + 3, col_i, val, fmt_celda)
-
-                    ws_v.freeze_panes(3, 1)
-                    ws_v.autofilter(2, 0, 2 + len(df_v), len(cols_v_pres) - 1)
-
-                # ══════════════════════════════════════════════════════════════
-                # HOJA 3 — CxC POR VENDEDOR
-                # ══════════════════════════════════════════════════════════════
-                if not df_cxc_d.empty:
-                    cols_cxc_map = {
-                        "vendedor":      ("Vendedor",       22, "text"),
-                        "deudor":        ("Cliente",        30, "text"),
-                        "factura":       ("Factura",        14, "text"),
-                        "fecha":         ("Fecha Emisión",  14, "date"),
-                        "vencimiento":   ("Vencimiento",    14, "date"),
-                        "saldo_adeudado":("Saldo ($)",      14, "money"),
-                        "dias_overdue":  ("Días Vencido",   14, "num"),
-                        "dias_vencido":  ("Días Vencido",   14, "num"),
-                        "_hoja_origen":  ("Hoja Origen",    14, "text"),
-                    }
-                    cols_c_pres = [c for c in cols_cxc_map if c in df_cxc_d.columns]
-                    df_c = df_cxc_d[cols_c_pres].copy()
-
-                    df_c.to_excel(writer, sheet_name="CxC por Vendedor",
-                                  startrow=3, index=False, header=False)
-                    ws_c = writer.sheets["CxC por Vendedor"]
-                    ws_c.write(0, 0, "Cuentas por Cobrar por Vendedor", fmt_title)
-                    ws_c.write(1, 0, f"Total registros: {len(df_c)}", fmt_subtitle)
-
-                    for col_i, col_key in enumerate(cols_c_pres):
-                        label, ancho, tipo = cols_cxc_map[col_key]
-                        ws_c.write(2, col_i, label, fmt_header)
-                        ws_c.set_column(col_i, col_i, ancho)
-                        fmt_celda = {"text": fmt_text, "money": fmt_money,
-                                     "date": fmt_date, "num": fmt_num}.get(tipo, fmt_text)
-                        for row_i, val in enumerate(df_c[col_key]):
-                            ws_c.write(row_i + 3, col_i, val, fmt_celda)
-
-                    ws_c.freeze_panes(3, 1)
-                    ws_c.autofilter(2, 0, 2 + len(df_c), len(cols_c_pres) - 1)
-
-            return buffer.getvalue()
-
-        # ── Botones de descarga ───────────────────────────────────────────────
-        col_btn1, col_btn2 = st.columns(2)
-
-        with col_btn1:
-            excel_bytes = _generar_excel(df_resumen_exp, df_ventas_exp, df_cxc_exp)
-            nombre_excel = f"reporte_vendedores_{sufijo_archivo}_{now_mx().strftime('%Y%m%d')}.xlsx"
-            st.download_button(
-                label="📊 Descargar Reporte Excel (Resumen + Ventas + CxC)",
-                data=excel_bytes,
-                file_name=nombre_excel,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-            )
-
-        with col_btn2:
-            csv_bytes = df_resumen_exp.to_csv(index=False).encode("utf-8")
-            st.download_button(
-                label="⬇️ Descargar solo resumen (.csv)",
-                data=csv_bytes,
-                file_name=f"vendedores_cxc_{sufijo_archivo}_{now_mx().strftime('%Y%m%d')}.csv",
-                mime="text/csv",
-                use_container_width=True,
-            )
-
-        st.caption(
-            "📋 **Excel incluye 3 hojas:** "
-            "**Resumen Vendedores** (KPIs y scores) · "
-            "**Operaciones Ventas** (detalle de cada venta) · "
-            "**CxC por Vendedor** (facturas pendientes con días vencidos)"
+            marker_color=colores_rank,
+            text=df_rank["score_calidad"].apply(lambda s: f"{s:.0f}/100"),
+            textposition="outside",
+            hovertemplate="%{y}<br>Score: %{x:.0f}<br>% Vencida: " +
+                          df_rank["pct_vencida"].apply(lambda p: f"{p:.1f}%").values + "<extra></extra>",
+        ))
+        fig_rank.update_layout(
+            title="Score de Calidad de Cartera por Vendedor (mayor = mejor)",
+            xaxis=dict(range=[0, 115], title="Score (0–100)"),
+            yaxis_title="",
+            height=max(350, len(df_rank) * 45),
+            plot_bgcolor="rgba(0,0,0,0)",
+            paper_bgcolor="rgba(0,0,0,0)",
         )
-    else:
-        st.warning("⚠️ Las funciones de exportación están disponibles solo para usuarios con rol **Analyst** o **Admin**")
-        st.info("💡 Contacta al administrador para solicitar acceso")
+        st.plotly_chart(fig_rank, use_container_width=True)
+
+        # ── Gráfico: Composición de cartera por vendedor (stacked bar) ───────────
+        st.subheader("📊 Composición de Cartera por Vendedor")
+
+        df_stack = df_cruce.sort_values("cartera_total", ascending=False).head(15)
+
+        fig_stack = go.Figure()
+        fig_stack.add_trace(go.Bar(
+            name="Vigente",
+            x=df_stack["vendedor"],
+            y=df_stack["cartera_vigente"],
+            marker_color="#4CAF50",
+            hovertemplate="%{x}<br>Vigente: $%{y:,.0f}<extra></extra>",
+        ))
+        fig_stack.add_trace(go.Bar(
+            name="Vencida (no crítica)",
+            x=df_stack["vendedor"],
+            y=df_stack["cartera_vencida"] - df_stack["cartera_alto_riesgo"],
+            marker_color="#FF9800",
+            hovertemplate="%{x}<br>Vencida: $%{y:,.0f}<extra></extra>",
+        ))
+        fig_stack.add_trace(go.Bar(
+            name=">90 días (alto riesgo)",
+            x=df_stack["vendedor"],
+            y=df_stack["cartera_alto_riesgo"],
+            marker_color="#F44336",
+            hovertemplate="%{x}<br>Alto riesgo: $%{y:,.0f}<extra></extra>",
+        ))
+        fig_stack.update_layout(
+            barmode="stack",
+            title="Composición de Cartera por Vendedor (Top 15)",
+            xaxis_title="",
+            yaxis_title="Saldo ($)",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            height=420,
+            plot_bgcolor="rgba(0,0,0,0)",
+            paper_bgcolor="rgba(0,0,0,0)",
+        )
+        st.plotly_chart(fig_stack, use_container_width=True)
+
+        # ── Alertas automáticas ───────────────────────────────────────────────────
+        st.subheader("🚨 Alertas de Vendedores")
+
+        vendedores_alerta = df_cruce[df_cruce["pct_vencida"] > 40].copy()
+        
+        if len(vendedores_alerta) > 0:
+            st.markdown("🔴 **Vendedores con alta morosidad (>40% de cartera vencida)**")
+            
+            tabla_alertas = vendedores_alerta[[
+                'vendedor', 'cartera_vencida', 'pct_vencida',
+                'pct_vigente', 'pct_1_30', 'pct_31_60', 'pct_61_90', 'pct_mas_90'
+            ]].copy()
+            tabla_alertas = tabla_alertas.sort_values('pct_vencida', ascending=False)
+            tabla_alertas['cartera_vencida'] = tabla_alertas['cartera_vencida'].apply(lambda x: f"${x:,.0f}")
+            tabla_alertas['pct_vencida'] = tabla_alertas['pct_vencida'].apply(lambda x: f"{x:.1f}%")
+            tabla_alertas['pct_vigente'] = tabla_alertas['pct_vigente'].apply(lambda x: f"{x:.1f}%")
+            tabla_alertas['pct_1_30'] = tabla_alertas['pct_1_30'].apply(lambda x: f"{x:.1f}%")
+            tabla_alertas['pct_31_60'] = tabla_alertas['pct_31_60'].apply(lambda x: f"{x:.1f}%")
+            tabla_alertas['pct_61_90'] = tabla_alertas['pct_61_90'].apply(lambda x: f"{x:.1f}%")
+            tabla_alertas['pct_mas_90'] = tabla_alertas['pct_mas_90'].apply(lambda x: f"{x:.1f}%")
+            tabla_alertas.columns = [
+                'Vendedor', 'Monto Vencido', '% Vencida Total',
+                'Vigente', '1-30 días', '31-60 días', '61-90 días', '>90 días'
+            ]
+            
+            st.dataframe(tabla_alertas, hide_index=True, use_container_width=True)
+            st.write("")
+        
+        otras_alertas = []
+        for _, row in df_cruce.iterrows():
+            if row["pct_vencida"] <= 40 and row["ratio_deuda_ventas"] > 20:
+                otras_alertas.append(
+                    f"🟠 **{row['vendedor']}**: ratio deuda/ventas de {row['ratio_deuda_ventas']:.1f}% "
+                    f"— posible aceptación de clientes de alto riesgo"
+                )
+            elif row["pct_vencida"] <= 40 and row["dias_max"] > 120:
+                otras_alertas.append(
+                    f"🟡 **{row['vendedor']}**: factura más vencida con {row['dias_max']:.0f} días — "
+                    "revisar cliente específico"
+                )
+        
+        if otras_alertas:
+            for a in otras_alertas:
+                st.markdown(a)
+        
+        if len(vendedores_alerta) == 0 and len(otras_alertas) == 0:
+            st.success("✅ Todos los vendedores tienen indicadores dentro de rangos normales.")
+
+        # ── Exportación ───────────────────────────────────────────────────────────
+        st.write("---")
+        st.subheader("⬇️ Exportar Reporte")
+
+        user = get_current_user()
+        puede_exportar = user and user.can_export()
+
+        if puede_exportar:
+            # ── Opción de filtrar por vendedor ────────────────────────────────────
+            col_exp1, col_exp2 = st.columns([2, 1])
+            with col_exp1:
+                vendedores_opciones = ["Todos los vendedores"] + sorted(df_cruce["vendedor"].tolist())
+                vendedor_filtro_exp = st.selectbox(
+                    "Filtrar exportación por vendedor:",
+                    options=vendedores_opciones,
+                    key="vendedor_exportacion_select",
+                )
+            with col_exp2:
+                st.write("")
+                st.write("")
+                st.caption("El Excel incluye: Resumen, Ventas y CxC")
+
+            # Filtrar según selección
+            if vendedor_filtro_exp == "Todos los vendedores":
+                df_ventas_exp  = df_ventas.copy()
+                df_cxc_exp     = df_cxc_vend.copy()
+                df_resumen_exp = df_cruce.copy()
+                sufijo_archivo = "todos"
+            else:
+                df_ventas_exp  = df_ventas[df_ventas["vendedor"] == vendedor_filtro_exp].copy()
+                df_cxc_exp     = df_cxc_vend[df_cxc_vend["vendedor"] == vendedor_filtro_exp].copy()
+                df_resumen_exp = df_cruce[df_cruce["vendedor"] == vendedor_filtro_exp].copy()
+                sufijo_archivo = vendedor_filtro_exp.replace(" ", "_")[:30]
+
+            # ── Generar Excel en memoria ──────────────────────────────────────────
+            def _generar_excel(df_resumen: pd.DataFrame, df_ventas_d: pd.DataFrame,
+                               df_cxc_d: pd.DataFrame) -> bytes:
+                buffer = io.BytesIO()
+                with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
+                    wb = writer.book
+
+                    # ── Formatos ──────────────────────────────────────────────────
+                    fmt_header   = wb.add_format({"bold": True, "bg_color": "#1F4E79",
+                                                  "font_color": "white", "border": 1})
+                    fmt_money    = wb.add_format({"num_format": "$#,##0.00", "border": 1})
+                    fmt_pct      = wb.add_format({"num_format": "0.00%", "border": 1})
+                    fmt_num      = wb.add_format({"num_format": "#,##0", "border": 1})
+                    fmt_text     = wb.add_format({"border": 1})
+                    fmt_date     = wb.add_format({"num_format": "yyyy-mm-dd", "border": 1})
+                    fmt_title    = wb.add_format({"bold": True, "font_size": 14,
+                                                  "font_color": "#1F4E79"})
+                    fmt_subtitle = wb.add_format({"italic": True, "font_color": "#666666"})
+
+                    # ══════════════════════════════════════════════════════════════
+                    # HOJA 1 — RESUMEN POR VENDEDOR
+                    # ══════════════════════════════════════════════════════════════
+                    hoja_resumen = "Resumen Vendedores"
+                    cols_resumen = {
+                        "vendedor":           ("Vendedor",           20, "text"),
+                        "ventas_totales":     ("Ventas Totales ($)", 18, "money"),
+                        "num_operaciones":    ("# Operaciones",      14, "num"),
+                        "ticket_promedio":    ("Ticket Promedio ($)", 18, "money"),
+                        "cartera_total":      ("Cartera Total ($)",  18, "money"),
+                        "cartera_vigente":    ("Vigente ($)",        16, "money"),
+                        "cartera_vencida":    ("Vencida ($)",        16, "money"),
+                        "cartera_1_30":       ("1-30 días ($)",      15, "money"),
+                        "cartera_31_60":      ("31-60 días ($)",     15, "money"),
+                        "cartera_61_90":      ("61-90 días ($)",     15, "money"),
+                        "cartera_alto_riesgo":(">90 días ($)",       15, "money"),
+                        "pct_vencida":        ("% Vencida",          12, "pct"),
+                        "ratio_deuda_ventas": ("Ratio Deuda/Ventas", 18, "pct"),
+                        "score_calidad":      ("Score Calidad",      13, "num"),
+                        "nivel_calidad":      ("Nivel",              12, "text"),
+                        "dias_max":           ("Días Máx Vencido",   16, "num"),
+                    }
+
+                    cols_presentes = [c for c in cols_resumen if c in df_resumen.columns]
+                    df_r = df_resumen[cols_presentes].copy()
+                    for col_p in ("pct_vencida", "ratio_deuda_ventas", "pct_vigente",
+                                  "pct_1_30", "pct_31_60", "pct_61_90", "pct_mas_90"):
+                        if col_p in df_r.columns:
+                            df_r[col_p] = df_r[col_p] / 100
+
+                    df_r.to_excel(writer, sheet_name=hoja_resumen, startrow=3, index=False, header=False)
+                    ws_r = writer.sheets[hoja_resumen]
+                    ws_r.write(0, 0, "Reporte de Vendedores + CxC", fmt_title)
+                    ws_r.write(1, 0, f"Generado: {now_mx().strftime('%d/%m/%Y %H:%M')}", fmt_subtitle)
+
+                    for col_i, col_key in enumerate(cols_presentes):
+                        label, ancho, tipo = cols_resumen[col_key]
+                        ws_r.write(2, col_i, label, fmt_header)
+                        ws_r.set_column(col_i, col_i, ancho)
+                        fmt_celda = {"text": fmt_text, "money": fmt_money,
+                                     "pct": fmt_pct, "num": fmt_num}.get(tipo, fmt_text)
+                        for row_i, val in enumerate(df_r[col_key]):
+                            import pandas as _pd
+                            if _pd.isnull(val):
+                                val = None
+                            ws_r.write(row_i + 3, col_i, val, fmt_celda)
+
+                    ws_r.freeze_panes(3, 1)
+                    ws_r.autofilter(2, 0, 2 + len(df_r), len(cols_presentes) - 1)
+
+                    # ══════════════════════════════════════════════════════════════
+                    # HOJA 2 — OPERACIONES DE VENTAS
+                    # ══════════════════════════════════════════════════════════════
+                    if not df_ventas_d.empty:
+                        cols_ventas_map = {
+                            "vendedor":         ("Vendedor",         22, "text"),
+                            "fecha":            ("Fecha",            14, "date"),
+                            "factura":          ("Factura",          14, "text"),
+                            "cliente":          ("Cliente",          30, "text"),
+                            "linea_de_negocio": ("Línea de Negocio", 20, "text"),
+                            "producto":         ("Producto",         30, "text"),
+                            "valor_usd":        ("Monto ($)",        14, "money"),
+                            "ventas_usd":       ("Monto ($)",        14, "money"),
+                        }
+                        cols_v_pres = [c for c in cols_ventas_map if c in df_ventas_d.columns]
+                        df_v = df_ventas_d[cols_v_pres].copy()
+
+                        df_v.to_excel(writer, sheet_name="Operaciones Ventas",
+                                      startrow=3, index=False, header=False)
+                        ws_v = writer.sheets["Operaciones Ventas"]
+                        ws_v.write(0, 0, "Detalle de Operaciones de Ventas", fmt_title)
+                        ws_v.write(1, 0, f"Total registros: {len(df_v)}", fmt_subtitle)
+
+                        for col_i, col_key in enumerate(cols_v_pres):
+                            label, ancho, tipo = cols_ventas_map[col_key]
+                            ws_v.write(2, col_i, label, fmt_header)
+                            ws_v.set_column(col_i, col_i, ancho)
+                            fmt_celda = {"text": fmt_text, "money": fmt_money,
+                                         "date": fmt_date, "num": fmt_num}.get(tipo, fmt_text)
+                            for row_i, val in enumerate(df_v[col_key]):
+                                import pandas as _pd
+                                if _pd.isnull(val):
+                                    val = None
+                                ws_v.write(row_i + 3, col_i, val, fmt_celda)
+
+                        ws_v.freeze_panes(3, 1)
+                        ws_v.autofilter(2, 0, 2 + len(df_v), len(cols_v_pres) - 1)
+
+                    # ══════════════════════════════════════════════════════════════
+                    # HOJA 3 — CxC POR VENDEDOR
+                    # ══════════════════════════════════════════════════════════════
+                    if not df_cxc_d.empty:
+                        cols_cxc_map = {
+                            "vendedor":      ("Vendedor",       22, "text"),
+                            "deudor":        ("Cliente",        30, "text"),
+                            "factura":       ("Factura",        14, "text"),
+                            "fecha":         ("Fecha Emisión",  14, "date"),
+                            "vencimiento":   ("Vencimiento",    14, "date"),
+                            "saldo_adeudado":("Saldo ($)",      14, "money"),
+                            "dias_overdue":  ("Días Vencido",   14, "num"),
+                            "dias_vencido":  ("Días Vencido",   14, "num"),
+                            "_hoja_origen":  ("Hoja Origen",    14, "text"),
+                        }
+                        cols_c_pres = [c for c in cols_cxc_map if c in df_cxc_d.columns]
+                        df_c = df_cxc_d[cols_c_pres].copy()
+
+                        df_c.to_excel(writer, sheet_name="CxC por Vendedor",
+                                      startrow=3, index=False, header=False)
+                        ws_c = writer.sheets["CxC por Vendedor"]
+                        ws_c.write(0, 0, "Cuentas por Cobrar por Vendedor", fmt_title)
+                        ws_c.write(1, 0, f"Total registros: {len(df_c)}", fmt_subtitle)
+
+                        for col_i, col_key in enumerate(cols_c_pres):
+                            label, ancho, tipo = cols_cxc_map[col_key]
+                            ws_c.write(2, col_i, label, fmt_header)
+                            ws_c.set_column(col_i, col_i, ancho)
+                            fmt_celda = {"text": fmt_text, "money": fmt_money,
+                                         "date": fmt_date, "num": fmt_num}.get(tipo, fmt_text)
+                            for row_i, val in enumerate(df_c[col_key]):
+                                import pandas as _pd
+                                if _pd.isnull(val):
+                                    val = None
+                                ws_c.write(row_i + 3, col_i, val, fmt_celda)
+
+                        ws_c.freeze_panes(3, 1)
+                        ws_c.autofilter(2, 0, 2 + len(df_c), len(cols_c_pres) - 1)
+
+                return buffer.getvalue()
+
+            # ── Botones de descarga ───────────────────────────────────────────────
+            col_btn1, col_btn2 = st.columns(2)
+
+            with col_btn1:
+                excel_bytes = _generar_excel(df_resumen_exp, df_ventas_exp, df_cxc_exp)
+                nombre_excel = f"reporte_vendedores_{sufijo_archivo}_{now_mx().strftime('%Y%m%d')}.xlsx"
+                st.download_button(
+                    label="📊 Descargar Reporte Excel (Resumen + Ventas + CxC)",
+                    data=excel_bytes,
+                    file_name=nombre_excel,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                )
+
+            with col_btn2:
+                csv_bytes = df_resumen_exp.to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    label="⬇️ Descargar solo resumen (.csv)",
+                    data=csv_bytes,
+                    file_name=f"vendedores_cxc_{sufijo_archivo}_{now_mx().strftime('%Y%m%d')}.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                )
+
+            st.caption(
+                "📋 **Excel incluye 3 hojas:** "
+                "**Resumen Vendedores** (KPIs y scores) · "
+                "**Operaciones Ventas** (detalle de cada venta) · "
+                "**CxC por Vendedor** (facturas pendientes con días vencidos)"
+            )
+        else:
+            st.warning("⚠️ Las funciones de exportación están disponibles solo para usuarios con rol **Analyst** o **Admin**")
+            st.info("💡 Contacta al administrador para solicitar acceso")
 
     

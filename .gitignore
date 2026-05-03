@@ -27,6 +27,7 @@ coverage.xml
 htmlcov/
 .tox/
 .nox/
+site/
 
 # Streamlit y logs
 .streamlit/

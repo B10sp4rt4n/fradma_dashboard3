@@ -56,283 +56,106 @@ def aplicar_filtro_fechas(
     
     fecha_min = df_con_fechas[columna_fecha].min().date()
     fecha_max = df_con_fechas[columna_fecha].max().date()
-    
-    st.sidebar.write(f"**Rango disponible:** {fecha_min} a {fecha_max}")
-    
-    # ═══════════════════════════════════════════════════════════
-    # SELECTOR DE MODO DE FILTRADO
-    # ═══════════════════════════════════════════════════════════
-    
-    modo_filtro = st.sidebar.radio(
-        "🎯 Modo de Filtrado",
+
+    df_filtrado = df_con_fechas.copy()
+
+    st.caption(f"📅 Disponible: {fecha_min} — {fecha_max}")
+
+    modo_filtro = st.radio(
+        "Modo",
         options=["rango_fechas", "periodo_vs_periodo"],
-        format_func=lambda x: {
-            "rango_fechas": "📅 Rango de Fechas",
-            "periodo_vs_periodo": "📊 Periodo vs Periodo"
-        }[x],
+        format_func=lambda x: {"rango_fechas": "Rango de fechas", "periodo_vs_periodo": "Periodo vs Periodo"}[x],
         key="modo_filtro_fechas",
-        help="Rango: Selecciona fechas específicas | Periodo: Compara meses, trimestres o años",
-        horizontal=True
+        horizontal=True,
     )
-    
-    st.sidebar.markdown("---")
-    
-    # ═══════════════════════════════════════════════════════════
-    # MODO 1: RANGO DE FECHAS (fecha vs fecha)
-    # ═══════════════════════════════════════════════════════════
-    
+
     if modo_filtro == "rango_fechas":
-        col1, col2 = st.sidebar.columns(2)
-        
+        col1, col2 = st.columns(2)
         with col1:
-            fecha_inicio = st.date_input(
-                "📅 Desde",
-                value=fecha_min,
-                min_value=fecha_min,
-                max_value=fecha_max,
-                key="filtro_fecha_inicio",
-                help="Fecha de inicio del rango"
-            )
-        
+            fecha_inicio = st.date_input("Desde", value=fecha_min, min_value=fecha_min, max_value=fecha_max, key="filtro_fecha_inicio")
         with col2:
-            fecha_fin = st.date_input(
-                "📅 Hasta",
-                value=fecha_max,
-                min_value=fecha_min,
-                max_value=fecha_max,
-                key="filtro_fecha_fin",
-                help="Fecha final del rango"
-            )
-        
-        # Validar que fecha_inicio <= fecha_fin
+            fecha_fin = st.date_input("Hasta", value=fecha_max, min_value=fecha_min, max_value=fecha_max, key="filtro_fecha_fin")
+
         if fecha_inicio > fecha_fin:
-            st.sidebar.error("⚠️ La fecha inicio debe ser ≤ fecha fin")
+            st.error("⚠️ Fecha inicio debe ser ≤ fecha fin")
             return df
-        
-        # Aplicar filtro
+
         mask = (df_con_fechas[columna_fecha].dt.date >= fecha_inicio) & \
                (df_con_fechas[columna_fecha].dt.date <= fecha_fin)
-        
         df_filtrado = df_con_fechas[mask].copy()
-        
-        # Mostrar resumen
-        registros = len(df_filtrado)
-        total = len(df_con_fechas)
         dias = (fecha_fin - fecha_inicio).days + 1
-        
-        st.sidebar.info(f"📊 {registros:,} registros ({dias} días)")
-    
-    # ═══════════════════════════════════════════════════════════
-    # MODO 2: PERIODO VS PERIODO
-    # ═══════════════════════════════════════════════════════════
-    
+        st.info(f"📊 {len(df_filtrado):,} registros · {dias} días")
+
     elif modo_filtro == "periodo_vs_periodo":
-        
-        # Extraer años, meses, trimestres disponibles
         df_con_fechas['_año'] = df_con_fechas[columna_fecha].dt.year
         df_con_fechas['_mes'] = df_con_fechas[columna_fecha].dt.month
         df_con_fechas['_trimestre'] = df_con_fechas[columna_fecha].dt.quarter
-        
         años_disponibles = sorted(df_con_fechas['_año'].unique())
-        
-        # Selector de granularidad
-        granularidad = st.sidebar.selectbox(
-            "📊 Granularidad",
+
+        granularidad = st.selectbox(
+            "Granularidad",
             options=["mensual", "trimestral", "anual"],
-            format_func=lambda x: {
-                "mensual": "📆 Mensual",
-                "trimestral": "📈 Trimestral",
-                "anual": "📅 Anual"
-            }[x],
+            format_func=lambda x: {"mensual": "📆 Mensual", "trimestral": "📈 Trimestral", "anual": "📅 Anual"}[x],
             key="granularidad_periodo",
-            help="Selecciona la granularidad de los periodos a comparar"
         )
-        
-        st.sidebar.markdown("---")
-        
-        # ────────────────────────────────────────────────────────
-        # GRANULARIDAD MENSUAL
-        # ────────────────────────────────────────────────────────
+
         if granularidad == "mensual":
-            meses_nombres = {
-                1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril",
-                5: "Mayo", 6: "Junio", 7: "Julio", 8: "Agosto",
-                9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"
-            }
-            
-            col1, col2 = st.sidebar.columns(2)
-            
+            meses_nombres = {1:"Enero",2:"Febrero",3:"Marzo",4:"Abril",5:"Mayo",6:"Junio",
+                             7:"Julio",8:"Agosto",9:"Septiembre",10:"Octubre",11:"Noviembre",12:"Diciembre"}
+            col1, col2 = st.columns(2)
             with col1:
-                st.markdown("**📅 Periodo 1**")
-                año_1 = st.selectbox(
-                    "Año",
-                    options=años_disponibles,
-                    index=len(años_disponibles)-1 if len(años_disponibles) > 0 else 0,
-                    key="periodo1_año",
-                    label_visibility="collapsed"
-                )
-                
-                meses_año_1 = sorted(df_con_fechas[df_con_fechas['_año'] == año_1]['_mes'].unique())
-                mes_1 = st.selectbox(
-                    "Mes",
-                    options=meses_año_1,
-                    format_func=lambda x: meses_nombres[x],
-                    key="periodo1_mes",
-                    label_visibility="collapsed"
-                )
-            
+                st.markdown("**Periodo 1**")
+                año_1 = st.selectbox("Año", años_disponibles, index=len(años_disponibles)-1, key="periodo1_año", label_visibility="collapsed")
+                meses_año_1 = sorted(df_con_fechas[df_con_fechas['_año']==año_1]['_mes'].unique())
+                mes_1 = st.selectbox("Mes", meses_año_1, format_func=lambda x: meses_nombres[x], key="periodo1_mes", label_visibility="collapsed")
             with col2:
-                st.markdown("**📅 Periodo 2**")
-                año_2 = st.selectbox(
-                    "Año",
-                    options=años_disponibles,
-                    index=max(0, len(años_disponibles)-2) if len(años_disponibles) > 1 else 0,
-                    key="periodo2_año",
-                    label_visibility="collapsed"
-                )
-                
-                meses_año_2 = sorted(df_con_fechas[df_con_fechas['_año'] == año_2]['_mes'].unique())
-                mes_2 = st.selectbox(
-                    "Mes",
-                    options=meses_año_2,
-                    format_func=lambda x: meses_nombres[x],
-                    key="periodo2_mes",
-                    label_visibility="collapsed"
-                )
-            
-            # Filtrar por ambos periodos
-            mask = (
-                ((df_con_fechas['_año'] == año_1) & (df_con_fechas['_mes'] == mes_1)) |
-                ((df_con_fechas['_año'] == año_2) & (df_con_fechas['_mes'] == mes_2))
-            )
-            
+                st.markdown("**Periodo 2**")
+                año_2 = st.selectbox("Año", años_disponibles, index=max(0,len(años_disponibles)-2), key="periodo2_año", label_visibility="collapsed")
+                meses_año_2 = sorted(df_con_fechas[df_con_fechas['_año']==año_2]['_mes'].unique())
+                mes_2 = st.selectbox("Mes", meses_año_2, format_func=lambda x: meses_nombres[x], key="periodo2_mes", label_visibility="collapsed")
+            mask = (((df_con_fechas['_año']==año_1)&(df_con_fechas['_mes']==mes_1))|
+                    ((df_con_fechas['_año']==año_2)&(df_con_fechas['_mes']==mes_2)))
             df_filtrado = df_con_fechas[mask].copy()
-            
-            # Resumen
-            p1_count = len(df_con_fechas[(df_con_fechas['_año'] == año_1) & (df_con_fechas['_mes'] == mes_1)])
-            p2_count = len(df_con_fechas[(df_con_fechas['_año'] == año_2) & (df_con_fechas['_mes'] == mes_2)])
-            
-            st.sidebar.success(
-                f"✅ Comparando:\n"
-                f"• {meses_nombres[mes_1]} {año_1}: {p1_count:,} reg.\n"
-                f"• {meses_nombres[mes_2]} {año_2}: {p2_count:,} reg."
-            )
-        
-        # ────────────────────────────────────────────────────────
-        # GRANULARIDAD TRIMESTRAL
-        # ────────────────────────────────────────────────────────
+            p1 = len(df_con_fechas[(df_con_fechas['_año']==año_1)&(df_con_fechas['_mes']==mes_1)])
+            p2 = len(df_con_fechas[(df_con_fechas['_año']==año_2)&(df_con_fechas['_mes']==mes_2)])
+            st.success(f"✅ {meses_nombres[mes_1]} {año_1}: {p1:,} · {meses_nombres[mes_2]} {año_2}: {p2:,}")
+
         elif granularidad == "trimestral":
-            trimestres_nombres = {
-                1: "Q1 (Ene-Mar)",
-                2: "Q2 (Abr-Jun)",
-                3: "Q3 (Jul-Sep)",
-                4: "Q4 (Oct-Dic)"
-            }
-            
-            col1, col2 = st.sidebar.columns(2)
-            
+            trimestres_nombres = {1:"Q1 (Ene-Mar)",2:"Q2 (Abr-Jun)",3:"Q3 (Jul-Sep)",4:"Q4 (Oct-Dic)"}
+            col1, col2 = st.columns(2)
             with col1:
-                st.markdown("**📅 Periodo 1**")
-                año_1 = st.selectbox(
-                    "Año",
-                    options=años_disponibles,
-                    index=len(años_disponibles)-1 if len(años_disponibles) > 0 else 0,
-                    key="periodo1_año_trim",
-                    label_visibility="collapsed"
-                )
-                
-                trimestres_año_1 = sorted(df_con_fechas[df_con_fechas['_año'] == año_1]['_trimestre'].unique())
-                trim_1 = st.selectbox(
-                    "Trimestre",
-                    options=trimestres_año_1,
-                    format_func=lambda x: trimestres_nombres[x],
-                    key="periodo1_trim",
-                    label_visibility="collapsed"
-                )
-            
+                st.markdown("**Periodo 1**")
+                año_1 = st.selectbox("Año", años_disponibles, index=len(años_disponibles)-1, key="periodo1_año_trim", label_visibility="collapsed")
+                trims_1 = sorted(df_con_fechas[df_con_fechas['_año']==año_1]['_trimestre'].unique())
+                trim_1 = st.selectbox("Trimestre", trims_1, format_func=lambda x: trimestres_nombres[x], key="periodo1_trim", label_visibility="collapsed")
             with col2:
-                st.markdown("**📅 Periodo 2**")
-                año_2 = st.selectbox(
-                    "Año",
-                    options=años_disponibles,
-                    index=max(0, len(años_disponibles)-2) if len(años_disponibles) > 1 else 0,
-                    key="periodo2_año_trim",
-                    label_visibility="collapsed"
-                )
-                
-                trimestres_año_2 = sorted(df_con_fechas[df_con_fechas['_año'] == año_2]['_trimestre'].unique())
-                trim_2 = st.selectbox(
-                    "Trimestre",
-                    options=trimestres_año_2,
-                    format_func=lambda x: trimestres_nombres[x],
-                    key="periodo2_trim",
-                    label_visibility="collapsed"
-                )
-            
-            # Filtrar por ambos trimestres
-            mask = (
-                ((df_con_fechas['_año'] == año_1) & (df_con_fechas['_trimestre'] == trim_1)) |
-                ((df_con_fechas['_año'] == año_2) & (df_con_fechas['_trimestre'] == trim_2))
-            )
-            
+                st.markdown("**Periodo 2**")
+                año_2 = st.selectbox("Año", años_disponibles, index=max(0,len(años_disponibles)-2), key="periodo2_año_trim", label_visibility="collapsed")
+                trims_2 = sorted(df_con_fechas[df_con_fechas['_año']==año_2]['_trimestre'].unique())
+                trim_2 = st.selectbox("Trimestre", trims_2, format_func=lambda x: trimestres_nombres[x], key="periodo2_trim", label_visibility="collapsed")
+            mask = (((df_con_fechas['_año']==año_1)&(df_con_fechas['_trimestre']==trim_1))|
+                    ((df_con_fechas['_año']==año_2)&(df_con_fechas['_trimestre']==trim_2)))
             df_filtrado = df_con_fechas[mask].copy()
-            
-            # Resumen
-            p1_count = len(df_con_fechas[(df_con_fechas['_año'] == año_1) & (df_con_fechas['_trimestre'] == trim_1)])
-            p2_count = len(df_con_fechas[(df_con_fechas['_año'] == año_2) & (df_con_fechas['_trimestre'] == trim_2)])
-            
-            st.sidebar.success(
-                f"✅ Comparando:\n"
-                f"• {trimestres_nombres[trim_1]} {año_1}: {p1_count:,} reg.\n"
-                f"• {trimestres_nombres[trim_2]} {año_2}: {p2_count:,} reg."
-            )
-        
-        # ────────────────────────────────────────────────────────
-        # GRANULARIDAD ANUAL
-        # ────────────────────────────────────────────────────────
+            p1 = len(df_con_fechas[(df_con_fechas['_año']==año_1)&(df_con_fechas['_trimestre']==trim_1)])
+            p2 = len(df_con_fechas[(df_con_fechas['_año']==año_2)&(df_con_fechas['_trimestre']==trim_2)])
+            st.success(f"✅ {trimestres_nombres[trim_1]} {año_1}: {p1:,} · {trimestres_nombres[trim_2]} {año_2}: {p2:,}")
+
         elif granularidad == "anual":
-            col1, col2 = st.sidebar.columns(2)
-            
+            col1, col2 = st.columns(2)
             with col1:
-                st.markdown("**📅 Año 1**")
-                año_1 = st.selectbox(
-                    "Selecciona año 1",
-                    options=años_disponibles,
-                    index=len(años_disponibles)-1 if len(años_disponibles) > 0 else 0,
-                    key="periodo1_año_anual",
-                    label_visibility="collapsed"
-                )
-            
+                st.markdown("**Año 1**")
+                año_1 = st.selectbox("Año 1", años_disponibles, index=len(años_disponibles)-1, key="periodo1_año_anual", label_visibility="collapsed")
             with col2:
-                st.markdown("**📅 Año 2**")
-                año_2 = st.selectbox(
-                    "Selecciona año 2",
-                    options=años_disponibles,
-                    index=max(0, len(años_disponibles)-2) if len(años_disponibles) > 1 else 0,
-                    key="periodo2_año_anual",
-                    label_visibility="collapsed"
-                )
-            
-            # Filtrar por ambos años
-            mask = (df_con_fechas['_año'] == año_1) | (df_con_fechas['_año'] == año_2)
+                st.markdown("**Año 2**")
+                año_2 = st.selectbox("Año 2", años_disponibles, index=max(0,len(años_disponibles)-2), key="periodo2_año_anual", label_visibility="collapsed")
+            mask = (df_con_fechas['_año']==año_1)|(df_con_fechas['_año']==año_2)
             df_filtrado = df_con_fechas[mask].copy()
-            
-            # Resumen
-            p1_count = len(df_con_fechas[df_con_fechas['_año'] == año_1])
-            p2_count = len(df_con_fechas[df_con_fechas['_año'] == año_2])
-            
-            st.sidebar.success(
-                f"✅ Comparando:\n"
-                f"• Año {año_1}: {p1_count:,} registros\n"
-                f"• Año {año_2}: {p2_count:,} registros"
-            )
-        
-        # Limpiar columnas temporales
+            p1 = len(df_con_fechas[df_con_fechas['_año']==año_1])
+            p2 = len(df_con_fechas[df_con_fechas['_año']==año_2])
+            st.success(f"✅ Año {año_1}: {p1:,} · Año {año_2}: {p2:,}")
+
         df_filtrado = df_filtrado.drop(columns=['_año', '_mes', '_trimestre'], errors='ignore')
-    
-    else:
-        df_filtrado = df_con_fechas
-    
+
     return df_filtrado
 
 
@@ -373,10 +196,10 @@ def aplicar_filtro_cliente(
     if not mostrar_widget:
         return df
     
-    st.sidebar.write(f"**Total de clientes:** {len(clientes_unicos):,}")
+    st.write(f"**Total de clientes:** {len(clientes_unicos):,}")
     
     # Campo de búsqueda intuitiva
-    busqueda = st.sidebar.text_input(
+    busqueda = st.text_input(
         "🔍 Buscar cliente (empieza a escribir)",
         key="filtro_cliente_busqueda",
         placeholder="Escribe parte del nombre del cliente...",
@@ -386,14 +209,14 @@ def aplicar_filtro_cliente(
     # Filtrar clientes según búsqueda
     if busqueda:
         clientes_filtrados = [c for c in clientes_unicos if busqueda.lower() in c.lower()]
-        st.sidebar.caption(f"✅ {len(clientes_filtrados)} cliente(s) encontrado(s)")
+        st.caption(f"✅ {len(clientes_filtrados)} cliente(s) encontrado(s)")
     else:
         clientes_filtrados = clientes_unicos[:max_opciones]  # Mostrar solo los primeros
         if len(clientes_unicos) > max_opciones:
-            st.sidebar.caption(f"ℹ️ Mostrando {max_opciones} de {len(clientes_unicos)} clientes. Usa la búsqueda para encontrar más.")
+            st.caption(f"ℹ️ Mostrando {max_opciones} de {len(clientes_unicos)} clientes. Usa la búsqueda para encontrar más.")
     
     # Selector de clientes
-    clientes_seleccionados = st.sidebar.multiselect(
+    clientes_seleccionados = st.multiselect(
         "Seleccionar cliente(s)",
         options=clientes_filtrados,
         default=[],
@@ -406,7 +229,7 @@ def aplicar_filtro_cliente(
         df_filtrado = df[df[columna_cliente].isin(clientes_seleccionados)].copy()
         registros_filtrados = len(df_filtrado)
         registros_totales = len(df)
-        st.sidebar.success(f"📊 Filtrando {registros_filtrados:,} de {registros_totales:,} registros ({len(clientes_seleccionados)} cliente(s))")
+        st.success(f"📊 Filtrando {registros_filtrados:,} de {registros_totales:,} registros ({len(clientes_seleccionados)} cliente(s))")
         return df_filtrado
     
     return df
@@ -433,7 +256,7 @@ def aplicar_filtro_monto(
     """
     if columna_monto not in df.columns:
         if mostrar_widget:
-            st.sidebar.warning(f"⚠️ Columna '{columna_monto}' no encontrada")
+            st.warning(f"⚠️ Columna '{columna_monto}' no encontrada")
         return df
     
     # Convertir a numérico
@@ -443,7 +266,7 @@ def aplicar_filtro_monto(
     
     if df_con_montos.empty:
         if mostrar_widget:
-            st.sidebar.warning("⚠️ No hay montos válidos para filtrar")
+            st.warning("⚠️ No hay montos válidos para filtrar")
         return df
     
     if mostrar_widget:
@@ -463,14 +286,14 @@ def aplicar_filtro_monto(
             "Mayor a $100,000": (100000, monto_max)
         }
         
-        tipo_filtro = st.sidebar.radio(
+        tipo_filtro = st.radio(
             "Tipo de filtro",
             ["Rango personalizado", "Rangos predefinidos"],
             key="filtro_monto_tipo"
         )
         
         if tipo_filtro == "Rango personalizado":
-            rango_seleccionado = st.sidebar.slider(
+            rango_seleccionado = st.slider(
                 "Rango de monto",
                 min_value=monto_min,
                 max_value=monto_max,
@@ -480,7 +303,7 @@ def aplicar_filtro_monto(
             )
             monto_inicio, monto_fin = rango_seleccionado
         else:
-            rango_nombre = st.sidebar.selectbox(
+            rango_nombre = st.selectbox(
                 "Seleccionar rango",
                 options=list(rangos_predefinidos.keys()),
                 key="filtro_monto_predefinido"
@@ -498,8 +321,8 @@ def aplicar_filtro_monto(
         registros_totales = len(df_con_montos)
         suma_filtrada = df_filtrado[columna_monto].sum()
         
-        st.sidebar.caption(f"📊 {registros_filtrados:,} de {registros_totales:,} registros")
-        st.sidebar.caption(f"💵 Total: ${suma_filtrada:,.2f}")
+        st.caption(f"📊 {registros_filtrados:,} de {registros_totales:,} registros")
+        st.caption(f"💵 Total: ${suma_filtrada:,.2f}")
         
         return df_filtrado
     
@@ -527,7 +350,7 @@ def aplicar_filtro_categoria_riesgo(
     """
     if columna_dias not in df.columns:
         if mostrar_widget:
-            st.sidebar.warning(f"⚠️ Columna '{columna_dias}' no encontrada")
+            st.warning(f"⚠️ Columna '{columna_dias}' no encontrada")
         return df
     
     # Convertir a numérico
@@ -537,11 +360,11 @@ def aplicar_filtro_categoria_riesgo(
     
     if df_con_dias.empty:
         if mostrar_widget:
-            st.sidebar.warning("⚠️ No hay días de atraso válidos")
+            st.warning("⚠️ No hay días de atraso válidos")
         return df
     
     if mostrar_widget:
-        st.sidebar.markdown("#### ⚠️ Filtro por Riesgo")
+        st.markdown("#### ⚠️ Filtro por Riesgo")
         
         # Categorías de riesgo
         categorias = {
@@ -552,7 +375,7 @@ def aplicar_filtro_categoria_riesgo(
             "🔴🔴 Crítico (>90 días)": lambda x: x > 90
         }
         
-        categorias_seleccionadas = st.sidebar.multiselect(
+        categorias_seleccionadas = st.multiselect(
             "Categorías de riesgo",
             options=list(categorias.keys()),
             default=list(categorias.keys()),
@@ -560,7 +383,7 @@ def aplicar_filtro_categoria_riesgo(
         )
         
         if not categorias_seleccionadas:
-            st.sidebar.warning("⚠️ Selecciona al menos una categoría")
+            st.warning("⚠️ Selecciona al menos una categoría")
             return df_con_dias
         
         # Aplicar filtros combinados
@@ -576,16 +399,16 @@ def aplicar_filtro_categoria_riesgo(
         registros_filtrados = len(df_filtrado)
         registros_totales = len(df_con_dias)
         
-        st.sidebar.caption(f"📊 {registros_filtrados:,} de {registros_totales:,} registros")
+        st.caption(f"📊 {registros_filtrados:,} de {registros_totales:,} registros")
         
         # Distribución por categoría seleccionada
         if len(categorias_seleccionadas) > 1:
-            st.sidebar.caption("**Distribución:**")
+            st.caption("**Distribución:**")
             for cat in categorias_seleccionadas:
                 condicion = categorias[cat]
                 count = condicion(df_filtrado[columna_dias]).sum()
                 pct = (count / registros_filtrados * 100) if registros_filtrados > 0 else 0
-                st.sidebar.caption(f"  {cat.split()[0]} {count} ({pct:.1f}%)")
+                st.caption(f"  {cat.split()[0]} {count} ({pct:.1f}%)")
         
         return df_filtrado
     
@@ -616,10 +439,10 @@ def mostrar_resumen_filtros(
     registros_excluidos = total_original - total_filtrado
     pct_mantenido = (total_filtrado / total_original * 100) if total_original > 0 else 0
     
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### 📊 Resumen de Filtros")
+    st.markdown("---")
+    st.markdown("### 📊 Resumen de Filtros")
     
-    col1, col2 = st.sidebar.columns(2)
+    col1, col2 = st.columns(2)
     
     with col1:
         st.metric(
@@ -637,7 +460,7 @@ def mostrar_resumen_filtros(
     
     # Barra de progreso visual
     st.sidebar.progress(pct_mantenido / 100)
-    st.sidebar.caption(f"**{pct_mantenido:.1f}%** de datos mantenidos")
+    st.caption(f"**{pct_mantenido:.1f}%** de datos mantenidos")
     
     # Botón para limpiar filtros
     if st.sidebar.button("🔄 Limpiar todos los filtros", key="limpiar_filtros"):
@@ -646,6 +469,147 @@ def mostrar_resumen_filtros(
         for key in keys_to_clear:
             del st.session_state[key]
         st.rerun()
+
+
+def render_filtros_inline(
+    df: pd.DataFrame,
+    filtros: list,
+    ayuda: dict = {},
+    columna_fecha: str = 'fecha',
+    columna_cliente: str = 'cliente',
+    columna_monto: str = None,
+) -> pd.DataFrame:
+    """
+    Renderiza controles de filtro compactos integrados en la zona de contenido
+    de cada vista (no en el sidebar). Devuelve el DataFrame filtrado.
+
+    Args:
+        df: DataFrame original a filtrar
+        filtros: Lista con los tipos de filtro a mostrar (["fecha","cliente","monto"])
+        ayuda: Diccionario con textos de ayuda por tipo de filtro
+        columna_fecha: Nombre de la columna de fechas
+        columna_cliente: Nombre de la columna de clientes
+        columna_monto: Nombre de la columna de montos (None = omitir)
+    """
+    if not filtros or df is None or df.empty:
+        return df
+
+    # Determinar qué filtros aplican con los datos disponibles
+    filtros_activos = []
+    if "fecha" in filtros and columna_fecha in df.columns:
+        filtros_activos.append("fecha")
+    if "cliente" in filtros and columna_cliente in df.columns:
+        filtros_activos.append("cliente")
+    if "monto" in filtros and columna_monto and columna_monto in df.columns:
+        filtros_activos.append("monto")
+
+    if not filtros_activos:
+        return df
+
+    df_filtrado = df.copy()
+
+    with st.container():
+        # Proporciones: 2 por filtro + 1 para el botón limpiar
+        widths = [2] * len(filtros_activos) + [1]
+        cols = st.columns(widths, gap="small")
+        col_idx = 0
+
+        # ── FECHA ─────────────────────────────────────────────────────
+        if "fecha" in filtros_activos:
+            with cols[col_idx]:
+                if not pd.api.types.is_datetime64_any_dtype(df_filtrado[columna_fecha]):
+                    df_filtrado[columna_fecha] = pd.to_datetime(df_filtrado[columna_fecha], errors='coerce')
+                df_f = df_filtrado.dropna(subset=[columna_fecha])
+                if not df_f.empty:
+                    f_min = df_f[columna_fecha].min().date()
+                    f_max = df_f[columna_fecha].max().date()
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        fi = st.date_input(
+                            "📅 Desde",
+                            value=f_min, min_value=f_min, max_value=f_max,
+                            key="inline_filtro_fecha_ini",
+                            help=ayuda.get("fecha", ""),
+                        )
+                    with c2:
+                        ff = st.date_input(
+                            "📅 Hasta",
+                            value=f_max, min_value=f_min, max_value=f_max,
+                            key="inline_filtro_fecha_fin",
+                        )
+                    if fi and ff and fi <= ff:
+                        mask = (
+                            (df_filtrado[columna_fecha].dt.date >= fi) &
+                            (df_filtrado[columna_fecha].dt.date <= ff)
+                        )
+                        df_filtrado = df_filtrado[mask]
+            col_idx += 1
+
+        # ── CLIENTE ───────────────────────────────────────────────────
+        if "cliente" in filtros_activos:
+            with cols[col_idx]:
+                clientes = sorted([
+                    str(c) for c in df[columna_cliente].dropna().unique()
+                    if str(c).strip()
+                ])
+                selecc = st.multiselect(
+                    "👤 Cliente",
+                    options=clientes[:500],
+                    key="inline_filtro_cliente",
+                    placeholder="Todos los clientes",
+                    help=ayuda.get("cliente", ""),
+                )
+                if selecc:
+                    df_filtrado = df_filtrado[df_filtrado[columna_cliente].isin(selecc)]
+            col_idx += 1
+
+        # ── MONTO ─────────────────────────────────────────────────────
+        if "monto" in filtros_activos:
+            with cols[col_idx]:
+                monto_series = pd.to_numeric(df[columna_monto], errors='coerce').dropna()
+                if not monto_series.empty:
+                    mn = float(monto_series.min())
+                    mx = float(monto_series.max())
+                    if mn >= mx:
+                        mx = mn + 1.0
+                    rango = st.slider(
+                        "💲 Monto",
+                        min_value=mn, max_value=mx, value=(mn, mx),
+                        format="$%.0f",
+                        key="inline_filtro_monto",
+                        help=ayuda.get("monto", ""),
+                    )
+                    mask_m = (
+                        (pd.to_numeric(df_filtrado[columna_monto], errors='coerce') >= rango[0]) &
+                        (pd.to_numeric(df_filtrado[columna_monto], errors='coerce') <= rango[1])
+                    )
+                    df_filtrado = df_filtrado[mask_m]
+            col_idx += 1
+
+        # ── LIMPIAR ───────────────────────────────────────────────────
+        with cols[-1]:
+            st.write("")
+            if st.button(
+                "🗑️ Limpiar",
+                key="inline_limpiar_filtros",
+                use_container_width=True,
+                help="Restablecer todos los filtros de esta vista",
+            ):
+                for k in list(st.session_state.keys()):
+                    if k.startswith("inline_filtro_"):
+                        del st.session_state[k]
+                st.rerun()
+
+        # Resumen si hay filtrado activo
+        if len(df_filtrado) < len(df):
+            pct = len(df_filtrado) / len(df) * 100
+            st.caption(
+                f"✅ **{len(df_filtrado):,}** de {len(df):,} registros ({pct:.0f}%)"
+            )
+
+        st.divider()
+
+    return df_filtrado
 
 
 if __name__ == "__main__":

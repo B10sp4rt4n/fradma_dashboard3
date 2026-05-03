@@ -29,6 +29,38 @@ from utils.auth import get_current_user
 # Configurar logger
 logger = configurar_logger("reporte_consolidado", nivel="INFO")
 
+
+def _obtener_paleta_colores(modo_monocromatico=False):
+    """
+    Retorna paleta de colores según el modo visual.
+    
+    Args:
+        modo_monocromatico: Si True, retorna escala de grises; False, colores vibrantes
+        
+    Returns:
+        dict con 'primario', 'secundario', 'success', 'warning', 'danger', 'neutral'
+    """
+    if modo_monocromatico:
+        return {
+            'primario': '#1a1a1a',      # Negro
+            'secundario': '#4a4a4a',    # Gris oscuro
+            'success': '#555555',       # Gris medio
+            'warning': '#888888',       # Gris claro
+            'danger': '#aaaaaa',        # Gris más claro
+            'neutral': '#d0d0d0',       # Gris muy claro
+            'scale': ['#f5f5f5', '#e0e0e0', '#cccccc', '#999999', '#666666', '#333333'],
+        }
+    else:
+        return {
+            'primario': '#1F4E79',      # Azul corporativo
+            'secundario': '#6ba3c1',    # Azul claro
+            'success': '#2ecc71',       # Verde
+            'warning': '#f39c12',       # Naranja
+            'danger': '#e74c3c',        # Rojo
+            'neutral': '#95a5a6',       # Gris neutral
+            'scale': 'Viridis',         # Escala de colores vibrante
+        }
+
 def agrupar_por_periodo(df, tipo_periodo='mensual'):
     """
     Agrupa un DataFrame de ventas por el período especificado.
@@ -69,6 +101,9 @@ def crear_grafico_ventas_periodo(df_agrupado, tipo_periodo):
     ventas_periodo = df_agrupado.groupby(['periodo', 'periodo_label'])['ventas_usd'].sum().reset_index()
     ventas_periodo = ventas_periodo.sort_values('periodo')
     
+    # Obtener paleta de colores según modo
+    _paleta = _obtener_paleta_colores(st.session_state.get("reporte_modo_monocromatico", False))
+    
     # Crear gráfico combinado
     fig = go.Figure()
     
@@ -77,7 +112,7 @@ def crear_grafico_ventas_periodo(df_agrupado, tipo_periodo):
         x=ventas_periodo['periodo_label'],
         y=ventas_periodo['ventas_usd'],
         name='Ventas',
-        marker_color='#1f77b4',
+        marker_color=_paleta['primario'],
         text=ventas_periodo['ventas_usd'],
         texttemplate='$%{text:,.0f}',
         textposition='outside'
@@ -89,7 +124,7 @@ def crear_grafico_ventas_periodo(df_agrupado, tipo_periodo):
         y=ventas_periodo['ventas_usd'],
         name='Tendencia',
         mode='lines+markers',
-        line=dict(color='#ff7f0e', width=3),
+        line=dict(color=_paleta['secundario'], width=3),
         marker=dict(size=8)
     ))
     
@@ -124,7 +159,10 @@ def crear_pie_cxc(metricas_cxc):
         metricas_cxc.get('vencida_61_90', 0),
         metricas_cxc.get('alto_riesgo', 0)
     ]
-    colors = ['#4CAF50', '#FFC107', '#FF9800', '#FF5722', '#F44336']
+    
+    # Obtener paleta de colores según modo
+    _paleta = _obtener_paleta_colores(st.session_state.get("reporte_modo_monocromatico", False))
+    colors = [_paleta['success'], _paleta['warning'], _paleta['danger'], '#ff5722', '#F44336'] if st.session_state.get("reporte_modo_monocromatico") else ['#4CAF50', '#FFC107', '#FF9800', '#FF5722', '#F44336']
     
     fig = go.Figure(data=[go.Pie(
         labels=labels,
@@ -142,6 +180,7 @@ def crear_pie_cxc(metricas_cxc):
         height=450,
         template='plotly_white'
     )
+
     
     return fig
 
@@ -276,7 +315,8 @@ def _calcular_metricas_cxc(df_cxc):
         return {
             'metricas': metricas,
             'score': score,
-            'status': status
+            'status': status,
+            'df_np': df_cxc_no_pagados,
         }
     except Exception as e:
         logger.error(f"Error calculando métricas CxC: {e}")
@@ -352,30 +392,144 @@ def _renderizar_kpis(total_ventas, promedio_periodo, crecimiento_ventas_pct,
     st.markdown("---")
 
 
-def _renderizar_visualizaciones(df_ventas_agrupado, metricas_cxc, config):
+def _renderizar_visualizaciones(df_ventas_agrupado, metricas_cxc, config, periodos_count,
+                                df_cxc_np=None, score_salud_cxc=None,
+                                total_ventas=0, promedio_periodo=0, crecimiento_ventas_pct=0):
     """
-    Sección 2: Renderiza gráficos de ventas y CxC.
-    
-    Args:
-        df_ventas_agrupado: DataFrame con ventas agrupadas por período
-        metricas_cxc: Dict con métricas de CxC o None
-        config: Dict con configuración (tipo_periodo, etc)
+    Sección 2: Renderiza gráficos de ventas y CxC con KPIs por pestaña.
     """
-    col_left, col_right = st.columns([6, 4])
-    
-    with col_left:
+    tab_ventas, tab_cxc = st.tabs(["📊 Evolución de Ventas", "💳 Cuentas por Cobrar"])
+
+    with tab_ventas:
+        # KPIs de ventas
+        v1, v2, v3 = st.columns(3)
+        v1.metric("💰 Total Ventas", f"${total_ventas:,.0f}",
+                  delta=f"{crecimiento_ventas_pct:+.1f}% vs período anterior" if crecimiento_ventas_pct != 0 else None)
+        v2.metric(f"📊 Promedio por {config['tipo_periodo'].capitalize()}",
+                  f"${promedio_periodo:,.0f}", delta=f"{periodos_count} períodos")
+        v3.metric("📅 Períodos analizados", f"{periodos_count}",
+                  delta=config['tipo_periodo'].capitalize())
+        st.markdown("---")
+
         st.subheader(f"📊 Evolución de Ventas ({config['tipo_periodo'].capitalize()})")
         fig_ventas = crear_grafico_ventas_periodo(df_ventas_agrupado, config['tipo_periodo'])
         st.plotly_chart(fig_ventas, use_container_width=True)
-    
-    with col_right:
+        _renderizar_tabla_detalle(df_ventas_agrupado, periodos_count, config)
+
+    with tab_cxc:
         if metricas_cxc:
-            st.subheader("💳 Distribución de CxC")
-            fig_cxc = crear_pie_cxc(metricas_cxc)
-            st.plotly_chart(fig_cxc, use_container_width=True)
+            m = metricas_cxc
+            total = m.get('total_adeudado', 0)
+            pct_vencida = m.get('pct_vencida', 0)
+            pct_alto = m.get('pct_alto_riesgo', 0)
+            score = score_salud_cxc or m.get('score_salud', 0)
+            clasif = m.get('clasificacion_salud', '')
+            emoji_score = "🟢" if score >= 70 else ("🟡" if score >= 40 else "🔴")
+
+            # ── KPI cards ──────────────────────────────────────────────
+            k1, k2, k3, k4 = st.columns(4)
+            k1.metric("💰 Total Adeudado", f"${total:,.0f}")
+            k2.metric("✅ % Vigente", f"{m.get('pct_vigente', 0):.1f}%",
+                      delta=f"${m.get('vigente', 0):,.0f}")
+            k3.metric("⚠️ % Vencida", f"{pct_vencida:.1f}%",
+                      delta=f"-${m.get('vencida', 0):,.0f}", delta_color="inverse")
+            k4.metric(f"{emoji_score} Score Salud", f"{score:.0f}/100", delta=clasif)
+
+            st.markdown("---")
+
+            col_gauge, col_barras = st.columns([1, 1])
+
+            # ── Gauge velocímetro ──────────────────────────────────────
+            with col_gauge:
+                fig_gauge = go.Figure(go.Indicator(
+                    mode="gauge+number",
+                    value=score,
+                    title={"text": "Score Salud CxC", "font": {"size": 14}},
+                    gauge={
+                        "axis": {"range": [0, 100]},
+                        "bar": {"color": "#1F4E79"},
+                        "steps": [
+                            {"range": [0,  40], "color": "#F44336"},
+                            {"range": [40, 70], "color": "#FFC107"},
+                            {"range": [70, 100], "color": "#4CAF50"},
+                        ],
+                        "threshold": {
+                            "line": {"color": "white", "width": 3},
+                            "thickness": 0.75,
+                            "value": score,
+                        },
+                    },
+                    number={"suffix": "/100"},
+                ))
+                fig_gauge.update_layout(height=260, margin=dict(t=30, b=0, l=20, r=20))
+                st.plotly_chart(fig_gauge, use_container_width=True)
+
+            # ── Barras horizontales por antigüedad ─────────────────────
+            with col_barras:
+                rangos = ["Vigente", "0-30 días", "31-60 días", "61-90 días", ">90 días"]
+                montos = [
+                    m.get('vigente', 0),
+                    m.get('vencida_0_30', 0),
+                    m.get('vencida_31_60', 0),
+                    m.get('vencida_61_90', 0),
+                    m.get('alto_riesgo', 0),
+                ]
+                # Obtener paleta de colores según modo
+                _paleta = _obtener_paleta_colores(st.session_state.get("reporte_modo_monocromatico", False))
+                colores = [_paleta['success'], _paleta['warning'], _paleta['danger'], '#ff5722', '#F44336'] if st.session_state.get("reporte_modo_monocromatico") else ['#4CAF50', '#FFC107', '#FF9800', '#FF5722', '#F44336']
+                fig_barras = go.Figure(go.Bar(
+                    x=montos,
+                    y=rangos,
+                    orientation='h',
+                    marker_color=colores,
+                    text=[f"${v:,.0f}" for v in montos],
+                    textposition='outside',
+                ))
+                fig_barras.update_layout(
+                    title="Cartera por Antigüedad",
+                    height=260,
+                    margin=dict(t=40, b=0, l=10, r=80),
+                    xaxis_title="Monto USD",
+                    template="plotly_white",
+                    yaxis=dict(autorange="reversed"),
+                )
+                st.plotly_chart(fig_barras, use_container_width=True)
+
+            st.markdown("---")
+
+            # ── Pie distribución ───────────────────────────────────────
+            col_pie, col_top5 = st.columns([1, 1])
+
+            with col_pie:
+                fig_cxc = crear_pie_cxc(metricas_cxc)
+                st.plotly_chart(fig_cxc, use_container_width=True)
+
+            # ── Top 5 deudores ─────────────────────────────────────────
+            with col_top5:
+                if df_cxc_np is not None and not df_cxc_np.empty:
+                    col_cli = next(
+                        (c for c in ["cliente", "receptor_nombre", "razon_social", "nombre"]
+                         if c in df_cxc_np.columns), None
+                    )
+                    if col_cli and 'saldo_adeudado' in df_cxc_np.columns:
+                        top5 = (
+                            df_cxc_np.groupby(col_cli)['saldo_adeudado']
+                            .sum()
+                            .sort_values(ascending=False)
+                            .head(5)
+                            .reset_index()
+                        )
+                        top5.columns = ['Cliente', 'Saldo USD']
+                        top5['% del Total'] = (top5['Saldo USD'] / total * 100).round(1)
+                        top5['Saldo USD'] = top5['Saldo USD'].apply(lambda v: f"${v:,.0f}")
+                        top5['% del Total'] = top5['% del Total'].apply(lambda v: f"{v}%")
+                        st.subheader("🏆 Top 5 Deudores")
+                        st.dataframe(top5, use_container_width=True, hide_index=True)
+                    else:
+                        st.info("Sin columna de cliente para calcular Top 5.")
         else:
             st.info("📋 Datos de CxC no disponibles\n\nSube un archivo de CxC en la sección correspondiente para ver esta visualización.")
-    
+
     st.markdown("---")
 
 
@@ -557,6 +711,25 @@ def run(df_ventas, df_cxc=None, habilitar_ia=False, openai_api_key=None):
     st.markdown("---")
     
     # =====================================================================
+    # SELECTOR DE MODO: MONOCROMÁTICO vs COLORES
+    # =====================================================================
+    col_titulo, col_modo = st.columns([4, 1])
+    with col_modo:
+        modo_visual = st.radio(
+            "Modo visual",
+            options=["⚫ Monocromático", "🎨 Colores"],
+            index=1,
+            horizontal=True,
+            help="Cambia entre vista monocromática y a colores",
+        )
+        modo_monocromatico = modo_visual == "⚫ Monocromático"
+    
+    # Guardar en session para usarlo en gráficas
+    st.session_state["reporte_modo_monocromatico"] = modo_monocromatico
+
+    st.markdown("---")
+    
+    # =====================================================================
     # PASO 1: PREPARAR Y NORMALIZAR DATOS
     # =====================================================================
     df_ventas, df_cxc = _preparar_datos_iniciales(df_ventas, df_cxc)
@@ -636,23 +809,17 @@ def run(df_ventas, df_cxc=None, habilitar_ia=False, openai_api_key=None):
     metricas_cxc = metricas_cxc_dict.get('metricas', None) if metricas_cxc_dict else None
     score_salud_cxc = metricas_cxc_dict.get('score', None) if metricas_cxc_dict else None
     score_status_cxc = metricas_cxc_dict.get('status', None) if metricas_cxc_dict else None
+    df_cxc_np = metricas_cxc_dict.get('df_np', None) if metricas_cxc_dict else None
     
     # =====================================================================
     # PASO 5: RENDERIZAR REPORTES (Orden: análisis natural → análisis IA)
     # =====================================================================
     
-    # Sección 1: KPIs principales
-    _renderizar_kpis(
-        total_ventas, promedio_periodo, crecimiento_ventas_pct, 
-        periodos_count, metricas_cxc, score_salud_cxc, 
-        score_status_cxc, config
-    )
-    
-    # Sección 2: Visualizaciones (gráficos de ventas y CxC)
-    _renderizar_visualizaciones(df_ventas_agrupado, metricas_cxc, config)
-    
-    # Sección 3: Tabla detallada por período (análisis natural)
-    _renderizar_tabla_detalle(df_ventas_agrupado, periodos_count, config)
+    # Sección 2: Visualizaciones con KPIs por pestaña
+    _renderizar_visualizaciones(df_ventas_agrupado, metricas_cxc, config, periodos_count,
+                                 df_cxc_np=df_cxc_np, score_salud_cxc=score_salud_cxc,
+                                 total_ventas=total_ventas, promedio_periodo=promedio_periodo,
+                                 crecimiento_ventas_pct=crecimiento_ventas_pct)
     
     # Sección 4: Análisis con IA (opcional, al final como skill avanzado)
     _renderizar_analisis_ia(

@@ -50,7 +50,9 @@ def generar_resumen_ejecutivo_ytd(
     ventas_linea_top: float,
     api_key: str,
     datos_lineas: dict = None,
-    contexto_filtros: str = None
+    contexto_filtros: str = None,
+    descripcion_comparacion: str = None,
+    etiqueta_dimension: str = "LÍNEA DE NEGOCIO"
 ) -> dict:
     """
     Genera un análisis ejecutivo estructurado usando OpenAI GPT-4o-mini.
@@ -65,6 +67,8 @@ def generar_resumen_ejecutivo_ytd(
         ventas_linea_top: Ventas de la línea top
         api_key: API key de OpenAI
         datos_lineas: Diccionario opcional con datos detallados por línea
+        descripcion_comparacion: Texto opcional que describe cómo debe interpretarse la comparación
+        etiqueta_dimension: Nombre ejecutivo de la dimensión analizada
         
     Returns:
         Diccionario con el análisis estructurado
@@ -87,13 +91,17 @@ TODOS los números y métricas presentados corresponden ÚNICAMENTE al alcance d
 El análisis debe referirse SOLO a estos datos filtrados, NO al negocio completo.
 """
         
+        descripcion_comparacion = descripcion_comparacion or f"""
+    ⚠️ IMPORTANTE - CONTEXTO DE COMPARACIÓN:
+    - Estamos comparando PERIODOS EQUIVALENTES (mismo rango de días del año)
+    - YTD Actual = Primeros {dias_transcurridos} días del año ACTUAL
+    - YTD Anterior = Primeros {dias_transcurridos} días del año ANTERIOR
+    - NO estamos comparando contra el año anterior COMPLETO
+    """
+
         contexto = contexto_base + f"""
 
-⚠️ IMPORTANTE - CONTEXTO DE COMPARACIÓN:
-- Estamos comparando PERIODOS EQUIVALENTES (mismo rango de días del año)
-- YTD Actual = Primeros {dias_transcurridos} días del año ACTUAL
-- YTD Anterior = Primeros {dias_transcurridos} días del año ANTERIOR
-- NO estamos comparando contra el año anterior COMPLETO
+{descripcion_comparacion.strip()}
 
 MÉTRICAS PRINCIPALES:
 - Ventas YTD Actual ({dias_transcurridos} días): ${ventas_ytd_actual:,.2f}
@@ -102,14 +110,16 @@ MÉTRICAS PRINCIPALES:
 - Progreso en el año: {dias_transcurridos}/365 días ({dias_transcurridos/365*100:.1f}%)
 - Proyección Anual (a este ritmo): ${proyeccion_anual:,.2f}
 
-LÍNEA DE NEGOCIO TOP:
+{etiqueta_dimension} TOP:
 - {linea_top}: ${ventas_linea_top:,.2f}
 """
         
         if datos_lineas:
-            contexto += "\n\nDETALLE POR LÍNEA DE NEGOCIO:\n"
+            contexto += f"\n\nDETALLE POR {etiqueta_dimension}:\n"
             for linea, data in list(datos_lineas.items())[:5]:  # Top 5
-                contexto += f"- {linea}: ${data.get('ventas', 0):,.2f} ({data.get('crecimiento', 0):+.1f}%)\n"
+                crecimiento = data.get('crecimiento', 0)
+                crecimiento_texto = "Nuevo" if crecimiento is None else f"{crecimiento:+.1f}%"
+                contexto += f"- {linea}: ${data.get('ventas', 0):,.2f} ({crecimiento_texto})\n"
         
         # Definir el prompt del sistema
         system_prompt = """Eres un analista financiero senior experto en interpretar datos de ventas YTD. 

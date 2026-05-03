@@ -393,3 +393,265 @@ class TestPeriodos:
         df['trimestre'] = df['fecha'].dt.to_period('Q').astype(str)
         
         assert df['trimestre'].tolist() == ['2024Q1', '2024Q2', '2024Q4']
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# TESTS DE HELPERS REALES DEL MÓDULO
+# ═══════════════════════════════════════════════════════════════════════
+
+class TestHeatmapHelpersReales:
+    """Valida helpers reales agregados al módulo de heatmap."""
+
+    def test_preparar_dataframe_base_normaliza_y_crea_periodos(self):
+        """Test: prepara columnas fecha, mes, año y trimestre con nombres sucios."""
+        from main.heatmap_ventas import preparar_dataframe_base
+
+        df = pd.DataFrame({
+            ' FECHA ': ['2024-01-15', '2024-04-20'],
+            'IMPORTE': [100, 200],
+        })
+
+        preparado, error = preparar_dataframe_base(df)
+
+        assert error is None
+        assert 'fecha' in preparado.columns
+        assert 'mes_anio' in preparado.columns
+        assert 'anio' in preparado.columns
+        assert 'trimestre' in preparado.columns
+        assert preparado['anio'].tolist() == [2024, 2024]
+        assert preparado['trimestre'].tolist() == ['2024Q1', '2024Q2']
+
+    def test_preparar_dataframe_base_rechaza_fecha_inexistente(self):
+        """Test: retorna error cuando no existe columna fecha."""
+        from main.heatmap_ventas import preparar_dataframe_base
+
+        df = pd.DataFrame({'importe': [100, 200]})
+
+        preparado, error = preparar_dataframe_base(df)
+
+        assert preparado is None
+        assert "No se encontró la columna 'fecha'" in error
+
+    def test_calcular_metricas_concentracion_retorna_top_1_top_3_y_relevantes(self):
+        """Test: resume concentración visible con umbral comercial."""
+        from main.heatmap_ventas import calcular_metricas_concentracion
+
+        ventas_linea = pd.Series(
+            [50, 30, 15, 5],
+            index=['A', 'B', 'C', 'D'],
+            dtype=float,
+        )
+
+        top_1_share, top_3_share, lineas_relevantes = calcular_metricas_concentracion(ventas_linea)
+
+        assert top_1_share == pytest.approx(50.0, rel=0.01)
+        assert top_3_share == pytest.approx(95.0, rel=0.01)
+        assert lineas_relevantes == 3
+
+    def test_construir_pareto_dataframe_calcula_participacion_y_acumulado(self):
+        """Test: genera dataframe Pareto con porcentajes acumulados."""
+        from main.heatmap_ventas import construir_pareto_dataframe
+
+        ventas_linea = pd.Series([60, 25, 15], index=['A', 'B', 'C'], dtype=float)
+
+        pareto_df = construir_pareto_dataframe(ventas_linea)
+
+        assert pareto_df['linea'].tolist() == ['A', 'B', 'C']
+        assert pareto_df['participacion_pct'].tolist() == pytest.approx([60.0, 25.0, 15.0], rel=0.01)
+        assert pareto_df['acumulado_pct'].tolist() == pytest.approx([60.0, 85.0, 100.0], rel=0.01)
+
+    def test_resumir_pareto_detecta_minimo_numero_de_lineas_hasta_objetivo(self):
+        """Test: identifica cuántas líneas explican al menos 80% de ventas."""
+        from main.heatmap_ventas import resumir_pareto
+
+        pareto_df = pd.DataFrame({
+            'linea': ['A', 'B', 'C'],
+            'ventas': [60, 25, 15],
+            'participacion_pct': [60.0, 25.0, 15.0],
+            'acumulado_pct': [60.0, 85.0, 100.0],
+        })
+
+        lineas_objetivo, cobertura_objetivo = resumir_pareto(pareto_df)
+
+        assert lineas_objetivo == 2
+        assert cobertura_objetivo == pytest.approx(85.0, rel=0.01)
+
+    def test_resolver_columnas_clave_detecta_segmentacion_comercial_completa(self):
+        """Test: detecta columnas opcionales comerciales además de las obligatorias."""
+        from main.heatmap_ventas import resolver_columnas_clave
+
+        df = pd.DataFrame(columns=['linea_de_negocio', 'importe', 'producto', 'cliente', 'agente', 'canal', 'zona'])
+
+        (
+            columna_linea,
+            columna_importe,
+            columna_producto,
+            columna_cliente,
+            columna_vendedor,
+            columna_canal,
+            columna_region,
+        ) = resolver_columnas_clave(df)
+
+        assert columna_linea == 'linea_de_negocio'
+        assert columna_importe == 'importe'
+        assert columna_producto == 'producto'
+        assert columna_cliente == 'cliente'
+        assert columna_vendedor == 'agente'
+        assert columna_canal == 'canal'
+        assert columna_region == 'zona'
+
+    def test_aplicar_filtros_comerciales_sin_columnas_opcionales_retorna_mismo_df(self):
+        """Test: si no hay columnas opcionales, no modifica el dataframe."""
+        from main.heatmap_ventas import aplicar_filtros_comerciales
+
+        df = pd.DataFrame({
+            'fecha': pd.to_datetime(['2024-01-01', '2024-01-02']),
+            'importe': [100, 200],
+        })
+
+        resultado = aplicar_filtros_comerciales(df, columna_cliente=None, columna_vendedor=None)
+
+        pd.testing.assert_frame_equal(resultado, df)
+
+
+class TestCalcularTablaCrecimientoReal:
+    """Valida edge cases del cálculo comparable real del heatmap."""
+
+    def test_retorna_sin_comparable_cuando_falta_periodo_base(self):
+        """Test: si no existe el período base exacto, marca sin comparable."""
+        from main.heatmap_ventas import calcular_tabla_crecimiento
+
+        df_filtered = pd.DataFrame(
+            {'Linea A': [100, 150]},
+            index=['24.01 - Ene', '24.03 - Mar'],
+        )
+        df_period_order = pd.Series(
+            pd.to_datetime(['2024-01-01', '2024-03-01']),
+            index=df_filtered.index,
+        )
+
+        growth_table, status_table, comparacion_label = calcular_tabla_crecimiento(
+            df_filtered,
+            df_period_order,
+            'Mensual',
+            'Período anterior'
+        )
+
+        assert comparacion_label == 'vs período anterior'
+        assert status_table.loc['24.03 - Mar', 'Linea A'] == 'sin_comparable'
+        assert pd.isna(growth_table.loc['24.03 - Mar', 'Linea A'])
+
+    def test_marca_nuevo_cuando_base_es_cero_y_actual_es_positivo(self):
+        """Test: marca nuevo e inf cuando la base es cero y el actual tiene ventas."""
+        from main.heatmap_ventas import calcular_tabla_crecimiento
+
+        df_filtered = pd.DataFrame(
+            {'Linea A': [0, 200]},
+            index=['24.01 - Ene', '24.02 - Feb'],
+        )
+        df_period_order = pd.Series(
+            pd.to_datetime(['2024-01-01', '2024-02-01']),
+            index=df_filtered.index,
+        )
+
+        growth_table, status_table, _ = calcular_tabla_crecimiento(
+            df_filtered,
+            df_period_order,
+            'Mensual',
+            'Período anterior'
+        )
+
+        assert status_table.loc['24.02 - Feb', 'Linea A'] == 'nuevo'
+        assert np.isinf(growth_table.loc['24.02 - Feb', 'Linea A'])
+
+    def test_marca_sin_actividad_cuando_base_y_actual_son_cero(self):
+        """Test: marca sin actividad cuando ambos períodos son cero."""
+        from main.heatmap_ventas import calcular_tabla_crecimiento
+
+        df_filtered = pd.DataFrame(
+            {'Linea A': [0, 0]},
+            index=['24.01 - Ene', '24.02 - Feb'],
+        )
+        df_period_order = pd.Series(
+            pd.to_datetime(['2024-01-01', '2024-02-01']),
+            index=df_filtered.index,
+        )
+
+        growth_table, status_table, _ = calcular_tabla_crecimiento(
+            df_filtered,
+            df_period_order,
+            'Mensual',
+            'Período anterior'
+        )
+
+        assert status_table.loc['24.02 - Feb', 'Linea A'] == 'sin_actividad'
+        assert pd.isna(growth_table.loc['24.02 - Feb', 'Linea A'])
+
+    def test_calcula_crecimiento_comparable_normal(self):
+        """Test: calcula porcentaje cuando existe base comparable válida."""
+        from main.heatmap_ventas import calcular_tabla_crecimiento
+
+        df_filtered = pd.DataFrame(
+            {'Linea A': [100, 125]},
+            index=['24.01 - Ene', '24.02 - Feb'],
+        )
+        df_period_order = pd.Series(
+            pd.to_datetime(['2024-01-01', '2024-02-01']),
+            index=df_filtered.index,
+        )
+
+        growth_table, status_table, _ = calcular_tabla_crecimiento(
+            df_filtered,
+            df_period_order,
+            'Mensual',
+            'Período anterior'
+        )
+
+        assert status_table.loc['24.02 - Feb', 'Linea A'] == 'comparable'
+        assert growth_table.loc['24.02 - Feb', 'Linea A'] == pytest.approx(25.0, rel=0.01)
+
+
+class TestInsightsHeatmap:
+    """Valida la síntesis automática de insights del heatmap."""
+
+    def test_construir_insights_heatmap_resume_corte_concentracion_y_pareto(self):
+        """Test: genera hasta 3 insights con corte, concentración y Pareto."""
+        from main.heatmap_ventas import construir_insights_heatmap
+
+        df_contexto = pd.DataFrame({
+            'vendedor': ['Ana', 'Luis', 'Ana'],
+            'cliente': ['C1', 'C2', 'C3'],
+            'canal': ['Directo', 'Distribuidor', 'Directo'],
+            'region': ['Norte', 'Norte', 'Centro'],
+        })
+        ventas_linea = pd.Series([60, 25, 15], index=['Linea A', 'Linea B', 'Linea C'], dtype=float)
+        resumen = {
+            'mejor_linea': 'Linea B',
+            'mejor_crecimiento': 18.5,
+            'linea_lider': 'Linea A',
+            'ventas_linea_lider': 60.0,
+        }
+        pareto_df = pd.DataFrame({
+            'linea': ['Linea A', 'Linea B', 'Linea C'],
+            'ventas': [60, 25, 15],
+            'participacion_pct': [60.0, 25.0, 15.0],
+            'acumulado_pct': [60.0, 85.0, 100.0],
+        })
+
+        insights = construir_insights_heatmap(
+            df_contexto=df_contexto,
+            ventas_linea=ventas_linea,
+            resumen=resumen,
+            pareto_df=pareto_df,
+            columnas_segmentacion={
+                'vendedores': 'vendedor',
+                'clientes': 'cliente',
+                'canales': 'canal',
+                'regiones': 'region',
+            },
+        )
+
+        assert len(insights) == 3
+        assert insights[0].startswith('Corte activo:')
+        assert 'Alta concentración' in insights[1]
+        assert 'Momentum:' in insights[2]
