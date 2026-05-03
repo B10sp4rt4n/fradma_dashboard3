@@ -328,8 +328,8 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
             )
             st.plotly_chart(fig_vigente, width='stretch')
 
-        # Top 5 deudores (USANDO COLUMNA F - CLIENTE)
-        st.subheader("🔝 Principales Deudores (Columna Cliente)")
+        # Top 5 deudores usando el identificador comercial consolidado
+        st.subheader("🔝 Principales Deudores")
         top_deudores = df_np.groupby('deudor')['saldo_adeudado'].sum().nlargest(5)
         
         # =====================================================================
@@ -699,8 +699,8 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
             st.write("### 📊 Resumen de Cartera")
             st.metric("💰 Cartera Total", f"${total_adeudado:,.0f}")
             st.metric("✅ Vigente", f"{pct_vigente:.1f}%", 
-                     delta=f"{pct_vigente - 70:.1f}pp vs objetivo 70%",
-                     help="📐 Porcentaje de cartera que aún no ha vencido (días restantes > 0). Objetivo: ≥ 70%")
+                     delta=f"{pct_vigente - 70:.1f}pp vs referencia 70%",
+                     help="📐 Porcentaje de cartera que aún no ha vencido. La referencia visual actual es 70%, no una meta contractual del módulo.")
             st.metric("⚠️ Vencida Total", f"{pct_vencida_total:.1f}%",
                      delta_color="inverse",
                      help="📐 Porcentaje de cartera vencida sobre total")
@@ -712,7 +712,7 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
             # NOTA: DSO y Rotación CxC requieren datos de ventas que no están en este módulo
             # Por ahora se omiten para evitar mostrar datos incorrectos (antes eran constantes hardcodeadas)
             
-            # Índice de Morosidad (alineado: % vencida total sobre cartera no pagada)
+            # Índice de Morosidad Simple (alineado: % vencida total sobre cartera no pagada)
             indice_morosidad = pct_vencida_total
             morosidad_objetivo = UmbralesCxC.MOROSIDAD_OBJETIVO
             morosidad_status = obtener_semaforo_morosidad(indice_morosidad)
@@ -723,7 +723,7 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
             # Tabla de KPIs (solo los calculables con datos de CxC)
             kpis_data = {
                 'KPI': [
-                    'Índice de Morosidad',
+                    'Índice de Morosidad Simple',
                     'Concentración Top 3',
                     'Riesgo Alto (>90 días)'
                 ],
@@ -1307,7 +1307,7 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                     linea_data = df_lineas[df_lineas[col_linea] == linea]
                     total_linea = linea_data['saldo_adeudado'].sum()
                     
-                    # Calcular índice de morosidad ponderado por antigüedad
+                    # Calcular índice de severidad de mora ponderado por antigüedad
                     # En lugar de binario (vencido/no vencido), usar escala basada en gravedad
                     if total_linea > 0:
                         # Segmentar cartera por antigüedad
@@ -1324,7 +1324,7 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                         pct_61_90 = (dias_61_90 / total_linea * 100)
                         pct_mas_90 = (dias_mas_90 / total_linea * 100)
                         
-                        # Índice de morosidad ponderado (0-100)
+                        # Índice de severidad de mora ponderado (0-100)
                         # Vigente: 0 puntos, 1-30: 15 puntos, 31-60: 40 puntos, 61-90: 70 puntos, >90: 100 puntos
                         pct_morosidad = (
                             pct_vigente * 0 +
@@ -1409,7 +1409,7 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                                     margin=dict(t=60, b=10, l=10, r=10)
                                 )
                                 st.plotly_chart(fig_linea, width='stretch')
-                                st.caption(f"Morosidad: {morosidad:.1f}% | Clientes: {row['clientes']}")
+                                st.caption(f"Severidad de mora: {morosidad:.1f}% | Clientes: {row['clientes']}")
                 
                 st.write("---")
                 
@@ -1419,7 +1419,7 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                 df_comparativa = df_lineas_metricas.copy()
                 df_comparativa['% del Total'] = (df_comparativa['total'] / total_adeudado * 100)
                 
-                # Agregar semáforos de morosidad usando helper
+                # Agregar semáforos de severidad de mora usando helper
                 df_comparativa['Alerta Morosidad'] = df_comparativa['pct_morosidad'].apply(obtener_semaforo_morosidad)
                 
                 df_comparativa['Alerta Riesgo Alto'] = df_comparativa['pct_alto_riesgo'].apply(obtener_semaforo_riesgo)
@@ -1438,7 +1438,7 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                 df_display['pct_concentracion'] = df_display['pct_concentracion'].apply(lambda x: f"{x:.1f}%")
                 
                 df_display.columns = [
-                    'Línea', 'Monto Total', '% Total', 'Morosidad', '🚦 Morosidad',
+                    'Línea', 'Monto Total', '% Total', 'Severidad de Mora', '🚦 Severidad',
                     'Riesgo Alto', '🚦 Riesgo Alto', 'Concentración', 'Clientes', 'Docs'
                 ]
                 
@@ -1450,7 +1450,7 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                 st.write("### ⚠️ Líneas que Requieren Atención")
                 
                 # Calcular score de riesgo ponderado (0-100)
-                # Pesos: Morosidad 50%, Riesgo Alto 35%, Concentración 15%
+                # Pesos: Severidad de mora 50%, Riesgo Alto 35%, Concentración 15%
                 df_lineas_metricas['score_riesgo'] = (
                     df_lineas_metricas['pct_morosidad'] * 0.50 +
                     df_lineas_metricas['pct_alto_riesgo'] * 0.35 +
@@ -1510,7 +1510,7 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                         for idx, linea_prob in lineas_problematicas.iterrows():
                             problemas = []
                             if linea_prob['pct_morosidad'] > 25:
-                                problemas.append(f"Morosidad alta: {linea_prob['pct_morosidad']:.1f}%")
+                                problemas.append(f"Severidad de mora alta: {linea_prob['pct_morosidad']:.1f}%")
                             if linea_prob['pct_alto_riesgo'] > 15:
                                 problemas.append(f"Riesgo alto: {linea_prob['pct_alto_riesgo']:.1f}%")
                             if linea_prob['pct_concentracion'] > 50:
@@ -1549,13 +1549,13 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                     st.plotly_chart(fig_monto_lineas, width='stretch')
                 
                 with col_chart2:
-                    # Gráfico de morosidad por línea
+                    # Gráfico de severidad de mora por línea
                     fig_morosidad_lineas = px.bar(
                         df_lineas_metricas,
                         x='linea',
                         y='pct_morosidad',
-                        title='Índice de Morosidad por Línea',
-                        labels={'linea': 'Línea', 'pct_morosidad': 'Morosidad (%)'},
+                        title='Índice de Severidad de Mora por Línea',
+                        labels={'linea': 'Línea', 'pct_morosidad': 'Severidad de Mora (%)'},
                         color='pct_morosidad',
                         color_continuous_scale=['green', 'yellow', 'orange', 'red'],
                         range_color=[0, 100]  # Fijar escala de 0 a 100%
@@ -2011,8 +2011,8 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                 "'vendedor', 'agente', 'ejecutivo', 'seller', o 'rep'"
             )
 
-        # Desglose detallado por deudor (CLIENTE - COLUMNA F)
-        st.subheader("🔍 Detalle Completo por Deudor (Columna Cliente)")
+        # Desglose detallado por deudor usando el identificador consolidado
+        st.subheader("🔍 Detalle Completo por Deudor")
         deudores = df_deudas['deudor'].unique().tolist()
         selected_deudor = st.selectbox("Seleccionar Deudor", deudores)
         
@@ -2066,7 +2066,7 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                         'Cartera Vigente',
                         'Deuda Vencida',
                         'Score de Salud',
-                        'Índice de Morosidad',
+                            'Índice de Morosidad Simple',
                         'Concentración Top 3',
                         'Riesgo Alto (>90 días)',
                         'Principal Deudor',
@@ -2154,7 +2154,9 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                 cliente_info = df_deudas[df_deudas['deudor'] == cliente_carta].iloc[0]
                 monto_cliente = df_deudas[df_deudas['deudor'] == cliente_carta]['saldo_adeudado'].sum()
                 
-                if 'dias_vencido' in df_deudas.columns:
+                if 'dias_overdue' in df_deudas.columns:
+                    dias_vencido_max = df_deudas[df_deudas['deudor'] == cliente_carta]['dias_overdue'].max()
+                elif 'dias_vencido' in df_deudas.columns:
                     dias_vencido_max = df_deudas[df_deudas['deudor'] == cliente_carta]['dias_vencido'].max()
                 else:
                     dias_vencido_max = 0
@@ -2184,8 +2186,8 @@ Estimado(a) Cliente: **{cliente_carta}**
 
 **DETALLE DE LA DEUDA:**
 
-- **Monto Total Adeudado:** ${monto_cliente:,.2f} USD
-- **Días de Vencimiento:** {int(dias_vencido_max)} días
+- **Monto Total Adeudado:** ${monto_cliente:,.2f}
+- **Días Máximos de Atraso:** {int(dias_vencido_max)} días
 - **Estado:** {prioridad_cliente}
 
 De acuerdo con nuestros registros, el saldo pendiente corresponde a facturas vencidas que requieren su atención inmediata.
@@ -2317,11 +2319,16 @@ Departamento de Crédito y Cobranza
             - **Meta**: < 10%
             - **Criticidad**: Alto - requiere acción legal/cobranza intensiva
             
-            **📈 Índice de Morosidad (%)**
+            **📈 Índice de Morosidad Simple (%)**
             - **Definición**: Porcentaje total de cartera vencida (cualquier cantidad de días)
             - **Fórmula**: `(Saldo total vencido / Total Adeudado) × 100%`
             - **Objetivo**: < 15%
             - **Nota**: Incluye vencimientos de 1-30, 31-60, 61-90, >90 días
+
+            **⚖️ Índice de Severidad de Mora (%)**
+            - **Definición**: Score ponderado de 0 a 100 que refleja qué tan grave está distribuida la mora por antigüedad
+            - **Uso en el módulo**: Se aplica en análisis por línea para priorizar frentes con deterioro más profundo
+            - **Importante**: No es directamente comparable con el Índice de Morosidad Simple
             
             **🎯 Casos Urgentes**
             - **Definición**: Número de facturas individuales con vencimiento > 90 días
@@ -2399,13 +2406,13 @@ Departamento de Crédito y Cobranza
             
             ### 📝 Notas Importantes
             
-            - **Columna de identificación**: Se usa "Cliente" (columna F) para agrupar deudores
-            - **Cálculo de días**: Basado en columna `dias_restantes` (positivo = vigente) o `dias_vencido` (negativo = overdue)
-            - **Moneda**: Todos los montos en USD (convertidos según TC si aplica)
+            - **Columna de identificación**: El deudor se consolida priorizando `cliente` y usando `razon_social` como respaldo cuando aplica
+            - **Cálculo de días**: El módulo normaliza antigüedad en `dias_overdue`; valores <=0 se leen como vigente y >0 como vencido
+            - **Moneda**: El reporte usa el saldo disponible en el archivo (`saldo`, `saldo_usd` o equivalente normalizado); valida la moneda de origen antes de compartirlo externamente
             - **Actualización**: Datos actualizados a la fecha de última factura registrada
             """)
         
-        st.info("📌 Este reporte se basa en la columna 'Cliente' (F) para identificar deudores.")
+        st.info("📌 Este reporte consolida el identificador de deudor a partir de las columnas comerciales disponibles en el archivo.")
 
     except KeyError as e:
         st.error(f"❌ Columna requerida no encontrada: {e}")
