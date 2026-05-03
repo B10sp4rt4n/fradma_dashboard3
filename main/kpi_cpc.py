@@ -303,6 +303,69 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
         vencida_0_30 = metricas['vencida_0_30']
         critica = metricas['critica']
         deuda_alto_riesgo = metricas['alto_riesgo']
+        pct_vigente = metricas['pct_vigente']
+        pct_critica = metricas['pct_critica']
+        pct_vencida_total = metricas['pct_vencida']
+        pct_alto_riesgo = metricas['pct_alto_riesgo']
+        pct_vencida_0_30 = metricas.get('pct_vencida_0_30', 0)
+        pct_vencida_31_60 = metricas.get('pct_vencida_31_60', 0)
+        pct_vencida_61_90 = metricas.get('pct_vencida_61_90', 0)
+        top_deudores = df_np.groupby('deudor')['saldo_adeudado'].sum().nlargest(5)
+        top3_deuda = df_np.groupby('deudor')['saldo_adeudado'].sum().nlargest(3).sum()
+        pct_concentracion = (top3_deuda / total_adeudado * 100) if total_adeudado > 0 else 0
+        score_salud = calcular_score_salud(
+            pct_vigente,
+            pct_critica,
+            pct_vencida_0_30,
+            pct_vencida_31_60,
+            pct_vencida_61_90,
+            pct_alto_riesgo,
+        )
+        score_status, score_color = clasificar_score_salud(score_salud)
+
+        st.write("### 🧭 Lectura Prioritaria")
+        st.caption(
+            "Orden sugerido de lectura: 1) resumen ejecutivo, 2) riesgo y salud, 3) clientes clave, 4) evolución y seguimiento."
+        )
+        tab_resumen, tab_riesgo, tab_clientes, tab_seguimiento = st.tabs([
+            "1. Resumen Ejecutivo",
+            "2. Riesgo y Salud",
+            "3. Clientes Clave",
+            "4. Evolución y Seguimiento",
+        ])
+
+        with tab_resumen:
+            col_nav1, col_nav2, col_nav3, col_nav4 = st.columns(4)
+            col_nav1.metric("💰 Cartera Total", f"${total_adeudado:,.0f}")
+            col_nav2.metric("✅ Vigente", f"{pct_vigente:.1f}%")
+            col_nav3.metric("⚠️ Vencida", f"{pct_vencida_total:.1f}%", delta_color="inverse")
+            col_nav4.metric("🏥 Salud", f"{score_salud:.0f}/100")
+            st.caption(f"Estado general: {score_status}")
+
+        with tab_riesgo:
+            col_nav5, col_nav6, col_nav7 = st.columns(3)
+            col_nav5.metric("📈 Morosidad Simple", f"{pct_vencida_total:.1f}%", delta_color="inverse")
+            col_nav6.metric("🔴 Riesgo >90d", f"{pct_alto_riesgo:.1f}%", delta_color="inverse")
+            col_nav7.metric("🎯 Concentración Top 3", f"{pct_concentracion:.1f}%", delta_color="inverse")
+            st.caption("Esta pestaña resume el nivel de deterioro y dependencia comercial antes de entrar al detalle.")
+
+        with tab_clientes:
+            st.dataframe(
+                top_deudores.reset_index().rename(
+                    columns={'deudor': 'Cliente', 'saldo_adeudado': 'Saldo Adeudado'}
+                ).style.format({'Saldo Adeudado': '${:,.2f}'}),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+        with tab_seguimiento:
+            col_nav8, col_nav9, col_nav10 = st.columns(3)
+            col_nav8.metric("🟠 Vencida 1-30d", f"{pct_vencida_0_30:.1f}%")
+            col_nav9.metric("🟠 Vencida 31-60d", f"{pct_vencida_31_60:.1f}%")
+            col_nav10.metric("🔴 Vencida 61-90d", f"{pct_vencida_61_90:.1f}%", delta_color="inverse")
+            st.caption("Usa el detalle completo de abajo para profundizar en clientes, antigüedad, cobranza y exportación.")
+
+        st.write("---")
         
         # Métricas principales en columnas
         col1, col2, col3 = st.columns(3)
@@ -338,7 +401,6 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
 
         # Top 5 deudores usando el identificador comercial consolidado
         st.subheader("🔝 Principales Deudores")
-        top_deudores = df_np.groupby('deudor')['saldo_adeudado'].sum().nlargest(5)
         
         # =====================================================================
         # ANÁLISIS DETALLADO POR CLIENTE: 3 MÉTODOS DE CÁLCULO DE DÍAS
@@ -678,27 +740,7 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
         # =====================================================================
         st.header("🏥 Dashboard de Salud Financiera")
         
-        # Calcular métricas de salud
-        pct_vigente = metricas['pct_vigente']
-        pct_critica = metricas['pct_critica']
-        pct_vencida_total = metricas['pct_vencida']
-        pct_alto_riesgo = metricas['pct_alto_riesgo']
-        
-        # Extraer porcentajes por rangos para el score
-        pct_vencida_0_30 = metricas.get('pct_vencida_0_30', 0)
-        pct_vencida_31_60 = metricas.get('pct_vencida_31_60', 0)
-        pct_vencida_61_90 = metricas.get('pct_vencida_61_90', 0)
-        
-        # Concentración top 3
-        top3_deuda = df_np.groupby('deudor')['saldo_adeudado'].sum().nlargest(3).sum()
-        pct_concentracion = (top3_deuda / total_adeudado * 100) if total_adeudado > 0 else 0
-        
-        # Score usando función helper con todos los rangos
-        score_salud = calcular_score_salud(
-            pct_vigente, pct_critica,
-            pct_vencida_0_30, pct_vencida_31_60, pct_vencida_61_90, pct_alto_riesgo
-        )
-        score_status, score_color = clasificar_score_salud(score_salud)
+        # Las métricas de salud y concentración ya se prepararon arriba para la navegación priorizada.
         
         # Gauge principal de salud — reemplazado por métricas directas
         col_health1, col_health2 = st.columns([1, 2])
