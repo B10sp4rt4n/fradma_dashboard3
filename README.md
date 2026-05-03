@@ -40,6 +40,18 @@ pytest --cov-report=html
 open htmlcov/index.html
 ```
 
+### Documentacion
+
+```bash
+# Levantar la documentacion localmente
+mkdocs serve
+
+# Regenerar el sitio estatico
+mkdocs build
+```
+
+La carpeta `site/` es un artefacto generado por MkDocs y no se versiona en git.
+
 ## 📁 Estructura del Proyecto
 
 ```
