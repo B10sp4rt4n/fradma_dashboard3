@@ -502,3 +502,100 @@ class TestHeatmapHelpersReales:
         resultado = aplicar_filtros_comerciales(df, columna_cliente=None, columna_vendedor=None)
 
         pd.testing.assert_frame_equal(resultado, df)
+
+
+class TestCalcularTablaCrecimientoReal:
+    """Valida edge cases del cálculo comparable real del heatmap."""
+
+    def test_retorna_sin_comparable_cuando_falta_periodo_base(self):
+        """Test: si no existe el período base exacto, marca sin comparable."""
+        from main.heatmap_ventas import calcular_tabla_crecimiento
+
+        df_filtered = pd.DataFrame(
+            {'Linea A': [100, 150]},
+            index=['24.01 - Ene', '24.03 - Mar'],
+        )
+        df_period_order = pd.Series(
+            pd.to_datetime(['2024-01-01', '2024-03-01']),
+            index=df_filtered.index,
+        )
+
+        growth_table, status_table, comparacion_label = calcular_tabla_crecimiento(
+            df_filtered,
+            df_period_order,
+            'Mensual',
+            'Período anterior'
+        )
+
+        assert comparacion_label == 'vs período anterior'
+        assert status_table.loc['24.03 - Mar', 'Linea A'] == 'sin_comparable'
+        assert pd.isna(growth_table.loc['24.03 - Mar', 'Linea A'])
+
+    def test_marca_nuevo_cuando_base_es_cero_y_actual_es_positivo(self):
+        """Test: marca nuevo e inf cuando la base es cero y el actual tiene ventas."""
+        from main.heatmap_ventas import calcular_tabla_crecimiento
+
+        df_filtered = pd.DataFrame(
+            {'Linea A': [0, 200]},
+            index=['24.01 - Ene', '24.02 - Feb'],
+        )
+        df_period_order = pd.Series(
+            pd.to_datetime(['2024-01-01', '2024-02-01']),
+            index=df_filtered.index,
+        )
+
+        growth_table, status_table, _ = calcular_tabla_crecimiento(
+            df_filtered,
+            df_period_order,
+            'Mensual',
+            'Período anterior'
+        )
+
+        assert status_table.loc['24.02 - Feb', 'Linea A'] == 'nuevo'
+        assert np.isinf(growth_table.loc['24.02 - Feb', 'Linea A'])
+
+    def test_marca_sin_actividad_cuando_base_y_actual_son_cero(self):
+        """Test: marca sin actividad cuando ambos períodos son cero."""
+        from main.heatmap_ventas import calcular_tabla_crecimiento
+
+        df_filtered = pd.DataFrame(
+            {'Linea A': [0, 0]},
+            index=['24.01 - Ene', '24.02 - Feb'],
+        )
+        df_period_order = pd.Series(
+            pd.to_datetime(['2024-01-01', '2024-02-01']),
+            index=df_filtered.index,
+        )
+
+        growth_table, status_table, _ = calcular_tabla_crecimiento(
+            df_filtered,
+            df_period_order,
+            'Mensual',
+            'Período anterior'
+        )
+
+        assert status_table.loc['24.02 - Feb', 'Linea A'] == 'sin_actividad'
+        assert pd.isna(growth_table.loc['24.02 - Feb', 'Linea A'])
+
+    def test_calcula_crecimiento_comparable_normal(self):
+        """Test: calcula porcentaje cuando existe base comparable válida."""
+        from main.heatmap_ventas import calcular_tabla_crecimiento
+
+        df_filtered = pd.DataFrame(
+            {'Linea A': [100, 125]},
+            index=['24.01 - Ene', '24.02 - Feb'],
+        )
+        df_period_order = pd.Series(
+            pd.to_datetime(['2024-01-01', '2024-02-01']),
+            index=df_filtered.index,
+        )
+
+        growth_table, status_table, _ = calcular_tabla_crecimiento(
+            df_filtered,
+            df_period_order,
+            'Mensual',
+            'Período anterior'
+        )
+
+        assert status_table.loc['24.02 - Feb', 'Linea A'] == 'comparable'
+        assert growth_table.loc['24.02 - Feb', 'Linea A'] == pytest.approx(25.0, rel=0.01)
