@@ -823,13 +823,20 @@ def run(df, habilitar_ia=False, openai_api_key=None):
     
     # Control para número de líneas a mostrar en detalle
     num_total_lineas = len(lineas_disponibles)
-    num_lineas_mostrar = st.sidebar.slider(
-        "📊 Líneas en Panel Detallado",
-        min_value=1,
-        max_value=num_total_lineas,
-        value=min(10, num_total_lineas),
-        help="Número de líneas de negocio a mostrar en el panel de detalles expandibles"
-    )
+    if num_total_lineas <= 0:
+        st.sidebar.warning("⚠️ No hay líneas de negocio disponibles para el panel detallado.")
+        num_lineas_mostrar = 0
+    elif num_total_lineas == 1:
+        num_lineas_mostrar = 1
+        st.sidebar.caption("📊 Panel detallado configurado para mostrar la única línea disponible.")
+    else:
+        num_lineas_mostrar = st.sidebar.slider(
+            "📊 Líneas en Panel Detallado",
+            min_value=1,
+            max_value=num_total_lineas,
+            value=min(10, num_total_lineas),
+            help="Número de líneas de negocio a mostrar en el panel de detalles expandibles"
+        )
     
     # =====================================================================
     # CONFIGURACIÓN DE ANÁLISIS CON IA - TEMPORALMENTE DESHABILITADO

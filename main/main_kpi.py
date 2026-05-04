@@ -5,6 +5,7 @@ import pandas as pd
 import altair as alt
 import plotly.express as px
 from utils.ai_helper_premium import generar_insights_kpi_vendedores
+from utils.constantes import COLUMNAS_VENTAS
 from utils.filters_helper import obtener_lineas_filtradas, generar_contexto_filtros
 from utils.logger import configurar_logger
 from utils.auth import get_current_user
@@ -23,6 +24,23 @@ def _detectar_columna_existente(df, candidatos):
     return next((col for col in candidatos if col in df.columns), None)
 
 
+def _normalizar_columna_ventas(df):
+    if "valor_mxn" in df.columns:
+        df["valor_mxn"] = pd.to_numeric(df["valor_mxn"], errors="coerce").fillna(0)
+        return df, "valor_mxn"
+
+    col_ventas = _detectar_columna_existente(df, COLUMNAS_VENTAS)
+    if not col_ventas:
+        return df, None
+
+    if col_ventas != "valor_mxn":
+        logger.info(f"Columna de ventas detectada: '{col_ventas}' → renombrada a 'valor_mxn'")
+        df = df.rename(columns={col_ventas: "valor_mxn"})
+
+    df["valor_mxn"] = pd.to_numeric(df["valor_mxn"], errors="coerce").fillna(0)
+    return df, "valor_mxn"
+
+
 def _dataframe_to_excel_bytes(df):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
@@ -38,15 +56,15 @@ def run(habilitar_ia=False, openai_api_key=None):
 
     df = st.session_state["df"].copy()
 
-    # Asegurar compatibilidad: valor_usd = ventas_usd_con_iva o ventas_usd
-    if "valor_mxn" not in df.columns:
-        if "ventas_usd" in df.columns:
-            df = df.rename(columns={"ventas_usd": "valor_mxn"})
-        elif "ventas_usd_con_iva" in df.columns:
-            df = df.rename(columns={"ventas_usd_con_iva": "valor_mxn"})
+    df, col_ventas = _normalizar_columna_ventas(df)
 
-    if "valor_mxn" not in df.columns:
-        st.error("No se encontró la columna 'valor_mxn', 'ventas_usd' ni 'ventas_usd_con_iva'.")
+    if not col_ventas:
+        st.error(
+            "No se encontró una columna de ventas válida. "
+            "Se aceptan aliases como valor_mxn, ventas_usd, ventas_usd_con_iva, "
+            "importe, monto_usd, total_usd, valor o venta."
+        )
+        st.info(f"Columnas disponibles: {', '.join(df.columns.tolist())}")
         return
 
     df["anio"] = pd.to_datetime(df["fecha"], errors="coerce").dt.year
