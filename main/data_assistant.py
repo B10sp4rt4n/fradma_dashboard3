@@ -12,6 +12,8 @@ Fecha: Febrero 2026
 import os
 import json
 from io import StringIO
+from datetime import date
+from typing import Optional
 import streamlit as st
 import pandas as pd
 
@@ -36,6 +38,30 @@ from utils.nl2sql import (
 from utils.roi_tracker import init_roi_tracker
 from utils.logger import configurar_logger
 from utils.auth import get_current_user
+
+try:
+    from utils.guided_catalog_store import load_runtime_catalog, catalog_stats
+    GUIDED_CATALOG_AVAILABLE = True
+except ImportError:
+    GUIDED_CATALOG_AVAILABLE = False
+
+try:
+    from utils.guided_query_framework import GuidedQueryFramework
+    GUIDED_FRAMEWORK_AVAILABLE = True
+except ImportError:
+    GUIDED_FRAMEWORK_AVAILABLE = False
+
+try:
+    from utils.guided_usage_metrics import (
+        record_session_guided_usage,
+        get_session_guided_usage_summary,
+        record_db_guided_usage,
+        get_db_guided_usage_summary,
+        get_db_guided_usage_timeseries,
+    )
+    GUIDED_USAGE_METRICS_AVAILABLE = True
+except ImportError:
+    GUIDED_USAGE_METRICS_AVAILABLE = False
 
 # Configurar logger para data_assistant
 logger = configurar_logger("data_assistant", nivel="INFO")
@@ -210,16 +236,99 @@ def _get_active_empresa_id():
     return st.session_state.get("empresa_id") or st.session_state.get("nl2sql_empresa_id")
 
 
+def _can_configure_connection(user) -> bool:
+    """Define quién puede configurar manualmente la conexión del asistente."""
+    return bool(user and user.is_superadmin)
+
+
+def _get_nested_secret_value(secret_obj, path) -> str:
+    """Resuelve una ruta anidada dentro de Streamlit secrets."""
+    current = secret_obj
+    for key in path:
+        if current is None:
+            return ""
+        if hasattr(current, "get"):
+            current = current.get(key)
+        else:
+            try:
+                current = current[key]
+            except Exception:
+                return ""
+    return current if isinstance(current, str) else ""
+
+
+def _get_server_credential_details(key: str) -> tuple[str, str]:
+    """Obtiene una credencial del servidor y la fuente, sin exponer el valor."""
+    value = os.getenv(key, "")
+    if value:
+        return value, "env"
+
+    aliases = {
+        "NEON_DATABASE_URL": [
+            (("NEON_DATABASE_URL",), "secrets.NEON_DATABASE_URL"),
+            (("DATABASE_URL",), "secrets.DATABASE_URL"),
+            (("connections", "neon", "url"), "secrets.connections.neon.url"),
+            (("connections", "postgresql", "url"), "secrets.connections.postgresql.url"),
+        ],
+        "OPENAI_API_KEY": [
+            (("OPENAI_API_KEY",), "secrets.OPENAI_API_KEY"),
+            (("openai_api_key",), "secrets.openai_api_key"),
+            (("api_key",), "secrets.api_key"),
+            (("openai", "api_key"), "secrets.openai.api_key"),
+            (("connections", "openai", "api_key"), "secrets.connections.openai.api_key"),
+        ],
+    }
+
+    try:
+        for path, source in aliases.get(key, [((key,), f"secrets.{key}")]):
+            secret_value = _get_nested_secret_value(st.secrets, path)
+            if secret_value:
+                return secret_value, source
+    except Exception:
+        pass
+
+    return "", "missing"
+
+
+def _is_premium_passkey_valid() -> bool:
+    """Indica si la sesión actual tiene Premium activado vía passkey."""
+    return bool(st.session_state.get("passkey_valido"))
+
+
+def _get_runtime_api_key_details() -> tuple[str, str]:
+    """Resuelve la API key activa para el asistente sin exponer su valor."""
+    if not _is_premium_passkey_valid():
+        return "", "premium-locked"
+
+    server_api, server_source = _get_server_credential_details("OPENAI_API_KEY")
+    if server_api:
+        return server_api, server_source
+
+    session_api_key = st.session_state.get("openai_api_key", "")
+    if isinstance(session_api_key, str) and session_api_key.strip():
+        return session_api_key.strip(), "session.openai_api_key"
+
+    return "", "missing"
+
+
+def _get_server_credential(key: str) -> str:
+    """Obtiene una credencial del servidor desde env o Streamlit secrets."""
+    value, _source = _get_server_credential_details(key)
+    return value
+
+
 def _get_runtime_credentials():
     """Resuelve credenciales del motor sin exponer secretos del servidor al frontend."""
     user = get_current_user()
     model = st.session_state.get("nl2sql_model", "gpt-4o")
+    server_neon = _get_server_credential("NEON_DATABASE_URL")
+    runtime_api_key, _runtime_api_source = _get_runtime_api_key_details()
 
-    if user and not user.is_superadmin:
-        return os.getenv("NEON_DATABASE_URL", ""), os.getenv("OPENAI_API_KEY", ""), model
+    if user and not _can_configure_connection(user):
+        return server_neon, runtime_api_key, model
 
-    neon_url = st.session_state.get("nl2sql_neon_url", "").strip() or os.getenv("NEON_DATABASE_URL", "")
-    api_key = st.session_state.get("nl2sql_api_key", "").strip() or os.getenv("OPENAI_API_KEY", "")
+    neon_url = st.session_state.get("nl2sql_neon_url", "").strip() or server_neon
+    api_key = st.session_state.get("nl2sql_api_key", "").strip() or runtime_api_key
     return neon_url, api_key, model
 
 
@@ -418,19 +527,110 @@ def _render_smart_table(df: pd.DataFrame):
     else:
         display_df = df
 
-    # Aplicar formato de moneda/porcentaje
-    display_num_cols = display_df.select_dtypes(include=['int64', 'float64', 'int32', 'float32']).columns
-    # Excluir columnas de conteo del formato monetario
-    count_keywords = ['num_', 'count', 'cantidad', 'total_clientes', 'total_facturas', 'conteo']
+    st.dataframe(_format_numeric_display_dataframe(display_df), use_container_width=True, hide_index=True)
+
+
+def _build_numeric_column_config(df: pd.DataFrame) -> dict:
+    """Construye un formato consistente para números en tablas del asistente."""
+    numeric_cols = df.select_dtypes(include=['number']).columns
+    count_keywords = ['num_', 'count', 'cantidad', 'total_clientes', 'total_facturas', 'conteo', 'registros', 'facturas', 'ranking']
+    money_keywords = [
+        'total', 'monto', 'facturacion', 'venta', 'ventas', 'ventas_mes', 'importe',
+        'saldo', 'mxn', 'compra', 'cobrado', 'promedio', 'media', 'desviacion',
+        'minimo', 'maximo', 'precio', 'mediana', 'percentil', 'acumulado',
+        'promedio_movil', 'monetario', 'ingreso', 'valor'
+    ]
+
     col_config = {}
-    for col in display_num_cols:
+    for col in numeric_cols:
         is_count = any(kw in col.lower() for kw in count_keywords)
         if 'pct' in col.lower() or 'porcentaje' in col.lower() or col.lower().endswith('_pct') or '%' in col:
-            col_config[col] = st.column_config.NumberColumn(format="%.1f%%")
-        elif not is_count and any(kw in col.lower() for kw in ['total', 'monto', 'facturacion', 'venta', 'importe', 'saldo', 'mxn', 'compra', 'promedio', 'media', 'desviacion', 'minimo', 'maximo', 'precio']):
-            col_config[col] = st.column_config.NumberColumn(format="$%.2f")
+            col_config[col] = st.column_config.NumberColumn(format="%,.1f%%")
+        elif not is_count and any(kw in col.lower() for kw in money_keywords):
+            col_config[col] = st.column_config.NumberColumn(format="$%,.2f")
+        elif is_count:
+            col_config[col] = st.column_config.NumberColumn(format="%,.0f")
+        else:
+            col_config[col] = st.column_config.NumberColumn(format="%,.2f")
 
-    st.dataframe(display_df, use_container_width=True, hide_index=True, column_config=col_config)
+    return col_config
+
+
+def _coerce_numeric_like_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Convierte columnas numéricas serializadas como texto para habilitar sort y formato correcto."""
+    if df is None or df.empty:
+        return df
+
+    count_keywords = ['num_', 'count', 'cantidad', 'total_clientes', 'total_facturas', 'conteo', 'registros', 'facturas', 'ranking']
+    money_keywords = [
+        'total', 'monto', 'facturacion', 'venta', 'ventas', 'ventas_mes', 'importe',
+        'saldo', 'mxn', 'compra', 'cobrado', 'promedio', 'media', 'desviacion',
+        'minimo', 'maximo', 'precio', 'mediana', 'percentil', 'acumulado',
+        'promedio_movil', 'monetario', 'ingreso', 'valor'
+    ]
+
+    converted_df = df.copy()
+    for col in converted_df.columns:
+        if pd.api.types.is_numeric_dtype(converted_df[col]):
+            continue
+
+        col_lower = str(col).lower()
+        looks_numeric = any(kw in col_lower for kw in count_keywords + money_keywords)
+        if not looks_numeric:
+            continue
+
+        raw_series = converted_df[col].astype(str).str.strip()
+        cleaned_series = (
+            raw_series
+            .str.replace("$", "", regex=False)
+            .str.replace(",", "", regex=False)
+            .str.replace("%", "", regex=False)
+            .replace({"": None, "None": None, "nan": None, "NaN": None, "NULL": None, "null": None})
+        )
+        numeric_series = pd.to_numeric(cleaned_series, errors='coerce')
+
+        non_null_count = cleaned_series.notna().sum()
+        if non_null_count == 0:
+            continue
+
+        parse_ratio = numeric_series.notna().sum() / non_null_count
+        if parse_ratio < 0.8:
+            continue
+
+        # Usar dtypes numpy (float64) para que select_dtypes(include='number') los detecte
+        converted_df[col] = numeric_series.astype('float64')
+
+    return converted_df
+
+
+def _format_numeric_display_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """Aplica formato visible a columnas numéricas para tablas del asistente."""
+    numeric_cols = df.select_dtypes(include=['number']).columns
+    count_keywords = ['num_', 'count', 'cantidad', 'total_clientes', 'total_facturas', 'conteo', 'registros', 'facturas', 'ranking']
+    money_keywords = [
+        'total', 'monto', 'facturacion', 'venta', 'ventas', 'ventas_mes', 'importe',
+        'saldo', 'mxn', 'compra', 'cobrado', 'promedio', 'media', 'desviacion',
+        'minimo', 'maximo', 'precio', 'mediana', 'percentil', 'acumulado',
+        'promedio_movil', 'monetario', 'ingreso', 'valor'
+    ]
+
+    display_df = df.copy()
+    for col in numeric_cols:
+        col_lower = col.lower()
+        is_count = any(kw in col_lower for kw in count_keywords)
+        is_percent = 'pct' in col_lower or 'porcentaje' in col_lower or col_lower.endswith('_pct') or '%' in col
+        is_money = not is_count and any(kw in col_lower for kw in money_keywords)
+
+        if is_percent:
+            display_df[col] = display_df[col].map(lambda value: f"{float(value):,.1f}%" if pd.notna(value) else "")
+        elif is_money:
+            display_df[col] = display_df[col].map(lambda value: f"${float(value):,.2f}" if pd.notna(value) else "")
+        elif is_count:
+            display_df[col] = display_df[col].map(lambda value: f"{int(value):,}" if pd.notna(value) else "")
+        else:
+            display_df[col] = display_df[col].map(lambda value: f"{float(value):,.2f}" if pd.notna(value) else "")
+
+    return display_df
 
 
 def _render_kpi_tab(df: pd.DataFrame):
@@ -442,6 +642,38 @@ def _render_kpi_tab(df: pd.DataFrame):
     """
     if df.empty:
         st.info("Sin datos para calcular KPIs.")
+        return
+
+    if {"ventas", "promedio_movil_3m"}.issubset(df.columns):
+        st.markdown("##### 📊 Resumen global")
+        total_ventas = float(df["ventas"].sum())
+        promedio_ventas = float(df["ventas"].mean())
+        ultimo_promedio_movil = float(df["promedio_movil_3m"].dropna().iloc[-1]) if not df["promedio_movil_3m"].dropna().empty else 0.0
+
+        cols_ui = st.columns(4)
+        with cols_ui[0]:
+            st.metric("📋 Registros", f"{len(df):,}")
+        with cols_ui[1]:
+            st.metric("Σ Ventas", f"${total_ventas:,.2f}", f"Prom: ${promedio_ventas:,.2f}")
+        with cols_ui[2]:
+            st.metric("Promedio mensual", f"${promedio_ventas:,.2f}")
+        with cols_ui[3]:
+            st.metric("Último Promedio Móvil 3M", f"${ultimo_promedio_movil:,.2f}")
+
+        if "mes" in df.columns:
+            st.markdown("---")
+            top_n = df.nlargest(3, "ventas")[["mes", "ventas"]]
+            bot_n = df.nsmallest(3, "ventas")[["mes", "ventas"]]
+
+            col_top, col_bot = st.columns(2)
+            with col_top:
+                st.markdown("##### 🏆 Top 3 por Ventas")
+                for _, row in top_n.iterrows():
+                    st.markdown(f"**{row['mes']}** — ${float(row['ventas']):,.2f}")
+            with col_bot:
+                st.markdown("##### 🔻 Menor 3 por Ventas")
+                for _, row in bot_n.iterrows():
+                    st.markdown(f"**{row['mes']}** — ${float(row['ventas']):,.2f}")
         return
 
     cols_lower = [c.lower() for c in df.columns]
@@ -622,7 +854,13 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                     {x, y, color, title, orientation, labels, sort, top_n, ...}
     """
     if not PLOTLY_AVAILABLE or df.empty:
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        df = _coerce_numeric_like_columns(df)
+        st.dataframe(
+            df,
+            use_container_width=True,
+            hide_index=True,
+            column_config=_build_numeric_column_config(df),
+        )
         return
 
     # ── Detección temprana: formato kpi/valor/unidad → dashboard de cards ──
@@ -671,6 +909,40 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
         y_col = num_cols[0] if num_cols else df.columns[-1]
     if color_col and color_col not in df.columns:
         color_col = None
+
+    if {"ventas", "promedio_movil_3m"}.issubset(df.columns) and "mes" in df.columns:
+        combo_df = df.copy()
+        fig = go.Figure()
+        fig.add_trace(
+            go.Bar(
+                x=combo_df["mes"],
+                y=combo_df["ventas"],
+                name="Ventas",
+                marker_color="#4C78A8",
+                hovertemplate="%{x}<br>Ventas: $%{y:,.2f}<extra></extra>",
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=combo_df["mes"],
+                y=combo_df["promedio_movil_3m"],
+                name="Promedio móvil 3M",
+                mode="lines+markers",
+                line=dict(color="#F58518", width=3),
+                marker=dict(size=7),
+                hovertemplate="%{x}<br>Promedio móvil 3M: $%{y:,.2f}<extra></extra>",
+            )
+        )
+        fig.update_layout(
+            title=title,
+            xaxis_title="mes",
+            yaxis_title="MXN",
+            xaxis_tickangle=-45,
+            legend_title_text="Serie",
+            hovermode="x unified",
+        )
+        _render_plotly_chart_and_save(fig, use_container_width=True)
+        return
 
     # --- Auto-detect estadísticas ---
     stat_keywords = ['media', 'mediana', 'promedio', 'desviacion', 'stddev',
@@ -1379,16 +1651,13 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
         logger.error(traceback.format_exc())
 
     # Default: tabla con formato
-    count_keywords = ['num_', 'count', 'cantidad', 'total_clientes', 'total_facturas', 'conteo']
-    col_config = {}
-    for col in num_cols:
-        is_count = any(kw in col.lower() for kw in count_keywords)
-        if 'pct' in col.lower() or 'porcentaje' in col.lower() or col.lower().endswith('_pct') or '%' in col:
-            col_config[col] = st.column_config.NumberColumn(format="%.1f%%")
-        elif not is_count and any(kw in col.lower() for kw in ['total', 'monto', 'facturacion', 'venta', 'importe', 'saldo', 'mxn', 'compra']):
-            col_config[col] = st.column_config.NumberColumn(format="$%.2f")
-
-    st.dataframe(df, use_container_width=True, hide_index=True, column_config=col_config)
+    df = _coerce_numeric_like_columns(df)
+    st.dataframe(
+        df,
+        use_container_width=True,
+        hide_index=True,
+        column_config=_build_numeric_column_config(df),
+    )
 
 
 def _render_stats_chart(df: pd.DataFrame, num_cols: list, cat_cols: list,
@@ -1497,24 +1766,37 @@ def _render_stats_chart(df: pd.DataFrame, num_cols: list, cat_cols: list,
 
             if comparable_cols:
                 stat_data = [
-                    {"Métrica": c.replace('_', ' ').title(), "Valor": float(df[c].iloc[0])}
+                    {
+                        "Métrica": c.replace('_', ' ').title(),
+                        "Valor": float(df[c].iloc[0]),
+                        "Etiqueta": _fmt_money(float(df[c].iloc[0])),
+                    }
                     for c in comparable_cols
                 ]
-                stat_df = pd.DataFrame(stat_data)
+                stat_df = pd.DataFrame(stat_data).sort_values("Valor", ascending=False)
                 fig = px.bar(
-                    stat_df, x="Valor", y="Métrica",
+                    stat_df,
+                    x="Valor",
+                    y="Métrica",
                     orientation="h",
                     title=f"📐 {title}",
-                    color="Valor",
-                    color_continuous_scale="Viridis",
-                    text_auto="$,.2f",
+                    color_discrete_sequence=["#4DD0E1"],
+                    text="Etiqueta",
                 )
                 fig.update_layout(
                     yaxis=dict(autorange="reversed"),
                     showlegend=False,
-                    height=max(300, len(stat_data) * 50),
+                    height=max(320, len(stat_data) * 58),
+                    margin=dict(l=20, r=120, t=60, b=30),
+                    xaxis=dict(title="Valor", tickformat="$,.0f"),
+                    coloraxis_showscale=False,
                 )
-                fig.update_traces(textposition="outside")
+                fig.update_traces(
+                    textposition="outside",
+                    cliponaxis=False,
+                    hovertemplate="%{y}: %{text}<extra></extra>",
+                    marker_line_width=0,
+                )
                 _render_plotly_chart_and_save(fig, use_container_width=True)
 
             # Si hay percentiles → box plot simulado
@@ -1525,6 +1807,8 @@ def _render_stats_chart(df: pd.DataFrame, num_cols: list, cat_cols: list,
             max_col = next((c for c in range_cols if any(k in c.lower() for k in ['max'])), None)
 
             if p25_col and p75_col:
+                from plotly.subplots import make_subplots
+
                 p25 = float(df[p25_col].iloc[0])
                 p75 = float(df[p75_col].iloc[0])
                 p50 = float(df[p50_col].iloc[0]) if p50_col else (p25 + p75) / 2
@@ -1539,32 +1823,71 @@ def _render_stats_chart(df: pd.DataFrame, num_cols: list, cat_cols: list,
                 # Puntos outlier fuera de los fences
                 outliers_lo = [mn] if mn < fence_lo else []
                 outliers_hi = [mx] if mx > fence_hi else []
+                all_outliers = outliers_lo + outliers_hi
+                extreme_scale_gap = bool(all_outliers) and (mx / max(p75, 1) >= 8)
 
-                fig = go.Figure()
-                # Box plot horizontal para mejor legibilidad
-                fig.add_trace(go.Box(
-                    q1=[p25], median=[p50], q3=[p75],
-                    lowerfence=[fence_lo], upperfence=[fence_hi],
-                    mean=[avg_val],
-                    name="",
-                    marker_color="#2196F3",
-                    boxmean=True,
-                    orientation="h",
-                    hoverinfo="text",
-                    hovertext=(
-                        f"Mín: ${mn:,.2f}<br>"
-                        f"P25: ${p25:,.2f}<br>"
-                        f"Mediana: ${p50:,.2f}<br>"
-                        f"Media: ${avg_val:,.2f}<br>"
-                        f"P75: ${p75:,.2f}<br>"
-                        f"Máx: ${mx:,.2f}"
-                    ),
-                ))
+                if extreme_scale_gap:
+                    fig = make_subplots(
+                        rows=1,
+                        cols=2,
+                        shared_yaxes=True,
+                        column_widths=[0.72, 0.28],
+                        horizontal_spacing=0.08,
+                        subplot_titles=("Rango central", "Outliers"),
+                    )
+                else:
+                    fig = go.Figure()
+
+                def _add_trace(trace, col: int = 1):
+                    if extreme_scale_gap:
+                        fig.add_trace(trace, row=1, col=col)
+                    else:
+                        fig.add_trace(trace)
+
+                _add_trace(go.Scatter(
+                    x=[fence_lo, fence_hi],
+                    y=[0, 0],
+                    mode="lines",
+                    line=dict(color="#90CAF9", width=4),
+                    name="Rango útil",
+                    hovertemplate=f"Rango útil: {_fmt_money(fence_lo)} - {_fmt_money(fence_hi)}<extra></extra>",
+                ), col=1)
+                _add_trace(go.Scatter(
+                    x=[p25, p75],
+                    y=[0, 0],
+                    mode="lines",
+                    line=dict(color="#26A69A", width=16),
+                    name="IQR",
+                    hovertemplate=f"IQR: {_fmt_money(p25)} - {_fmt_money(p75)}<extra></extra>",
+                ), col=1)
+                _add_trace(go.Scatter(
+                    x=[mn, mx],
+                    y=[0, 0],
+                    mode="markers",
+                    marker=dict(color="#B0BEC5", size=10, symbol="line-ns-open"),
+                    name="Mín/Máx",
+                    hovertemplate="Valor: %{x:$,.2f}<extra></extra>",
+                ), col=1)
+
+                key_points = pd.DataFrame([
+                    {"x": p25, "label": "P25", "color": "#64B5F6", "symbol": "circle"},
+                    {"x": p50, "label": "Mediana", "color": "#FFFFFF", "symbol": "diamond"},
+                    {"x": p75, "label": "P75", "color": "#64B5F6", "symbol": "circle"},
+                    {"x": avg_val, "label": "Promedio", "color": "#FFC107", "symbol": "triangle-up"},
+                ])
+                for _, point in key_points.iterrows():
+                    _add_trace(go.Scatter(
+                        x=[point["x"]],
+                        y=[0],
+                        mode="markers",
+                        marker=dict(color=point["color"], size=14, symbol=point["symbol"], line=dict(width=1, color="#111827")),
+                        name=point["label"],
+                        hovertemplate=f"{point['label']}: {_fmt_money(float(point['x']))}<extra></extra>",
+                    ), col=1)
 
                 # Marcar outliers como puntos separados
-                all_outliers = outliers_lo + outliers_hi
                 if all_outliers:
-                    fig.add_trace(go.Scatter(
+                    _add_trace(go.Scatter(
                         x=all_outliers,
                         y=[0] * len(all_outliers),
                         mode="markers+text",
@@ -1574,36 +1897,60 @@ def _render_stats_chart(df: pd.DataFrame, num_cols: list, cat_cols: list,
                         name="Outliers",
                         hoverinfo="text",
                         hovertext=[f"Outlier: ${v:,.2f}" for v in all_outliers],
-                    ))
+                    ), col=2 if extreme_scale_gap else 1)
 
-                # Anotaciones de valores clave
-                for val, label, color in [
-                    (p25, "P25", "#64B5F6"),
-                    (p50, "Mediana", "#FFFFFF"),
-                    (p75, "P75", "#64B5F6"),
-                    (avg_val, "μ", "#FFC107"),
-                ]:
-                    fig.add_annotation(
-                        x=val, y=0,
-                        text=f"{label}: ${val:,.2f}",
-                        showarrow=True, arrowhead=2,
-                        font=dict(size=10, color=color),
-                        arrowcolor=color,
-                        ax=0, ay=-35 if label in ("P25", "P75") else 35,
+                central_left = min(mn, p25, p50, avg_val) * 0.95 if min(mn, p25, p50, avg_val) > 0 else 0
+                central_right = max(fence_hi, p75, p50, avg_val) * 1.15
+
+                if extreme_scale_gap:
+                    fig.update_xaxes(title_text="Valor ($)", tickformat="$,.0f", range=[central_left, central_right], row=1, col=1)
+                    outlier_min = min(all_outliers) * 0.95 if min(all_outliers) > 0 else 0
+                    outlier_max = max(all_outliers) * 1.05
+                    fig.update_xaxes(title_text="Outliers ($)", tickformat="$,.0f", range=[outlier_min, outlier_max], row=1, col=2)
+                    fig.update_yaxes(showticklabels=False, row=1, col=1)
+                    fig.update_yaxes(showticklabels=False, row=1, col=2)
+                    fig.update_layout(
+                        title=f"📦 Distribución — {title}",
+                        showlegend=True,
+                        height=340,
+                        margin=dict(l=20, r=20, t=80, b=40),
+                        legend=dict(orientation="h", yanchor="bottom", y=1.10, xanchor="left", x=0),
                     )
-
-                fig.update_layout(
-                    title=f"📦 Distribución — {title}",
-                    showlegend=bool(all_outliers),
-                    height=350,
-                    xaxis=dict(
-                        title="Valor ($)",
-                        tickformat="$,.0f",
-                    ),
-                    yaxis=dict(showticklabels=False),
-                    margin=dict(l=20, r=20, t=50, b=40),
-                )
+                    fig.add_annotation(
+                        x=0.5,
+                        y=-0.28,
+                        xref="paper",
+                        yref="paper",
+                        text="El panel derecho separa valores extremos para no aplastar el rango central.",
+                        showarrow=False,
+                        font=dict(size=11, color="#94A3B8"),
+                    )
+                else:
+                    fig.update_layout(
+                        title=f"📦 Distribución — {title}",
+                        showlegend=True,
+                        height=320,
+                        xaxis=dict(
+                            title="Valor ($)",
+                            tickformat="$,.0f",
+                            range=[central_left, max(mx, central_right)],
+                        ),
+                        yaxis=dict(showticklabels=False),
+                        margin=dict(l=20, r=20, t=70, b=40),
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+                    )
                 _render_plotly_chart_and_save(fig, use_container_width=True)
+
+                st.caption(
+                    " | ".join([
+                        f"Mín {_fmt_money(mn)}",
+                        f"P25 {_fmt_money(p25)}",
+                        f"Mediana {_fmt_money(p50)}",
+                        f"Promedio {_fmt_money(avg_val)}",
+                        f"P75 {_fmt_money(p75)}",
+                        f"Máx {_fmt_money(mx)}",
+                    ])
+                )
 
             return
 
@@ -1681,7 +2028,7 @@ def _render_stats_chart(df: pd.DataFrame, num_cols: list, cat_cols: list,
         pass  # Fallback a tabla si falla
 
     # Fallback: tabla formateada
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.dataframe(df, use_container_width=True, hide_index=True, column_config=_build_numeric_column_config(df))
 
 
 # =====================================================================
@@ -1716,8 +2063,8 @@ def _auto_connect_from_env():
     if st.session_state.get("nl2sql_connected") or st.session_state.get("nl2sql_disable_auto_connect"):
         return  # Ya conectado, nada que hacer
 
-    neon_url = os.getenv("NEON_DATABASE_URL", "")
-    api_key = os.getenv("OPENAI_API_KEY", "")
+    neon_url = _get_server_credential("NEON_DATABASE_URL")
+    api_key, _api_source = _get_runtime_api_key_details()
 
     if not neon_url or not api_key:
         return  # Sin env vars → mostrar formulario manual
@@ -1738,10 +2085,14 @@ def _render_connection_setup():
     st.markdown("### 🔌 Configurar Conexión")
 
     user = get_current_user()
-    server_neon = os.getenv("NEON_DATABASE_URL", "")
-    server_api = os.getenv("OPENAI_API_KEY", "")
+    server_neon, neon_source = _get_server_credential_details("NEON_DATABASE_URL")
+    server_api, api_source = _get_runtime_api_key_details()
 
-    if user and not user.is_superadmin:
+    neon_status = f"Neon: {'detectado' if server_neon else 'no detectado'} ({neon_source})"
+    api_status = f"OpenAI: {'detectado' if server_api else 'no detectado'} ({api_source})"
+    st.caption(f"Diagnóstico servidor: {neon_status} · {api_status}")
+
+    if user and not _can_configure_connection(user):
         if server_neon and server_api:
             st.success("✅ El asistente usa credenciales seguras del servidor para tu sesión.")
             if st.button("🔌 Conectar", type="primary", use_container_width=True):
@@ -1844,23 +2195,471 @@ def _render_connection_setup():
     return st.session_state.get("nl2sql_connected", False)
 
 
+def _get_stage_mode_config() -> tuple[list[str], list[dict[str, str]]]:
+    """Define qué funciones están activas hoy y cuáles pasan a second stage."""
+    current_stage_modes = ["💬 Chat", "🧭 Guiado"]
+    second_stage_options = [
+        {
+            "label": "🛠️ SQL Playground",
+            "description": "Ejecución SQL guiada y auditada para una siguiente etapa.",
+        },
+        {
+            "label": "🗄️ Esquema",
+            "description": "Exploración asistida de tablas y contexto técnico en segunda etapa.",
+        },
+        {
+            "label": "🕰️ Historial",
+            "description": "Trazabilidad persistente de consultas y resultados en segunda etapa.",
+        },
+        {
+            "label": "💰 ROI",
+            "description": "Panel dedicado de ahorro y productividad cuando el flujo esté estabilizado.",
+        },
+    ]
+    return current_stage_modes, second_stage_options
+
+
+def _render_second_stage_options(second_stage_options: list[dict[str, str]]):
+    """Muestra funciones reservadas para una siguiente etapa sin habilitarlas aún."""
+    with st.expander("Second Stage · Opciones Futuras", expanded=False):
+        st.caption("Estas funciones quedan reservadas para una segunda etapa. Se mantienen bloqueadas por ahora.")
+        for option in second_stage_options:
+            st.button(option["label"], disabled=True, use_container_width=True, key=f"future_{option['label']}")
+            st.caption(option["description"])
+
+        guided_info = st.session_state.get("guided_catalog_info")
+        if guided_info:
+            st.markdown("---")
+            st.caption(
+                f"🧭 Catálogo guiado cargado · fuente: {guided_info.get('source', 'json')} · "
+                f"dominios: {guided_info.get('domains', 0)} · casos: {guided_info.get('cases', 0)}"
+            )
+
+
+def _load_guided_catalog_runtime():
+    """Carga catálogo guiado en sesión (BD preferente opcional, fallback JSON)."""
+    if not GUIDED_CATALOG_AVAILABLE:
+        return
+
+    tenant_id = _get_active_empresa_id()
+    cached_tenant = st.session_state.get("guided_catalog_tenant_id")
+    if cached_tenant and str(cached_tenant) != str(tenant_id):
+        st.session_state.pop("guided_catalog", None)
+        st.session_state.pop("guided_catalog_info", None)
+        st.session_state.pop("guided_framework", None)
+
+    if "guided_catalog" in st.session_state and "guided_catalog_info" in st.session_state:
+        return
+
+    prefer_db = os.getenv("GUIDED_CATALOG_SOURCE", "json").lower() in {"db", "database", "postgres"}
+    connection_string = ""
+    engine = st.session_state.get("nl2sql_engine")
+    if engine and getattr(engine, "connection_string", None):
+        connection_string = engine.connection_string
+    if not connection_string:
+        connection_string = _get_server_credential("NEON_DATABASE_URL")
+
+    try:
+        catalog = load_runtime_catalog(
+            connection_string=connection_string or None,
+            prefer_db=prefer_db,
+            empresa_id=str(tenant_id) if tenant_id else None,
+        )
+        stats = catalog_stats(catalog)
+        st.session_state["guided_catalog"] = catalog
+        st.session_state["guided_catalog_tenant_id"] = str(tenant_id) if tenant_id else ""
+        st.session_state["guided_catalog_info"] = {
+            "source": "db" if prefer_db and connection_string else "json",
+            "domains": stats.get("domains", 0),
+            "cases": stats.get("cases", 0),
+            "tenant": str(tenant_id) if tenant_id else "global",
+        }
+    except Exception as exc:
+        logger.warning(f"No se pudo cargar catálogo guiado runtime: {exc}")
+        st.session_state["guided_catalog_info"] = {
+            "source": "unavailable",
+            "domains": 0,
+            "cases": 0,
+            "tenant": str(tenant_id) if tenant_id else "global",
+        }
+
+
+def _get_or_build_guided_framework():
+    """Construye el runtime del framework guiado usando el catálogo en sesión."""
+    if not GUIDED_FRAMEWORK_AVAILABLE:
+        return None
+
+    existing = st.session_state.get("guided_framework")
+    if existing is not None:
+        return existing
+
+    catalog = st.session_state.get("guided_catalog")
+    if not catalog:
+        _load_guided_catalog_runtime()
+        catalog = st.session_state.get("guided_catalog")
+
+    if not catalog:
+        return None
+
+    framework = GuidedQueryFramework(catalog)
+    st.session_state["guided_framework"] = framework
+    return framework
+
+
+def _render_guided_interface():
+    """Interfaz determinística de dominio -> caso -> parámetros -> ejecución."""
+    engine = _get_engine()
+    if not engine:
+        return
+
+    framework = _get_or_build_guided_framework()
+    if not framework:
+        st.warning("No se pudo inicializar el framework guiado. Verifica el catálogo.")
+        return
+
+    domains = framework.list_enabled_domains()
+    if not domains:
+        st.warning("No hay dominios guiados habilitados en el catálogo.")
+        return
+
+    domain_options = {f"{domain.get('label', domain.get('id'))}": domain.get("id") for domain in domains}
+    selected_domain_label = st.selectbox("Dominio", list(domain_options.keys()), key="guided_domain_select")
+    selected_domain_id = domain_options[selected_domain_label]
+
+    cases = framework.list_enabled_cases(selected_domain_id)
+    if not cases:
+        st.info("No hay casos habilitados para este dominio.")
+        return
+
+    case_options = {f"{case.get('label', case.get('id'))}": case.get("id") for case in cases}
+    selected_case_label = st.selectbox("Analisis", list(case_options.keys()), key="guided_case_select")
+    selected_case_id = case_options[selected_case_label]
+    selected_case = framework.get_case(selected_case_id)
+
+    st.caption(selected_case.get("description", ""))
+    st.caption(f"Template: {selected_case.get('sql_template_id', 'n/a')}")
+
+    if GUIDED_USAGE_METRICS_AVAILABLE:
+        usage_summary = get_session_guided_usage_summary(st.session_state)
+        if usage_summary.get("events", 0) > 0:
+            st.caption(
+                f"Uso guiado en sesion: {usage_summary['events']} ejecuciones · "
+                f"Top caso: {usage_summary['top_cases'][0][0]} ({usage_summary['top_cases'][0][1]})"
+            )
+
+        with st.expander("📈 Adopción guiada", expanded=False):
+            conn_str = getattr(engine, "connection_string", "") or _get_server_credential("NEON_DATABASE_URL")
+            tenant_id = str(_get_active_empresa_id()) if _get_active_empresa_id() else None
+            viewer_user = get_current_user()
+
+            controls_col1, controls_col2 = st.columns(2)
+            with controls_col1:
+                scope_options = ["Tenant actual"]
+                if viewer_user and viewer_user.is_superadmin:
+                    scope_options.append("Global")
+                selected_scope = st.selectbox(
+                    "Alcance",
+                    options=scope_options,
+                    key="guided_adoption_scope",
+                )
+            with controls_col2:
+                selected_days = st.radio(
+                    "Ventana",
+                    options=[7, 30, 90],
+                    horizontal=True,
+                    key="guided_adoption_days",
+                )
+
+            filter_empresa_id = None if selected_scope == "Global" else tenant_id
+
+            try:
+                db_summary = get_db_guided_usage_summary(
+                    conn_str,
+                    empresa_id=filter_empresa_id,
+                    days=int(selected_days),
+                )
+                series = get_db_guided_usage_timeseries(
+                    conn_str,
+                    empresa_id=filter_empresa_id,
+                    days=int(selected_days),
+                )
+
+                kpi_cols = st.columns(3)
+                with kpi_cols[0]:
+                    st.metric("Eventos", db_summary.get("events", 0))
+                with kpi_cols[1]:
+                    st.metric("Tasa éxito", f"{db_summary.get('success_rate', 0.0) * 100:.2f}%")
+                with kpi_cols[2]:
+                    st.metric("Latencia prom. (s)", f"{db_summary.get('avg_execution_time', 0.0):.3f}")
+
+                if series:
+                    ts_df = pd.DataFrame(series)
+                    ts_df["day"] = pd.to_datetime(ts_df["day"]) 
+                    ts_df["success_pct"] = ts_df["success_rate"] * 100.0
+
+                    if PLOTLY_AVAILABLE:
+                        fig_events = px.line(
+                            ts_df,
+                            x="day",
+                            y="events",
+                            markers=True,
+                            title="Eventos diarios",
+                        )
+                        st.plotly_chart(fig_events, use_container_width=True)
+
+                        fig_success = px.bar(
+                            ts_df,
+                            x="day",
+                            y="success_pct",
+                            title="Tasa de éxito diaria (%)",
+                        )
+                        st.plotly_chart(fig_success, use_container_width=True)
+
+                    st.dataframe(
+                        ts_df[["day", "events", "success_pct", "avg_execution_time"]],
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                else:
+                    st.info("No hay eventos en la ventana seleccionada.")
+
+                if db_summary.get("top_cases"):
+                    st.caption("Top casos")
+                    st.dataframe(
+                        pd.DataFrame(db_summary["top_cases"], columns=["case_key", "usos"]),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                if db_summary.get("top_domains"):
+                    st.caption("Top dominios")
+                    st.dataframe(
+                        pd.DataFrame(db_summary["top_domains"], columns=["domain_key", "usos"]),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+            except Exception as exc:
+                st.caption(f"Sin métricas BD disponibles: {exc}")
+
+    allowed_filters = set(selected_case.get("allowed_filters", []))
+    allowed_groupings = selected_case.get("allowed_groupings", [])
+
+    params: dict[str, object] = {}
+    period_mode = st.selectbox(
+        "Periodo",
+        ["todo", "este_ano", "ultimos_12_meses", "ultimos_6_meses", "rango_personalizado"],
+        index=2,
+        key="guided_period_mode",
+    )
+    params["period_mode"] = period_mode
+
+    if period_mode == "rango_personalizado" or "start_date" in allowed_filters or "end_date" in allowed_filters:
+        col_start, col_end = st.columns(2)
+        with col_start:
+            start_date = st.date_input("Fecha inicio", value=date.today().replace(day=1), key="guided_start_date")
+        with col_end:
+            end_date = st.date_input("Fecha fin", value=date.today(), key="guided_end_date")
+        params["start_date"] = start_date.isoformat()
+        params["end_date"] = end_date.isoformat()
+
+    if "top_n" in allowed_filters:
+        params["top_n"] = st.number_input("Top N", min_value=1, max_value=100, value=10, step=1, key="guided_top_n")
+
+    if "metodo_pago" in allowed_filters:
+        params["metodo_pago"] = st.selectbox("Metodo de pago", ["todos", "PUE", "PPD"], key="guided_metodo_pago")
+
+    if "tipo_comprobante" in allowed_filters:
+        params["tipo_comprobante"] = st.selectbox("Tipo de comprobante", ["todos", "I", "E", "P"], key="guided_tipo_comp")
+
+    if "cliente" in allowed_filters:
+        params["cliente"] = st.text_input("Cliente contiene", value="", key="guided_cliente")
+
+    if "producto" in allowed_filters:
+        params["producto"] = st.text_input("Producto contiene", value="", key="guided_producto")
+
+    if allowed_groupings:
+        params["grouping"] = st.selectbox("Agrupacion", allowed_groupings, key="guided_grouping")
+
+    if st.button("▶ Ejecutar analisis guiado", type="primary", use_container_width=True, key="guided_execute"):
+        with st.spinner("Ejecutando caso guiado..."):
+            empresa_id = _get_active_empresa_id()
+            current_user = get_current_user()
+            try:
+                guided_result = framework.execute_case(
+                    engine,
+                    selected_case_id,
+                    params,
+                    empresa_id=empresa_id,
+                )
+            except Exception as exc:
+                if GUIDED_USAGE_METRICS_AVAILABLE:
+                    record_session_guided_usage(
+                        st.session_state,
+                        domain_key=selected_case.get("domain_id", selected_domain_id),
+                        case_key=selected_case_id,
+                    )
+                    try:
+                        record_db_guided_usage(
+                            getattr(engine, "connection_string", ""),
+                            domain_key=selected_case.get("domain_id", selected_domain_id),
+                            case_key=selected_case_id,
+                            success=False,
+                            execution_time_sec=None,
+                            row_count=None,
+                            empresa_id=str(empresa_id) if empresa_id else None,
+                            user_email=getattr(current_user, "email", None),
+                            source="streamlit-guided",
+                        )
+                    except Exception:
+                        pass
+                st.error(f"Error ejecutando caso guiado: {exc}")
+                return
+
+        if GUIDED_USAGE_METRICS_AVAILABLE:
+            record_session_guided_usage(
+                st.session_state,
+                domain_key=selected_case.get("domain_id", selected_domain_id),
+                case_key=selected_case_id,
+            )
+            try:
+                record_db_guided_usage(
+                    getattr(engine, "connection_string", ""),
+                    domain_key=selected_case.get("domain_id", selected_domain_id),
+                    case_key=selected_case_id,
+                    success=True,
+                    execution_time_sec=guided_result.execution_time,
+                    row_count=guided_result.row_count,
+                    empresa_id=str(empresa_id) if empresa_id else None,
+                    user_email=getattr(current_user, "email", None),
+                    source="streamlit-guided",
+                )
+            except Exception:
+                pass
+
+        user_prompt = f"Caso guiado: {selected_case_label}"
+        _append_chat_message({"role": "user", "content": user_prompt})
+
+        result_msg = {
+            "role": "assistant",
+            "question": user_prompt,
+            "content": guided_result.summary,
+            "sql": guided_result.sql,
+            "success": True,
+            "execution_time": guided_result.execution_time,
+            "row_count": guided_result.row_count,
+            "chart_suggestion": guided_result.chart,
+            "chart_spec": {},
+            "error": None,
+        }
+
+        if guided_result.dataframe is not None and not guided_result.dataframe.empty:
+            truncated_df = guided_result.dataframe.head(MAX_SESSION_RESULT_ROWS)
+            result_msg["dataframe_json"] = truncated_df.to_json(orient="split", date_format="iso")
+            result_msg["dataframe_truncated"] = len(guided_result.dataframe) > len(truncated_df)
+
+        _append_chat_message(result_msg)
+        st.rerun()
+
+
+BLOCKED_EXAMPLE_QUESTIONS = {
+    "¿Qué clientes no han comprado en los últimos 3 meses?": "Depende de una base maestra de clientes y reglas de inactividad verificadas.",
+    "¿Cuál es el promedio de días de crédito?": "Depende de reglas de crédito homologadas y verificadas por cliente/documento.",
+    "¿Cuál es la tendencia de nuevos clientes por mes?": "Depende de una definición validada de alta de cliente y primera compra.",
+    "¿Cuáles clientes compran cada vez menos?": "Depende de una metodología de deterioro de compra validada por negocio.",
+    "Segmentación RFM de clientes": "Depende de una metodología RFM validada y umbrales por tenant.",
+    "Concentración de clientes (riesgo)": "Depende de una metodología de riesgo comercial validada.",
+    "Detectar facturas anómalas (outliers)": "Depende de un criterio estadístico de anomalías validado.",
+    "¿Cuál es el riesgo de concentración de clientes?": "Depende de una metodología de riesgo comercial validada.",
+    "¿Cuál es el DSO y tasa de cobro de los últimos 3 meses?": "Depende de una definición financiera validada de DSO y cobranza efectiva.",
+}
+
+
+def _get_sidebar_examples_config() -> list[dict]:
+    """Anota qué preguntas ejemplo están activas hoy y cuáles quedan visibles pero bloqueadas."""
+    examples = get_example_questions()
+    annotated_examples = []
+
+    for category in examples:
+        annotated_questions = []
+        for question in category["questions"]:
+            blocked_reason = BLOCKED_EXAMPLE_QUESTIONS.get(question)
+            annotated_questions.append(
+                {
+                    "text": question,
+                    "enabled": blocked_reason is None,
+                    "blocked_reason": blocked_reason,
+                }
+            )
+
+        annotated_examples.append(
+            {
+                "category": category["category"],
+                "icon": category["icon"],
+                "questions": annotated_questions,
+            }
+        )
+
+    return annotated_examples
+
+
+def _get_chat_guidance_lists() -> tuple[list[str], list[str]]:
+    """Resume ejemplos activos hoy vs preguntas que quedan para después."""
+    examples = _get_sidebar_examples_config()
+    active_questions = []
+    future_questions = []
+
+    for category in examples:
+        for question in category["questions"]:
+            if question["enabled"]:
+                active_questions.append(question["text"])
+            else:
+                future_questions.append(question["text"])
+
+    return active_questions, future_questions
+
+
+def _render_chat_guidance_empty_state():
+    """Aclara el alcance actual del chat antes de la primera consulta."""
+    active_questions, future_questions = _get_chat_guidance_lists()
+
+    active_preview = "\n".join(f"- {question}" for question in active_questions[:4])
+    future_preview = "\n".join(f"- {question}" for question in future_questions[:4])
+
+    st.info(
+        "Hoy puedes consultar ventas, cobranza, productos, tendencias y estadísticas descriptivas."
+    )
+    st.markdown(
+        "**Disponible hoy**\n"
+        f"{active_preview}"
+    )
+    st.markdown(
+        "**Visible pero no activo todavía**\n"
+        f"{future_preview}"
+    )
+    st.caption(
+        "Las preguntas avanzadas quedan visibles como referencia, pero siguen bloqueadas hasta validar sus dependencias de negocio y datos."
+    )
+
+
 def _render_sidebar_examples():
     """Preguntas de ejemplo en la barra lateral derecha."""
-    examples = get_example_questions()
+    examples = _get_sidebar_examples_config()
 
     st.markdown("### 💡 Preguntas de ejemplo")
-    st.caption("Haz clic para copiar una pregunta")
+    st.caption("Las preguntas activas se pueden cargar al chat. Las demás quedan visibles como referencia futura.")
 
     for cat in examples:
         with st.expander(f"{cat['icon']} {cat['category']}", expanded=False):
             for q in cat["questions"]:
                 if st.button(
-                    q,
-                    key=f"ex_{hash(q)}",
+                    q["text"],
+                    key=f"ex_{hash(q['text'])}",
                     use_container_width=True,
+                    disabled=not q["enabled"],
                 ):
-                    st.session_state["nl2sql_pending_question"] = q
+                    st.session_state["nl2sql_pending_question"] = q["text"]
                     st.rerun()
+                if not q["enabled"] and q.get("blocked_reason"):
+                    st.caption(f"Depende de: {q['blocked_reason']}")
 
 
 def _render_schema_explorer():
@@ -1963,6 +2762,114 @@ def _track_query_roi(result: NL2SQLResult):
             )
     except Exception:
         pass  # No interrumpir el flujo por errores de tracking
+
+
+# ─── Wiki: tracking de fallos y oferta de documentación ──────────────────────
+
+_WIKI_MAX_FAILURES = 2  # Cuántos fallos consecutivos antes de ofrecer documentar
+
+
+def _track_wiki_failure(result: NL2SQLResult, question: str):
+    """
+    Registra fallos consecutivos en session_state.
+    Si hay éxito después de fallos, guarda el contexto de resolución.
+    """
+    if "wiki_failure_log" not in st.session_state:
+        st.session_state["wiki_failure_log"] = []
+
+    if not result.success:
+        st.session_state["wiki_failure_log"].append({
+            "question": question,
+            "sql":      result.sql or "",
+            "error":    result.error or "Error desconocido",
+        })
+        st.session_state.pop("wiki_successful_resolution", None)
+    else:
+        # Éxito: si había fallos previos, guardar el contexto completo de resolución
+        if st.session_state.get("wiki_failure_log"):
+            st.session_state["wiki_successful_resolution"] = {
+                "question":       question,
+                "sql":            result.sql or "",
+                "interpretation": result.interpretation or "",
+            }
+
+
+def _offer_wiki_documentation(result: NL2SQLResult, question: str):
+    """
+    Muestra una oferta de documentación en la wiki cuando:
+    - Hay N+ fallos consecutivos sin resolver, O
+    - Hay fallos previos y ahora hubo éxito (problema resuelto)
+    La oferta desaparece en cuanto el usuario acepta o descarta.
+    """
+    failures = st.session_state.get("wiki_failure_log", [])
+    resolution = st.session_state.get("wiki_successful_resolution")
+
+    # --- Caso 1: problema persistente sin resolver ---
+    if not result.success and len(failures) >= _WIKI_MAX_FAILURES:
+        st.warning(
+            f"⚠️ Este problema lleva **{len(failures)} intentos fallidos** sin resolverse. "
+            "¿Quieres guardarlo en la wiki para análisis posterior?",
+            icon="📚",
+        )
+        col1, col2 = st.columns([1, 4])
+        with col1:
+            if st.button("📚 Documentar", key="wiki_doc_persistent", type="primary"):
+                _auto_save_wiki(failures, resolved=False)
+        with col2:
+            if st.button("✕ Ignorar", key="wiki_ignore_persistent"):
+                st.session_state["wiki_failure_log"] = []
+
+    # --- Caso 2: resuelto después de fallos ---
+    elif result.success and resolution and failures:
+        st.success(
+            f"✅ Problema resuelto tras **{len(failures)} intento(s) fallido(s)**. "
+            "¿Quieres que lo documente en la wiki?",
+            icon="🧠",
+        )
+        col1, col2 = st.columns([1, 4])
+        with col1:
+            if st.button("🧠 Sí, documentar", key="wiki_doc_resolved", type="primary"):
+                _auto_save_wiki(failures, resolved=True, resolution=resolution)
+        with col2:
+            if st.button("✕ No", key="wiki_ignore_resolved"):
+                st.session_state["wiki_failure_log"] = []
+                st.session_state.pop("wiki_successful_resolution", None)
+
+
+def _auto_save_wiki(
+    failures: list[dict],
+    resolved: bool,
+    resolution: Optional[dict] = None,
+):
+    """Llama a GPT para generar la entrada wiki y la guarda en Neon."""
+    from utils.problem_wiki import auto_generate_entry, add_problem
+
+    conn_str = st.session_state.get("neon_url") or os.environ.get("NEON_DATABASE_URL", "")
+    api_key  = st.session_state.get("openai_api_key") or os.environ.get("OPENAI_API_KEY", "")
+
+    if not conn_str or not api_key:
+        st.error("❌ Faltan credenciales para auto-documentar.")
+        return
+
+    with st.spinner("🧠 Generando entrada wiki con IA..."):
+        problema = auto_generate_entry(
+            connection_string=conn_str,
+            openai_api_key=api_key,
+            failed_attempts=failures,
+            successful_attempt=resolution,
+        )
+
+    if problema is None:
+        st.error("No se pudo generar la entrada wiki. Inténtalo manualmente.")
+        return
+
+    ok = add_problem(conn_str, problema)
+    if ok:
+        st.success(f"✅ Documentado como **{problema.codigo}**: *{problema.titulo}*")
+        st.session_state["wiki_failure_log"] = []
+        st.session_state.pop("wiki_successful_resolution", None)
+    else:
+        st.error("Error al guardar en la wiki. Revisa la conexión.")
 
 
 def _track_export_roi():
@@ -2255,22 +3162,37 @@ def _render_chat_interface():
         # Inicializar perfil activo en session_state
         if "sovereign_profile_key" not in st.session_state:
             st.session_state["sovereign_profile_key"] = PERFIL_DEFAULT
+        _perfil_actual = _perfiles_disponibles.get(st.session_state["sovereign_profile_key"], {})
+        if not _perfil_actual.get("enabled", True):
+            st.session_state["sovereign_profile_key"] = PERFIL_DEFAULT
 
         with st.expander("🎯 Modo de análisis", expanded=True):
             # ── Botones de perfil predefinido ─────────────────────────────
             st.caption("Selecciona un perfil o personaliza los parámetros:")
+            _blocked_profiles = [
+                _p for _p in _perfiles_disponibles.values() if not _p.get("enabled", True)
+            ]
+            for _blocked in _blocked_profiles:
+                st.caption(
+                    f"{_blocked['icono']} {_blocked['label']} bloqueado hoy: {_blocked.get('blocked_reason', 'pendiente de dependencias.')}"
+                )
             _cols = st.columns(3)
             _profile_keys = list(_perfiles_disponibles.keys())
             for _i, _pkey in enumerate(_profile_keys):
                 _p = _perfiles_disponibles[_pkey]
                 with _cols[_i % 3]:
                     _is_active = st.session_state["sovereign_profile_key"] == _pkey
+                    _is_enabled = _p.get("enabled", True)
+                    _help_text = _p["descripcion"]
+                    if not _is_enabled and _p.get("blocked_reason"):
+                        _help_text = f"{_help_text} Depende de: {_p['blocked_reason']}"
                     if st.button(
                         f"{_p['icono']} {_p['label']}",
                         key=f"profile_btn_{_pkey}",
-                        help=_p["descripcion"],
+                        help=_help_text,
                         use_container_width=True,
-                        type="primary" if _is_active else "secondary",
+                        type="primary" if _is_active and _is_enabled else "secondary",
+                        disabled=not _is_enabled,
 ):
                         st.session_state["sovereign_profile_key"] = _pkey
                         st.session_state.pop("sovereign_profile_custom", None)
@@ -2283,6 +3205,8 @@ def _render_chat_interface():
                             st.session_state[f"sc_mp_{_mk}"] = _mk in _p["metodos_pago"]
                         st.session_state["sc_multi_moneda"] = _p.get("multi_moneda", False)
                         st.rerun()
+                    if not _is_enabled and _p.get("blocked_reason"):
+                        st.caption(f"Depende de: {_p['blocked_reason']}")
 
             st.divider()
 
@@ -2418,6 +3342,9 @@ def _render_chat_interface():
     # Verificar si hay pregunta pendiente (de ejemplo)
     pending = st.session_state.pop("nl2sql_pending_question", None)
 
+    if not st.session_state["nl2sql_messages"]:
+        _render_chat_guidance_empty_state()
+
     # Input de chat
     question = st.chat_input(
         "Escribe tu pregunta sobre los datos...",
@@ -2475,12 +3402,18 @@ def _render_chat_interface():
             # --- ROI Tracking ---
             _track_query_roi(result)
 
+            # --- Wiki: rastrear fallos para detección de problema persistente ---
+            _track_wiki_failure(result, question)
+
             # Renderizar resultado
             msg_data = _build_result_message(result, question)
             new_idx = len(st.session_state["nl2sql_messages"])
             _render_result_message(msg_data, new_idx)
 
             _append_chat_message(msg_data)
+
+        # --- Wiki: ofrecer documentar si hay problema persistente ---
+        _offer_wiki_documentation(result, question)
 
 
 def _build_result_message(result: NL2SQLResult, question: str = "") -> dict:
@@ -2524,6 +3457,7 @@ def _render_result_message(msg: dict, msg_idx: int = 0):
     if "dataframe_json" in msg:
         try:
             df = pd.read_json(StringIO(msg["dataframe_json"]), orient="split")
+            df = _coerce_numeric_like_columns(df)
         except Exception:
             df = None
 
@@ -2558,21 +3492,74 @@ def _render_result_message(msg: dict, msg_idx: int = 0):
                 _render_kpi_tab(df)
 
         with tab_table:
-            # Tabla cruda completa con formato de moneda/porcentaje
-            display_num_cols = df.select_dtypes(include=['int64', 'float64', 'int32', 'float32']).columns
-            count_keywords = ['num_', 'count', 'cantidad', 'total_clientes', 'total_facturas', 'conteo']
-            col_config = {}
-            for col in display_num_cols:
-                is_count = any(kw in col.lower() for kw in count_keywords)
-                if 'pct' in col.lower() or 'porcentaje' in col.lower() or col.lower().endswith('_pct') or '%' in col:
-                    col_config[col] = st.column_config.NumberColumn(format="%.1f%%")
-                elif not is_count and any(kw in col.lower() for kw in ['total', 'monto', 'facturacion', 'venta',
-                                                                        'importe', 'saldo', 'mxn', 'compra',
-                                                                        'promedio', 'media', 'desviacion',
-                                                                        'minimo', 'maximo', 'precio',
-                                                                        'mediana', 'percentil']):
-                    col_config[col] = st.column_config.NumberColumn(format="$%.2f")
-            st.dataframe(df, use_container_width=True, hide_index=True, column_config=col_config)
+            table_df = _coerce_numeric_like_columns(df.copy())
+            if "ranking" in table_df.columns:
+                fact_col = None
+                if "facturas" in table_df.columns:
+                    fact_col = "facturas"
+                elif "num_facturas" in table_df.columns:
+                    fact_col = "num_facturas"
+
+                if fact_col:
+                    fact_values = pd.to_numeric(table_df[fact_col], errors="coerce").fillna(0)
+                    tie_values = pd.Series([0.0] * len(table_df), index=table_df.index)
+                    if "total_mxn" in table_df.columns:
+                        tie_values = pd.to_numeric(table_df["total_mxn"], errors="coerce").fillna(0)
+
+                    ranked_view = (
+                        table_df.assign(_fact=fact_values, _tie=tie_values)
+                        .sort_values(by=["_fact", "_tie"], ascending=[False, False], kind="mergesort")
+                    )
+                    ranked_view["_ranking_calc"] = range(1, len(ranked_view) + 1)
+                    table_df["ranking"] = ranked_view["_ranking_calc"].reindex(table_df.index).astype(int)
+
+            sort_options = ["(sin ordenar)"] + list(df.columns)
+            default_sort_col = "(sin ordenar)"
+            if "facturas" in table_df.columns:
+                default_sort_col = "facturas"
+            elif "num_facturas" in table_df.columns:
+                default_sort_col = "num_facturas"
+
+            sort_col = st.selectbox(
+                "Ordenar tabla por",
+                options=sort_options,
+                index=sort_options.index(default_sort_col),
+                key=f"table_sort_col_{msg_idx}",
+            )
+            sort_desc = st.toggle(
+                "Descendente",
+                value=True,
+                key=f"table_sort_desc_{msg_idx}",
+            )
+
+            if sort_col != "(sin ordenar)":
+                ascending = not sort_desc
+                if pd.api.types.is_numeric_dtype(table_df[sort_col]):
+                    table_df = table_df.sort_values(by=sort_col, ascending=ascending, kind="mergesort")
+                else:
+                    numeric_candidate = pd.to_numeric(
+                        table_df[sort_col]
+                        .astype(str)
+                        .str.replace("$", "", regex=False)
+                        .str.replace(",", "", regex=False)
+                        .str.replace("%", "", regex=False),
+                        errors="coerce",
+                    )
+                    if numeric_candidate.notna().any():
+                        table_df = (
+                            table_df.assign(_sort_key=numeric_candidate)
+                            .sort_values(by="_sort_key", ascending=ascending, kind="mergesort")
+                            .drop(columns=["_sort_key"])
+                        )
+                    else:
+                        table_df = table_df.sort_values(by=sort_col, ascending=ascending, kind="mergesort")
+
+            # Sort numérico ya aplicado — formatear a string para visualización con $, comas, etc.
+            st.dataframe(
+                _format_numeric_display_dataframe(table_df),
+                use_container_width=True,
+                hide_index=True,
+            )
             st.caption(f"📋 {len(df)} fila(s) · {len(df.columns)} columna(s)")
             if msg.get("dataframe_truncated"):
                 st.caption(
@@ -2769,14 +3756,14 @@ def _render_sql_playground():
 
                 st.success(f"✅ {len(df)} filas en {elapsed:.2f}s")
 
-                # Mostrar formato de moneda automáticamente
-                num_cols = df.select_dtypes(include=['int64', 'float64']).columns
-                col_config = {}
-                for col in num_cols:
-                    if any(kw in col.lower() for kw in ['total', 'monto', 'venta', 'importe', 'saldo']):
-                        col_config[col] = st.column_config.NumberColumn(format="$%.2f")
+                df = _coerce_numeric_like_columns(df)
 
-                st.dataframe(df, use_container_width=True, hide_index=True, column_config=col_config)
+                st.dataframe(
+                    df,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config=_build_numeric_column_config(df),
+                )
 
                 # Exportar
                 csv = df.to_csv(index=False)
@@ -2809,6 +3796,10 @@ def run():
     # Hero
     _render_hero()
 
+    if not _is_premium_passkey_valid():
+        st.warning("🔒 El Asistente de Datos requiere que actives primero el Passkey Premium en el sidebar.")
+        return
+
     # Auto-conectar si las credenciales están en variables de entorno (modo SaaS)
     _auto_connect_from_env()
 
@@ -2832,13 +3823,23 @@ def run():
             st.session_state["nl2sql_messages"] = []
             st.rerun()
 
+    # Cargar catálogo y framework guiado para runtime
+    _load_guided_catalog_runtime()
+    _get_or_build_guided_framework()
+
+    current_stage_modes, second_stage_options = _get_stage_mode_config()
+    if st.session_state.get("nl2sql_mode") not in current_stage_modes:
+        st.session_state["nl2sql_mode"] = current_stage_modes[0]
+
     # Navegación horizontal
     mode = st.radio(
         "Modo:",
-        ["💬 Chat", "🛠️ SQL Playground", "🗄️ Esquema", "🕰️ Historial", "💰 ROI"],
+        current_stage_modes,
         horizontal=True,
         key="nl2sql_mode",
     )
+
+    _render_second_stage_options(second_stage_options)
 
     st.markdown("---")
 
@@ -2851,20 +3852,9 @@ def run():
 
         with col_side:
             _render_sidebar_examples()
-            st.markdown("---")
-            _render_roi_compact()
 
-    elif mode == "🛠️ SQL Playground":
-        _render_sql_playground()
-
-    elif mode == "🗄️ Esquema":
-        _render_schema_explorer()
-
-    elif mode == "🕰️ Historial":
-        _render_history()
-
-    elif mode == "💰 ROI":
-        _render_roi_panel()
+    elif mode == "🧭 Guiado":
+        _render_guided_interface()
 
 
 if __name__ == "__main__":

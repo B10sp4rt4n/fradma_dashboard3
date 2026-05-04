@@ -1,0 +1,275 @@
+{
+  "version": "1.0.0",
+  "mode": "guided-query-catalog",
+  "description": "Catalogo base de 20 consultas guiadas y parametrizadas para reemplazar el flujo NL2SQL en produccion.",
+  "common_period_presets": [
+    "todo",
+    "este_ano",
+    "ultimos_12_meses",
+    "ultimos_6_meses",
+    "rango_personalizado"
+  ],
+  "common_render_layout": [
+    "kpis",
+    "chart",
+    "table",
+    "export"
+  ],
+  "domains": [
+    {
+      "id": "ventas",
+      "label": "Ventas",
+      "enabled": true,
+      "cases": [
+        {
+          "id": "ventas_resumen_ejecutivo",
+          "label": "Resumen ejecutivo de ventas",
+          "description": "Totales, promedio, mediana y dispersion de ventas emitidas.",
+          "sql_template_id": "tpl_ventas_resumen_ejecutivo",
+          "tables": ["cfdi_ventas"],
+          "allowed_filters": ["period_mode", "start_date", "end_date", "tipo_comprobante", "metodo_pago"],
+          "allowed_groupings": ["total"],
+          "default_chart": "stats_summary",
+          "enabled": true
+        },
+        {
+          "id": "ventas_por_mes",
+          "label": "Ventas por mes",
+          "description": "Serie temporal mensual de ventas emitidas.",
+          "sql_template_id": "tpl_ventas_por_mes",
+          "tables": ["cfdi_ventas"],
+          "allowed_filters": ["period_mode", "start_date", "end_date", "tipo_comprobante", "metodo_pago"],
+          "allowed_groupings": ["mensual", "trimestral", "anual"],
+          "default_chart": "bar",
+          "enabled": true
+        },
+        {
+          "id": "ventas_top_clientes",
+          "label": "Top clientes por ventas",
+          "description": "Ranking de clientes por monto facturado.",
+          "sql_template_id": "tpl_ventas_top_clientes",
+          "tables": ["cfdi_ventas"],
+          "allowed_filters": ["period_mode", "start_date", "end_date", "top_n", "metodo_pago"],
+          "allowed_groupings": ["total"],
+          "default_chart": "hbar",
+          "enabled": true
+        },
+        {
+          "id": "ventas_top_productos",
+          "label": "Top productos por ventas",
+          "description": "Ranking de productos por facturacion.",
+          "sql_template_id": "tpl_ventas_top_productos",
+          "tables": ["cfdi_conceptos", "cfdi_ventas"],
+          "allowed_filters": ["period_mode", "start_date", "end_date", "top_n"],
+          "allowed_groupings": ["total"],
+          "default_chart": "hbar",
+          "enabled": true
+        },
+        {
+          "id": "ventas_concentracion_clientes",
+          "label": "Concentracion de clientes",
+          "description": "Participacion acumulada y concentracion 80/20 de clientes.",
+          "sql_template_id": "tpl_ventas_concentracion_clientes",
+          "tables": ["cfdi_ventas"],
+          "allowed_filters": ["period_mode", "start_date", "end_date", "top_n"],
+          "allowed_groupings": ["total"],
+          "default_chart": "pareto",
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "productos",
+      "label": "Productos",
+      "enabled": true,
+      "cases": [
+        {
+          "id": "productos_precios_estadisticas",
+          "label": "Estadisticas de precios unitarios",
+          "description": "Promedio, mediana, minimos y maximos de valor unitario.",
+          "sql_template_id": "tpl_productos_precios_estadisticas",
+          "tables": ["cfdi_conceptos", "cfdi_ventas"],
+          "allowed_filters": ["period_mode", "start_date", "end_date", "producto"],
+          "allowed_groupings": ["total"],
+          "default_chart": "stats_summary",
+          "enabled": true
+        },
+        {
+          "id": "productos_top_facturacion",
+          "label": "Top productos por facturacion",
+          "description": "Productos con mayor monto vendido.",
+          "sql_template_id": "tpl_productos_top_facturacion",
+          "tables": ["cfdi_conceptos", "cfdi_ventas"],
+          "allowed_filters": ["period_mode", "start_date", "end_date", "top_n"],
+          "allowed_groupings": ["total"],
+          "default_chart": "hbar",
+          "enabled": true
+        },
+        {
+          "id": "productos_menor_venta",
+          "label": "Productos de menor venta",
+          "description": "Productos con menor monto o menor volumen vendido.",
+          "sql_template_id": "tpl_productos_menor_venta",
+          "tables": ["cfdi_conceptos", "cfdi_ventas"],
+          "allowed_filters": ["period_mode", "start_date", "end_date", "top_n"],
+          "allowed_groupings": ["total"],
+          "default_chart": "hbar",
+          "enabled": true
+        },
+        {
+          "id": "productos_participacion_mix",
+          "label": "Participacion por producto",
+          "description": "Participacion relativa de productos en el mix de ventas.",
+          "sql_template_id": "tpl_productos_participacion_mix",
+          "tables": ["cfdi_conceptos", "cfdi_ventas"],
+          "allowed_filters": ["period_mode", "start_date", "end_date", "top_n"],
+          "allowed_groupings": ["total"],
+          "default_chart": "donut",
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "clientes",
+      "label": "Clientes",
+      "enabled": true,
+      "cases": [
+        {
+          "id": "clientes_ranking",
+          "label": "Ranking de clientes",
+          "description": "Ranking general de clientes por ventas emitidas.",
+          "sql_template_id": "tpl_clientes_ranking",
+          "tables": ["cfdi_ventas"],
+          "allowed_filters": ["period_mode", "start_date", "end_date", "top_n"],
+          "allowed_groupings": ["total"],
+          "default_chart": "hbar",
+          "enabled": true
+        },
+        {
+          "id": "clientes_recurrentes",
+          "label": "Clientes recurrentes",
+          "description": "Clientes con multiples compras en el periodo.",
+          "sql_template_id": "tpl_clientes_recurrentes",
+          "tables": ["cfdi_ventas"],
+          "allowed_filters": ["period_mode", "start_date", "end_date", "top_n"],
+          "allowed_groupings": ["total"],
+          "default_chart": "hbar",
+          "enabled": true
+        },
+        {
+          "id": "clientes_nuevos_periodo",
+          "label": "Clientes nuevos por periodo",
+          "description": "Clientes cuya primera compra cae dentro del periodo seleccionado.",
+          "sql_template_id": "tpl_clientes_nuevos_periodo",
+          "tables": ["cfdi_ventas"],
+          "allowed_filters": ["period_mode", "start_date", "end_date"],
+          "allowed_groupings": ["mensual", "trimestral", "anual"],
+          "default_chart": "bar",
+          "enabled": true
+        },
+        {
+          "id": "clientes_crecimiento",
+          "label": "Crecimiento por cliente",
+          "description": "Comparativo de ventas por cliente entre periodos equivalentes.",
+          "sql_template_id": "tpl_clientes_crecimiento",
+          "tables": ["cfdi_ventas"],
+          "allowed_filters": ["period_mode", "start_date", "end_date", "top_n"],
+          "allowed_groupings": ["mensual", "trimestral", "anual"],
+          "default_chart": "grouped_bar",
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "cobranza",
+      "label": "Cobranza",
+      "enabled": true,
+      "cases": [
+        {
+          "id": "cobranza_pendientes",
+          "label": "Facturas pendientes de cobro",
+          "description": "Facturas PPD sin complemento o con saldo pendiente.",
+          "sql_template_id": "tpl_cobranza_pendientes",
+          "tables": ["cfdi_ventas", "cfdi_pagos"],
+          "allowed_filters": ["period_mode", "start_date", "end_date", "cliente", "top_n"],
+          "allowed_groupings": ["total"],
+          "default_chart": "table",
+          "enabled": true
+        },
+        {
+          "id": "cobranza_pagadas",
+          "label": "Facturas pagadas",
+          "description": "Facturas liquidadas por PUE o por complemento completo.",
+          "sql_template_id": "tpl_cobranza_pagadas",
+          "tables": ["cfdi_ventas", "cfdi_pagos"],
+          "allowed_filters": ["period_mode", "start_date", "end_date", "cliente", "top_n"],
+          "allowed_groupings": ["total"],
+          "default_chart": "table",
+          "enabled": true
+        },
+        {
+          "id": "cobranza_parciales",
+          "label": "Facturas parcialmente pagadas",
+          "description": "Facturas con complemento registrado y saldo insoluto positivo.",
+          "sql_template_id": "tpl_cobranza_parciales",
+          "tables": ["cfdi_ventas", "cfdi_pagos"],
+          "allowed_filters": ["period_mode", "start_date", "end_date", "cliente", "top_n"],
+          "allowed_groupings": ["total"],
+          "default_chart": "table",
+          "enabled": true
+        },
+        {
+          "id": "cobranza_antiguedad_cartera",
+          "label": "Antiguedad de cartera",
+          "description": "Bucketizacion de saldo pendiente por dias de vencimiento.",
+          "sql_template_id": "tpl_cobranza_antiguedad_cartera",
+          "tables": ["cfdi_ventas", "cfdi_pagos"],
+          "allowed_filters": ["period_mode", "start_date", "end_date", "cliente"],
+          "allowed_groupings": ["total"],
+          "default_chart": "stacked_bar",
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "fiscal",
+      "label": "Fiscal",
+      "enabled": true,
+      "cases": [
+        {
+          "id": "fiscal_resumen_ingresos",
+          "label": "Resumen fiscal de ingresos",
+          "description": "Vista general de ingresos, bases e impuestos principales.",
+          "sql_template_id": "tpl_fiscal_resumen_ingresos",
+          "tables": ["cfdi_ventas"],
+          "allowed_filters": ["period_mode", "start_date", "end_date", "tipo_comprobante"],
+          "allowed_groupings": ["total", "mensual"],
+          "default_chart": "stats_summary",
+          "enabled": true
+        },
+        {
+          "id": "fiscal_impuestos_retenidos_trasladados",
+          "label": "Impuestos trasladados y retenidos",
+          "description": "Comparativo de IVA e ISR retenido o trasladado en el periodo.",
+          "sql_template_id": "tpl_fiscal_impuestos_retenidos_trasladados",
+          "tables": ["cfdi_ventas"],
+          "allowed_filters": ["period_mode", "start_date", "end_date", "tipo_comprobante"],
+          "allowed_groupings": ["mensual", "trimestral", "anual", "total"],
+          "default_chart": "grouped_bar",
+          "enabled": true
+        },
+        {
+          "id": "fiscal_egresos_notas_credito",
+          "label": "Egresos y notas de credito",
+          "description": "Seguimiento de egresos, devoluciones y ajustes por periodo.",
+          "sql_template_id": "tpl_fiscal_egresos_notas_credito",
+          "tables": ["cfdi_ventas"],
+          "allowed_filters": ["period_mode", "start_date", "end_date"],
+          "allowed_groupings": ["mensual", "trimestral", "anual", "total"],
+          "default_chart": "bar",
+          "enabled": true
+        }
+      ]
+    }
+  ]
+}

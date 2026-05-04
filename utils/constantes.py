@@ -89,6 +89,103 @@ COLUMNAS_VENDEDOR = [
 ]
 
 # =====================================================================
+# MAPA DE ALIAS → NOMBRE CANÓNICO
+# Cualquier alias en las listas se renombra al campo canónico.
+# Usado por homologar_columnas() para normalizar cualquier Excel cliente.
+# =====================================================================
+ALIAS_MAP: dict[str, list[str]] = {
+    # ── Fecha ─────────────────────────────────────────────────────
+    "fecha": [
+        "fecha_emision", "fecha_factura", "date", "periodo",
+        "fecha_documento", "fecha_venta", "fecha_registro",
+    ],
+    # ── Importe / ventas ──────────────────────────────────────────
+    "importe": [
+        "ventas_usd", "ventas_usd_con_iva", "ventas_usd_sin_iva",
+        "valor_mxn", "monto_usd", "total_usd", "valor", "venta",
+        "total", "monto", "importe_mxn", "importe_usd",
+        "ventas", "venta_neta", "facturacion",
+    ],
+    # ── Línea de negocio ──────────────────────────────────────────
+    "linea_de_negocio": [
+        "linea_producto", "linea", "linea_negocio",
+        "categoria", "familia", "grupo", "division",
+        "linea_de_producto", "linea_prodcucto",  # typo CONTPAQi
+    ],
+    # ── Producto ──────────────────────────────────────────────────
+    "producto": [
+        "articulo", "descripcion", "item", "sku",
+        "producto_nombre", "nombre_producto", "concepto",
+        "descripcion_producto",
+    ],
+    # ── Cliente ───────────────────────────────────────────────────
+    "cliente": [
+        "razon_social", "receptor", "deudor", "nombre_cliente",
+        "receptor_nombre", "nombre", "customer",
+    ],
+    # ── Vendedor ──────────────────────────────────────────────────
+    "vendedor": [
+        "agente", "ejecutivo", "rep", "seller",
+        "vendedor_asignado", "representante", "responsable",
+        "asesor", "account_manager",
+    ],
+    # ── Canal ─────────────────────────────────────────────────────
+    "canal": [
+        "canal_venta", "canal_comercial", "canal_de_venta",
+        "tipo_venta", "modalidad",
+    ],
+    # ── Región ────────────────────────────────────────────────────
+    "region": [
+        "zona", "estado", "territorio", "plaza",
+        "area_geografica", "sucursal",
+    ],
+    # ── Moneda ────────────────────────────────────────────────────
+    "moneda": [
+        "divisa", "currency", "tipo_moneda",
+    ],
+    # ── Tipo de cambio ────────────────────────────────────────────
+    "tipo_cambio": [
+        "fx", "tc", "tasa_cambio", "cambio",
+    ],
+    # ── Saldo adeudado (CxC) ─────────────────────────────────────
+    "saldo_adeudado": [
+        "saldo", "balance", "importe_pendiente", "saldo_usd",
+        "saldo_adeudo", "adeudo", "deuda", "monto_pendiente",
+    ],
+    # ── Días vencido (CxC) ───────────────────────────────────────
+    "dias_vencido": [
+        "dias_vencidos", "overdue_days", "dias_overdue",
+        "dias_de_vencimiento", "vencido_dias",
+    ],
+    # ── RFC ───────────────────────────────────────────────────────
+    "rfc": [
+        "rfc_receptor", "rfc_cliente", "tax_id",
+    ],
+    # ── Días crédito (catálogo) ───────────────────────────────────
+    "credito_dias": [
+        "plazo_credito", "dias_credito", "dias_de_credito",
+        "terminos_pago", "payment_terms",
+    ],
+}
+
+# Campos obligatorios por esquema (para validación)
+SCHEMA_VENTAS = {
+    "obligatorios": ["fecha", "importe", "linea_de_negocio", "producto", "cliente"],
+    "recomendados": ["vendedor"],
+    "opcionales":   ["canal", "region", "moneda", "tipo_cambio"],
+}
+SCHEMA_CXC = {
+    "obligatorios": ["fecha", "cliente", "saldo_adeudado", "dias_vencido"],
+    "recomendados": ["vendedor"],
+    "opcionales":   ["linea_de_negocio", "moneda"],
+}
+SCHEMA_CATALOGO = {
+    "obligatorios": ["cliente"],
+    "recomendados": ["vendedor", "region"],
+    "opcionales":   ["rfc", "canal", "credito_dias"],
+}
+
+# =====================================================================
 # CONSTANTES DE NEGOCIO
 # =====================================================================
 

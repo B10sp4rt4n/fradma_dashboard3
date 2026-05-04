@@ -99,6 +99,8 @@ TENANT_SCOPED_TABLES = {
     'v_ventas_linea_mes',
 }
 
+SQL_CLAUSE_KEYWORDS = {"where", "join", "on", "group", "order", "limit", "having", "union", "left", "right", "inner", "full", "cross"}
+
 
 # =====================================================================
 # Helpers de formato
@@ -551,7 +553,18 @@ class NL2SQLEngine:
         # (ej: 'feb26 a nov26' → 'febrero 2026 a noviembre 2026')
         question = self._normalize_question_dates(question)
 
-        system_prompt = self._build_system_prompt(empresa_id, sovereign_context=sovereign_context)
+        # ── Contexto wiki: inyectar problemas similares ya resueltos ──
+        try:
+            from utils.problem_wiki import get_context_for_ai as _wiki_context
+            _wiki_ctx = _wiki_context(self.connection_string, question, max_problems=2)
+        except Exception:
+            _wiki_ctx = ""
+
+        system_prompt = self._build_system_prompt(
+            empresa_id,
+            sovereign_context=sovereign_context,
+            wiki_context=_wiki_ctx,
+        )
 
         # ── Cuando hay período soberano, forzar al modelo a usar fechas exactas ──
         # Inyectamos instrucción en el mensaje del usuario para que el modelo
@@ -632,16 +645,18 @@ class NL2SQLEngine:
                 logger.error("Error generando SQL (detalles no imprimibles)")
             raise ValueError(f"Error al generar SQL: {e}")
 
-    def _build_system_prompt(self, empresa_id: Optional[str] = None, sovereign_context: str = "") -> str:
+    def _build_system_prompt(self, empresa_id: Optional[str] = None, sovereign_context: str = "", wiki_context: str = "") -> str:
         """Construye el system prompt para generación de SQL."""
         empresa_filter = ""
         if empresa_id:
             empresa_filter = f"""
 IMPORTANTE: Filtra SIEMPRE por empresa_id = '{empresa_id}' en las tablas que tengan empresa_id.
 """
+        wiki_block = ""
+        if wiki_context:
+            wiki_block = f"\n\n{wiki_context}\n"
 
-        return f"""{sovereign_context}Eres un experto en SQL PostgreSQL para un sistema de facturación electrónica CFDI de México.
-
+        return f"""{sovereign_context}Eres un experto en SQL PostgreSQL para un sistema de facturación electrónica CFDI de México.{wiki_block}
 Tu ÚNICA tarea es generar una consulta SQL SELECT válida a partir de la pregunta del usuario.
 
 REGLAS ESTRICTAS:
@@ -833,10 +848,10 @@ Pregunta: Promedio móvil de 3 meses de facturación
 SQL: WITH ventas_mes AS (SELECT DATE_TRUNC('month', fecha_emision) AS mes, SUM(total * COALESCE(tipo_cambio, 1)) AS total_mxn FROM cfdi_ventas GROUP BY mes ORDER BY mes) SELECT mes, ROUND(total_mxn, 2) AS ventas, ROUND(AVG(total_mxn) OVER (ORDER BY mes ROWS BETWEEN 2 PRECEDING AND CURRENT ROW), 2) AS promedio_movil_3m FROM ventas_mes LIMIT {self.max_rows};
 
 Pregunta: Ranking de clientes por facturación
-SQL: SELECT receptor_nombre AS cliente, SUM(total * COALESCE(tipo_cambio, 1)) AS total_mxn, RANK() OVER (ORDER BY SUM(total * COALESCE(tipo_cambio, 1)) DESC) AS ranking, COUNT(*) AS facturas FROM cfdi_ventas WHERE tipo_comprobante = 'I' AND total > 0 GROUP BY receptor_nombre ORDER BY ranking LIMIT {self.max_rows};
+SQL: WITH clientes AS (SELECT receptor_nombre AS cliente, COUNT(*) AS num_facturas, SUM(total * COALESCE(tipo_cambio, 1)) AS total_mxn FROM cfdi_ventas WHERE empresa_id = '{empresa_id}' AND tipo_comprobante = 'I' AND total > 0 GROUP BY receptor_nombre) SELECT cliente, ROUND(total_mxn, 2) AS total_mxn, ROW_NUMBER() OVER (ORDER BY num_facturas DESC, total_mxn DESC) AS ranking, num_facturas AS facturas FROM clientes ORDER BY num_facturas DESC, total_mxn DESC LIMIT {self.max_rows};
 
 Pregunta: Clasificación ABC de clientes (Pareto)
-SQL: WITH clientes AS (SELECT receptor_nombre AS cliente, SUM(total * COALESCE(tipo_cambio, 1)) AS total_mxn FROM cfdi_ventas WHERE tipo_comprobante = 'I' AND total > 0 GROUP BY receptor_nombre), acumulado AS (SELECT cliente, total_mxn, SUM(total_mxn) OVER (ORDER BY total_mxn DESC) AS acum, SUM(total_mxn) OVER () AS gran_total FROM clientes) SELECT cliente, ROUND(total_mxn, 2) AS total_mxn, ROUND(acum * 100.0 / gran_total, 2) AS pct_acumulado, CASE WHEN acum * 100.0 / gran_total <= 80 THEN 'A' WHEN acum * 100.0 / gran_total <= 95 THEN 'B' ELSE 'C' END AS clasificacion_abc FROM acumulado ORDER BY total_mxn DESC LIMIT {self.max_rows};
+SQL: WITH clientes AS (SELECT receptor_nombre AS cliente, SUM(total * COALESCE(tipo_cambio, 1)) AS total_mxn FROM cfdi_ventas WHERE empresa_id = '{empresa_id}' AND tipo_comprobante = 'I' AND total > 0 GROUP BY receptor_nombre), acumulado AS (SELECT cliente, total_mxn, SUM(total_mxn) OVER (ORDER BY total_mxn DESC) AS acum, SUM(total_mxn) OVER () AS gran_total FROM clientes) SELECT cliente, ROUND(total_mxn, 2) AS total_mxn, ROUND(acum * 100.0 / gran_total, 2) AS pct_acumulado, CASE WHEN acum * 100.0 / gran_total <= 80 THEN 'A' WHEN acum * 100.0 / gran_total <= 95 THEN 'B' ELSE 'C' END AS clasificacion_abc FROM acumulado ORDER BY total_mxn DESC LIMIT {self.max_rows};
 
 Pregunta: Segmentación RFM de clientes
 SQL: WITH rfm AS (SELECT receptor_nombre AS cliente, (CURRENT_DATE - MAX(fecha_emision::date)) AS recencia_dias, COUNT(*) AS frecuencia, ROUND(SUM(total * COALESCE(tipo_cambio, 1)), 2) AS monetario FROM cfdi_ventas WHERE tipo_comprobante = 'I' AND total > 0 GROUP BY receptor_nombre), scored AS (SELECT cliente, recencia_dias, frecuencia, monetario, NTILE(5) OVER (ORDER BY recencia_dias DESC) AS r_score, NTILE(5) OVER (ORDER BY frecuencia ASC) AS f_score, NTILE(5) OVER (ORDER BY monetario ASC) AS m_score FROM rfm) SELECT cliente, recencia_dias, frecuencia, monetario, r_score, f_score, m_score, (r_score * 100 + f_score * 10 + m_score) AS rfm_score, CASE WHEN r_score >= 4 AND f_score >= 4 AND m_score >= 4 THEN 'Champions' WHEN r_score >= 3 AND f_score >= 3 THEN 'Leales' WHEN r_score >= 4 AND f_score <= 2 THEN 'Nuevos' WHEN r_score <= 2 AND f_score >= 3 THEN 'En Riesgo' WHEN r_score <= 2 AND f_score <= 2 THEN 'Hibernando' ELSE 'Potenciales' END AS segmento FROM scored ORDER BY rfm_score DESC LIMIT {self.max_rows};
@@ -1365,6 +1380,147 @@ SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quart
 
         return True, "OK"
 
+    def _extract_table_aliases(self, sql: str) -> List[Tuple[str, Optional[str]]]:
+        """Extrae tablas y alias simples referenciados en FROM/JOIN."""
+        sql_cleaned = re.sub(r'EXTRACT\s*\([^)]+\)', '', sql, flags=re.IGNORECASE)
+        matches = re.findall(
+            r'\b(?:FROM|JOIN)\s+(\w+)(?:\s+(?:AS\s+)?(\w+))?',
+            sql_cleaned,
+            re.IGNORECASE,
+        )
+
+        table_aliases: List[Tuple[str, Optional[str]]] = []
+        for table, alias in matches:
+            alias_value = alias.lower() if alias and alias.lower() not in SQL_CLAUSE_KEYWORDS else None
+            table_aliases.append((table.lower(), alias_value))
+        return table_aliases
+
+    def _find_top_level_clause_index(self, sql: str, keywords: List[str]) -> Optional[int]:
+        """Ubica la primera cláusula SQL al nivel superior, ignorando subexpresiones entre paréntesis."""
+        sql_upper = sql.upper()
+        candidates: List[int] = []
+        depth = 0
+
+        for idx, char in enumerate(sql_upper):
+            if char == '(':
+                depth += 1
+                continue
+            if char == ')':
+                depth = max(0, depth - 1)
+                continue
+
+            if depth != 0:
+                continue
+
+            for keyword in keywords:
+                keyword_upper = keyword.upper()
+                if not sql_upper.startswith(keyword_upper, idx):
+                    continue
+
+                prev_char = sql_upper[idx - 1] if idx > 0 else ' '
+                next_idx = idx + len(keyword_upper)
+                next_char = sql_upper[next_idx] if next_idx < len(sql_upper) else ' '
+                if (prev_char.isalnum() or prev_char == '_') or (next_char.isalnum() or next_char == '_'):
+                    continue
+
+                candidates.append(idx)
+
+        return min(candidates) if candidates else None
+
+    def _get_top_level_from_table(self, sql: str) -> Optional[str]:
+        """Retorna la tabla del FROM principal, ignorando subqueries."""
+        sql_upper = sql.upper()
+        depth = 0
+
+        for idx, char in enumerate(sql_upper):
+            if char == '(':
+                depth += 1
+                continue
+            if char == ')':
+                depth = max(0, depth - 1)
+                continue
+            if depth == 0 and sql_upper.startswith("FROM ", idx):
+                match = re.match(r'FROM\s+(\w+)', sql[idx:], flags=re.IGNORECASE)
+                if match:
+                    return match.group(1).lower()
+        return None
+
+    def _inject_into_cfdi_ventas_subquery(self, sql: str, condition: str) -> str:
+        """Inyecta una condición dentro del primer subquery que consulte cfdi_ventas."""
+        stack: List[int] = []
+        for idx, char in enumerate(sql):
+            if char == '(':
+                stack.append(idx)
+            elif char == ')' and stack:
+                start = stack.pop()
+                inner = sql[start + 1:idx]
+                if re.search(r'\bSELECT\b', inner, re.IGNORECASE) and re.search(r'\bFROM\s+cfdi_ventas\b', inner, re.IGNORECASE):
+                    updated_inner = self._inject_and_condition(inner, condition).rstrip().rstrip(';')
+                    return sql[:start + 1] + updated_inner + sql[idx:]
+        return sql
+
+    def _inject_and_condition(self, sql: str, condition: str) -> str:
+        """Inyecta una condición AND en el WHERE existente o crea uno nuevo."""
+        sql_upper = sql.upper()
+
+        if "WHERE" in sql_upper:
+            idx = self._find_top_level_clause_index(sql, ["GROUP BY", "ORDER BY", "LIMIT", "HAVING"])
+            if idx is not None:
+                return sql[:idx] + f"AND {condition} " + sql[idx:]
+            sql = sql.rstrip(";").rstrip()
+            return sql + f" AND {condition};"
+
+        idx = self._find_top_level_clause_index(sql, ["GROUP BY", "ORDER BY", "LIMIT", "HAVING"])
+        if idx is not None:
+            return sql[:idx] + f"WHERE {condition} " + sql[idx:]
+        sql = sql.rstrip(";").rstrip()
+        return sql + f" WHERE {condition};"
+
+    def _ensure_tenant_filter(self, sql: str, empresa_id: Optional[str] = None) -> str:
+        """Auto-inyecta filtro por tenant cuando la consulta aún no lo trae."""
+        if not empresa_id:
+            return sql
+
+        sql_lower = sql.lower()
+        if "empresa_id" in sql_lower and empresa_id.lower() in sql_lower:
+            return sql
+
+        table_aliases = self._extract_table_aliases(sql)
+        referenced_tables = {table for table, _alias in table_aliases}
+        if not referenced_tables.intersection(TENANT_SCOPED_TABLES):
+            return sql
+
+        top_level_table = self._get_top_level_from_table(sql)
+        tenant_clauses: List[str] = []
+        has_cfdi_ventas = any(table == "cfdi_ventas" for table, _alias in table_aliases)
+
+        for table, alias in table_aliases:
+            qualifier = alias or table
+            if table in {"cfdi_ventas", "cfdi_pagos", "clientes_master", "v_cartera_clientes", "v_ventas_linea_mes"}:
+                if table == "cfdi_ventas" and top_level_table != "cfdi_ventas":
+                    continue
+                tenant_clauses.append(f"{qualifier}.empresa_id = '{empresa_id}'")
+            elif table == "cfdi_conceptos" and not has_cfdi_ventas:
+                tenant_clauses.append(
+                    "EXISTS ("
+                    "SELECT 1 FROM cfdi_ventas cv_tenant "
+                    f"WHERE cv_tenant.id = {qualifier}.cfdi_venta_id AND cv_tenant.empresa_id = '{empresa_id}'"
+                    ")"
+                )
+
+        deduped_clauses = []
+        for clause in tenant_clauses:
+            if clause not in deduped_clauses:
+                deduped_clauses.append(clause)
+
+        for clause in deduped_clauses:
+            sql = self._inject_and_condition(sql, clause)
+
+        if top_level_table != "cfdi_ventas" and has_cfdi_ventas:
+            sql = self._inject_into_cfdi_ventas_subquery(sql, f"cfdi_ventas.empresa_id = '{empresa_id}'")
+
+        return sql
+
     # -----------------------------------------------------------------
     # 2b. Auto-corrección de patrones SQL problemáticos
     # -----------------------------------------------------------------
@@ -1454,6 +1610,7 @@ SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quart
         Raises:
             RuntimeError: Si hay error de conexión o ejecución
         """
+        sql = self._ensure_tenant_filter(sql, empresa_id=empresa_id)
         is_valid, error_msg = self.validate_sql(sql, empresa_id=empresa_id)
         if not is_valid:
             raise RuntimeError(error_msg)
@@ -2112,6 +2269,7 @@ Si el usuario pidió explícitamente una orientación (ej: "vertical", "horizont
                     f"FROM cfdi_ventas LIMIT {self.max_rows};"
                 )
 
+            sql = self._ensure_tenant_filter(sql, empresa_id=empresa_id)
             result.sql = sql
 
             # Paso 2: Validar seguridad

@@ -32,8 +32,9 @@ from main import fiscal
 from main import mapa_clientes
 from main import knowledge_base
 from main import data_assistant
+from main import wiki_problemas
 from utils.data_cleaner import limpiar_columnas_texto, detectar_duplicados_similares
-from utils.data_normalizer import normalizar_columnas
+from utils.data_normalizer import normalizar_columnas, homologar_columnas, validar_template
 from utils.logger import configurar_logger, log_dataframe_info, log_execution_time
 from utils.filters import (
     aplicar_filtro_fechas, 
@@ -600,7 +601,7 @@ def cargar_excel_puro(archivo_bytes, archivo_nombre, hoja_seleccionada=None):
         
         metadata["hoja_leida"] = hoja
         df = pd.read_excel(xls, sheet_name=hoja)
-        df = normalizar_columnas(df)
+        df = homologar_columnas(df)  # normaliza + aplica alias → canónico
 
         # Generación virtual de columnas año y mes desde columna fecha
         if hoja == "X AGENTE" or metadata.get("es_vtas_sae"):
@@ -637,7 +638,7 @@ def cargar_excel_puro(archivo_bytes, archivo_nombre, hoja_seleccionada=None):
             metadata["es_contpaqi"] = True
             
         df = pd.read_excel(xls, sheet_name=hoja, skiprows=skiprows)
-        df = normalizar_columnas(df)
+        df = homologar_columnas(df)  # normaliza + aplica alias → canónico
 
     log_dataframe_info(logger, df, f"Archivo cargado: {archivo_nombre}")
     return df, metadata
@@ -684,7 +685,37 @@ def detectar_y_cargar_archivo(archivo_bytes, archivo_nombre, hoja_seleccionada=N
     if st.session_state.get("modo_debug") and df is not None:
         with st.expander("🛠️ Debug - Columnas leídas"):
             st.write(df.columns.tolist())
-    
+
+    # ── Validación de template ─────────────────────────────────────────
+    if df is not None:
+        reporte = validar_template(df, schema="ventas")
+        with st.expander(
+            f"{'✅' if reporte['ok'] else '⚠️'} Validación de columnas del archivo",
+            expanded=not reporte["ok"],
+        ):
+            col_a, col_b = st.columns(2)
+            with col_a:
+                st.markdown("**Obligatorias**")
+                for c in reporte["obligatorios_ok"]:
+                    st.success(f"✅ {c}")
+                for c in reporte["obligatorios_faltantes"]:
+                    st.error(f"❌ {c}  ← faltante")
+            with col_b:
+                st.markdown("**Recomendadas / Opcionales**")
+                for c in reporte["recomendados_ok"]:
+                    st.success(f"✅ {c}")
+                for c in reporte["recomendados_faltantes"]:
+                    st.warning(f"⚠️ {c}  ← recomendada")
+                for c in reporte["opcionales_ok"]:
+                    st.info(f"ℹ️ {c}")
+            if reporte["columnas_extra"]:
+                st.caption(f"Columnas adicionales detectadas: {', '.join(reporte['columnas_extra'])}")
+            if not reporte["ok"]:
+                st.caption(
+                    "Descarga el template: **data/FRADMA_TEMPLATE_DATOS.xlsx** para ver "
+                    "los nombres y alias aceptados."
+                )
+
     return df
 
 # =====================================================================
@@ -1130,6 +1161,7 @@ _grupos = {
 # Agregar IA si el usuario tiene acceso
 if user and user.can_use_ai():
     _grupos["Análisis CFDI (XML)"]["items"].append(("🤖 Asistente de Datos", "robot"))
+    _grupos["Análisis CFDI (XML)"]["items"].append(("🧠 Wiki de Problemas", "journal-bookmark-fill"))
 
 # Agregar Admin si aplica — se gestiona en el expander de Administración más abajo
 
@@ -1360,14 +1392,26 @@ with st.sidebar:
             "🔑 Passkey Premium",
             type="password",
             placeholder="Ingresa tu passkey",
-            help="Activa funciones premium de análisis con IA"
+            help="Activa funciones premium de análisis con IA",
+            key="premium_passkey_input",
         )
 
-        if passkey_input == PASSKEY_PREMIUM:
-            if not st.session_state["passkey_valido"]:
-                st.session_state["passkey_valido"] = True
-                st.success("✅ Passkey válido!")
+        premium_unlocked = st.session_state.get("passkey_valido", False)
 
+        if passkey_input:
+            if passkey_input == PASSKEY_PREMIUM:
+                if not premium_unlocked:
+                    st.session_state["passkey_valido"] = True
+                    premium_unlocked = True
+                    st.success("✅ Passkey válido!")
+            else:
+                st.session_state["passkey_valido"] = False
+                st.session_state["ia_premium_activada"] = False
+                st.session_state["openai_api_key"] = None
+                premium_unlocked = False
+                st.error("❌ Passkey incorrecto")
+
+        if premium_unlocked:
             st.markdown("**Configuración de IA**")
             api_key_env = os.getenv("OPENAI_API_KEY", "")
 
@@ -1397,15 +1441,8 @@ with st.sidebar:
 
             if st.session_state["ia_premium_activada"]:
                 st.success("✅ IA Premium activa — ve al Reporte Ejecutivo para usarla")
-
         else:
-            st.session_state["passkey_valido"] = False
-            st.session_state["ia_premium_activada"] = False
-            st.session_state["openai_api_key"] = None
-
-            if passkey_input:
-                st.error("❌ Passkey incorrecto")
-            else:
+            if not passkey_input:
                 st.caption("🔐 Ingresa el passkey para acceder a funciones premium")
 
     # Exportar Reportes — al fondo
@@ -2228,6 +2265,9 @@ elif menu == "📍 Mapa de Clientes":
 elif menu == "🤖 Asistente de Datos":
     # Asistente de consultas en lenguaje natural sobre DB CFDI
     data_assistant.run()
+
+elif menu == "🧠 Wiki de Problemas":
+    wiki_problemas.run()
 
 elif menu == "📚 Knowledge Base":
     # Knowledge Base no requiere datos cargados

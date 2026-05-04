@@ -21,7 +21,7 @@ import re
 
 from utils.cxc_helper import preparar_datos_cxc, calcular_dias_overdue
 from utils.auth import get_current_user
-from utils.data_normalizer import normalizar_columnas
+from utils.data_normalizer import normalizar_columnas, homologar_columnas
 from utils.logger import configurar_logger
 
 logger = configurar_logger("vendedores_cxc", nivel="INFO")
@@ -198,7 +198,7 @@ def run():
                 (h for h in hojas if "cxc" in h.lower() or "cuenta" in h.lower()), None
             )
             if hoja_cxc:
-                df_cxc_raw = normalizar_columnas(pd.read_excel(archivo_excel, sheet_name=hoja_cxc))
+                df_cxc_raw = homologar_columnas(pd.read_excel(archivo_excel, sheet_name=hoja_cxc))
         except Exception as e:
             logger.exception(f"Error leyendo hoja CxC: {e}")
 

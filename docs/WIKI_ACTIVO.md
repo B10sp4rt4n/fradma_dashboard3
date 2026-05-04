@@ -576,5 +576,49 @@ _Parser de CFDI 4.0 - Extrae datos estructurados de XMLs de SAT_
 - Cobertura: **10.5%**
 
 ---
+
+## 🐛 Problemas Resueltos
+
+> Registro de bugs encontrados en producción/desarrollo, causa raíz y solución aplicada.
+
+---
+
+### #001 — Ordenamiento de columnas en tabla de resultados se comportaba como texto
+
+**Fecha:** 2026-05-04  
+**Módulo:** `main/data_assistant.py` — pestaña Tabla del Asistente de Datos  
+**Síntoma:** Al hacer clic en el encabezado de columnas como `facturas` o `ranking`, el orden resultante era incorrecto (ej. 9 > 7 > 575 en lugar de 575 > 165 > 30), como si los valores fueran strings.
+
+**Causa raíz (cadena completa):**
+
+1. El DataFrame se serializa a JSON (`to_json(orient="split")`) para guardarse en `session_state` entre renders de Streamlit.
+2. Al deserializar (`pd.read_json(..., orient="split")`), columnas que en PostgreSQL eran `bigint` o `numeric` pueden llegar como `object` (string) dependiendo de la versión de pandas/psycopg2 y del tipo exacto de la columna en la query (ej. `COUNT(*)` a veces llega como `Decimal`).
+3. `st.dataframe` ordenaba esas columnas lexicográficamente porque su dtype era `object`, no `int64`/`float64`.
+
+**Intentos fallidos:**
+
+| Intento | Por qué no funcionó |
+|---------|---------------------|
+| Usar `column_config=NumberColumn(format=...)` directamente sobre el df con strings | `column_config` da formato visual pero **no convierte el tipo** subyacente; Streamlit sigue ordenando por el dtype real de la columna |
+| Convertir a `Int64`/`Float64` (tipos nullable de pandas) | `select_dtypes(include='number')` **ignora los tipos nullable** de pandas; solo detecta tipos numpy (`int64`, `float64`). El `column_config` nunca se aplicaba |
+| Renderizar con `_format_numeric_display_dataframe` y `column_config` juntos | Las dos cosas se contradicen: la primera convierte a str, la segunda espera número |
+
+**Solución aplicada:**
+
+Pipeline de tres pasos en orden correcto:
+
+1. **Coerción de tipos** (`_coerce_numeric_like_columns`): tras deserializar el JSON, detecta columnas cuyo nombre contiene keywords de dinero o conteo (`total`, `mxn`, `facturas`, `ranking`, etc.) y las convierte a `float64` nativo de numpy (no nullable), para que `select_dtypes` las detecte.
+2. **Sort numérico** (`sort_values`): el selectbox ordena sobre el DataFrame ya tipado correctamente → el sort es aritmético real.
+3. **Formato visual posterior** (`_format_numeric_display_dataframe`): *después* del sort, se aplica el formateo a string (`$4,683,971.50`, `575`, `1`). De esta forma el orden ya está fijo y el formato es solo cosmético.
+
+**Archivos modificados:**
+
+- `main/data_assistant.py` — función `_coerce_numeric_like_columns` (nueva), pipeline en pestaña Tabla
+- `utils/nl2sql.py` — ejemplo few-shot de "Ranking de clientes" corregido para rankear por `num_facturas` primero (desempate por `total_mxn`)
+
+**Lección:** En Streamlit, el sort interactivo de `st.dataframe` siempre opera sobre el dtype del DataFrame en memoria. El `column_config` es solo presentación. Si el dato llega como `object`, nunca ordenará numéricamente sin importar el formato declarado.
+
+---
+
 _Wiki generado por `scripts/generate_wiki.py` el 2026-04-09T04:57:16_
 _Para regenerar: `python scripts/generate_wiki.py`_

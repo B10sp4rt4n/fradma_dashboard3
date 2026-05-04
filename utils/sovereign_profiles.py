@@ -15,6 +15,7 @@ aplica como filtro post-generación en el SQL.
 """
 
 from __future__ import annotations
+import re
 from typing import Optional
 
 # ── Catálogos estáticos ─────────────────────────────────────────────────────
@@ -85,6 +86,8 @@ PERFILES: dict[str, dict] = {
         "label":              "Rentabilidad",
         "icono":              "📈",
         "descripcion":        "Análisis de margen por producto, cliente o periodo",
+        "enabled":            False,
+        "blocked_reason":     "Depende de costos, descuentos y comisiones integrados y verificados.",
         "tipos_comprobante":  ["I", "E"],
         "impuestos":          ["iva_trasladado"],
         "metodos_pago":       ["PUE", "PPD"],
@@ -98,6 +101,8 @@ PERFILES: dict[str, dict] = {
         "label":              "Conciliación",
         "icono":              "⚖️",
         "descripcion":        "Cuadre contable completo — ingresos, egresos y pagos",
+        "enabled":            False,
+        "blocked_reason":     "Depende de tablas de reconciliación y snapshots de cartera implementados y verificados.",
         "tipos_comprobante":  ["I", "E", "P"],
         "impuestos":          ["iva_trasladado", "iva_retenido", "isr_retenido"],
         "metodos_pago":       ["PUE", "PPD"],
@@ -199,8 +204,44 @@ def apply_profile_sql_filter(sql: str, perfil: dict) -> str:
 
     sql_upper = sql.upper()
 
-    # Solo actuar si la query es sobre cfdi_ventas
-    if "CFDI_VENTAS" not in sql_upper:
+    def _top_level_from_table(sql_text: str) -> Optional[str]:
+        depth = 0
+        sql_upper_text = sql_text.upper()
+        idx = 0
+        while idx < len(sql_upper_text):
+            char = sql_upper_text[idx]
+            if char == '(':
+                depth += 1
+                idx += 1
+                continue
+            if char == ')':
+                depth = max(0, depth - 1)
+                idx += 1
+                continue
+            if depth == 0 and sql_upper_text.startswith("FROM ", idx):
+                match = re.match(r'FROM\s+(\w+)', sql_text[idx:], flags=re.IGNORECASE)
+                if match:
+                    return match.group(1).lower()
+            idx += 1
+        return None
+
+    def _inject_into_cfdi_ventas_subquery(sql_text: str, condition: str) -> str:
+        stack: list[int] = []
+        for idx, char in enumerate(sql_text):
+            if char == '(':
+                stack.append(idx)
+            elif char == ')' and stack:
+                start = stack.pop()
+                inner = sql_text[start + 1:idx]
+                if re.search(r'\bSELECT\b', inner, re.IGNORECASE) and re.search(r'\bFROM\s+cfdi_ventas\b', inner, re.IGNORECASE):
+                    updated_inner = _inject_and_condition(inner, condition).rstrip().rstrip(';')
+                    return sql_text[:start + 1] + updated_inner + sql_text[idx:]
+        return sql_text
+
+    top_level_table = _top_level_from_table(sql)
+
+    # Solo actuar si la query principal es cfdi_ventas o si hay un subquery explícito a cfdi_ventas.
+    if top_level_table != "cfdi_ventas" and "CFDI_VENTAS" not in sql_upper:
         return sql
 
     # ── Filtro tipo_comprobante ───────────────────────────────────────────
@@ -211,7 +252,10 @@ def apply_profile_sql_filter(sql: str, perfil: dict) -> str:
             lista = ", ".join(f"'{t}'" for t in tipos)
             tipo_clause = f"tipo_comprobante IN ({lista})"
 
-        sql = _inject_and_condition(sql, tipo_clause)
+        if top_level_table == "cfdi_ventas":
+            sql = _inject_and_condition(sql, tipo_clause)
+        else:
+            sql = _inject_into_cfdi_ventas_subquery(sql, tipo_clause)
 
     # ── Filtro metodo_pago ──────────────────────────────────────────────────
     if metodos and "METODO_PAGO" not in sql_upper:
@@ -221,7 +265,10 @@ def apply_profile_sql_filter(sql: str, perfil: dict) -> str:
             lista = ", ".join(f"'{m}'" for m in metodos)
             mp_clause = f"metodo_pago IN ({lista})"
 
-        sql = _inject_and_condition(sql, mp_clause)
+        if top_level_table == "cfdi_ventas":
+            sql = _inject_and_condition(sql, mp_clause)
+        else:
+            sql = _inject_into_cfdi_ventas_subquery(sql, mp_clause)
 
     return sql
 
@@ -231,21 +278,50 @@ def _inject_and_condition(sql: str, condition: str) -> str:
     Inyecta una condición AND en el WHERE existente, o crea uno new.
     Inyecta antes de GROUP BY / ORDER BY / LIMIT si no hay WHERE.
     """
+    def _find_top_level_clause_index(sql_text: str, keywords: list[str]) -> Optional[int]:
+        sql_upper = sql_text.upper()
+        candidates: list[int] = []
+        depth = 0
+
+        for idx, char in enumerate(sql_upper):
+            if char == '(':
+                depth += 1
+                continue
+            if char == ')':
+                depth = max(0, depth - 1)
+                continue
+
+            if depth != 0:
+                continue
+
+            for keyword in keywords:
+                keyword_upper = keyword.upper()
+                if not sql_upper.startswith(keyword_upper, idx):
+                    continue
+
+                prev_char = sql_upper[idx - 1] if idx > 0 else ' '
+                next_idx = idx + len(keyword_upper)
+                next_char = sql_upper[next_idx] if next_idx < len(sql_upper) else ' '
+                if (prev_char.isalnum() or prev_char == '_') or (next_char.isalnum() or next_char == '_'):
+                    continue
+
+                candidates.append(idx)
+
+        return min(candidates) if candidates else None
+
     sql_upper = sql.upper()
 
     if "WHERE" in sql_upper:
         # Agregar al final del bloque WHERE (antes de GROUP/ORDER/LIMIT)
-        for keyword in ["GROUP BY", "ORDER BY", "LIMIT", "HAVING"]:
-            if keyword in sql_upper:
-                idx = sql_upper.index(keyword)
-                return sql[:idx] + f"AND {condition} " + sql[idx:]
+        idx = _find_top_level_clause_index(sql, ["GROUP BY", "ORDER BY", "LIMIT", "HAVING"])
+        if idx is not None:
+            return sql[:idx] + f"AND {condition} " + sql[idx:]
         # WHERE sin GROUP/ORDER/LIMIT → agregar al final antes de ;
         sql = sql.rstrip(";").rstrip()
         return sql + f" AND {condition};"
     else:
-        for keyword in ["GROUP BY", "ORDER BY", "LIMIT"]:
-            if keyword in sql_upper:
-                idx = sql_upper.index(keyword)
-                return sql[:idx] + f"WHERE {condition} " + sql[idx:]
+        idx = _find_top_level_clause_index(sql, ["GROUP BY", "ORDER BY", "LIMIT", "HAVING"])
+        if idx is not None:
+            return sql[:idx] + f"WHERE {condition} " + sql[idx:]
         sql = sql.rstrip(";").rstrip()
         return sql + f" WHERE {condition};"

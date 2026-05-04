@@ -24,7 +24,7 @@ from utils.cxc_helper import (
 from utils.cxc_metricas_cliente import (
     calcular_metricas_por_cliente, obtener_top_n_clientes, obtener_facturas_cliente
 )
-from utils.data_normalizer import normalizar_columnas
+from utils.data_normalizer import normalizar_columnas, homologar_columnas
 from utils.ai_helper import generar_resumen_ejecutivo_cxc, validar_api_key
 from utils.filters_helper import obtener_lineas_filtradas, generar_contexto_filtros
 from utils.logger import configurar_logger
@@ -132,9 +132,9 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
             # Leer y normalizar datos
             df_vigentes = pd.read_excel(xls, sheet_name='CXC VIGENTES')
             df_vencidas = pd.read_excel(xls, sheet_name='CXC VENCIDAS')
-            
-            df_vigentes = normalizar_columnas(df_vigentes)
-            df_vencidas = normalizar_columnas(df_vencidas)
+
+            df_vigentes = homologar_columnas(df_vigentes)
+            df_vencidas = homologar_columnas(df_vencidas)
 
         else:
             # Fallback: buscar cualquier hoja con "cxc" en el nombre (ej. CXC VG, CXC VCD)
@@ -162,7 +162,7 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
 
             _dfs_vig, _dfs_vec = [], []
             for _h in _hojas_cxc_alt:
-                _df_h = normalizar_columnas(pd.read_excel(xls, sheet_name=_h))
+                _df_h = homologar_columnas(pd.read_excel(xls, sheet_name=_h))
                 if _es_vigente(_h):
                     _dfs_vig.append(_df_h)
                 elif _es_vencida(_h):

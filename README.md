@@ -212,6 +212,7 @@ Ver [CONTRIBUTING.md](CONTRIBUTING.md) para detalles completos sobre:
 - [CONTRIBUTING.md](CONTRIBUTING.md) - Guía de contribución
 - [docs/ARQUITECTURA_INTEGRACION_CRM_ERP.md](docs/ARQUITECTURA_INTEGRACION_CRM_ERP.md) - Arquitectura de integración para CRMs, ERPs y fuentes financieras
 - [docs/MODELO_FISICO_INTEGRACION_CRM_ERP.md](docs/MODELO_FISICO_INTEGRACION_CRM_ERP.md) - Modelo físico sugerido con tablas, relaciones y marts analíticos
+- [docs/FRAMEWORK_NL2SQL_GUIADO.md](docs/FRAMEWORK_NL2SQL_GUIADO.md) - Implementación del framework guiado en UI y CLI
 - [REFACTOR_SUMMARY.md](REFACTOR_SUMMARY.md) - Resumen de refactorización
 - [TESTING_SUMMARY.md](TESTING_SUMMARY.md) - Documentación de testing
 - [EXECUTIVE_SUMMARY.md](EXECUTIVE_SUMMARY.md) - Resumen ejecutivo

@@ -10,7 +10,11 @@ from .logger import configurar_logger
 from .constantes import (
     COLUMNAS_SALDO_CANDIDATAS,
     COLUMNAS_VENTAS,
-    ESTATUS_PAGADO_VARIANTES
+    ESTATUS_PAGADO_VARIANTES,
+    ALIAS_MAP,
+    SCHEMA_VENTAS,
+    SCHEMA_CXC,
+    SCHEMA_CATALOGO,
 )
 
 logger = configurar_logger("data_normalizer", nivel="INFO")
@@ -286,16 +290,8 @@ def normalizar_datos_cxc(df_ventas: pd.DataFrame, df_cxc: pd.DataFrame) -> Tuple
 def normalizar_columna_fecha(df: pd.DataFrame, col_fecha: str = 'fecha') -> pd.DataFrame:
     """
     Normaliza columna de fecha a datetime.
-    
-    Args:
-        df: DataFrame con columna de fecha
-        col_fecha: Nombre de la columna de fecha
-        
-    Returns:
-        DataFrame con columna datetime normalizada
     """
     df = df.copy()
-    
     if col_fecha in df.columns:
         df[col_fecha] = pd.to_datetime(df[col_fecha], errors='coerce')
         nulos = df[col_fecha].isna().sum()
@@ -303,5 +299,91 @@ def normalizar_columna_fecha(df: pd.DataFrame, col_fecha: str = 'fecha') -> pd.D
             logger.warning(f"{nulos} fechas no pudieron ser parseadas y fueron convertidas a NaT")
     else:
         logger.warning(f"Columna '{col_fecha}' no encontrada en DataFrame")
-    
     return df
+
+
+# =====================================================================
+# HOMOLOGACIÓN CENTRAL DE COLUMNAS
+# =====================================================================
+
+def homologar_columnas(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Renombra columnas con alias conocidos al nombre canónico del template.
+
+    Usa ALIAS_MAP de constantes.py. Aplica primero normalizar_columnas()
+    para estandarizar mayúsculas/acentos, luego mapea alias → canónico.
+
+    No toca columnas que ya usan el nombre canónico ni columnas desconocidas.
+
+    Ejemplo:
+        "Razon Social" → normaliza → "razon_social" → homologa → "cliente"
+        "Agente"       → normaliza → "agente"       → homologa → "vendedor"
+        "Ventas USD"   → normaliza → "ventas_usd"   → homologa → "importe"
+    """
+    df = normalizar_columnas(df)
+
+    # Construir mapa inverso: alias → canónico  (ignorar si el alias == canónico)
+    inverso: dict[str, str] = {}
+    for canonico, alias_list in ALIAS_MAP.items():
+        for alias in alias_list:
+            if alias != canonico:
+                inverso[alias] = canonico
+
+    rename_map = {}
+    for col in df.columns:
+        if col in inverso and col not in rename_map.values():
+            # Solo renombrar si el nombre canónico no existe ya en el df
+            canonico = inverso[col]
+            if canonico not in df.columns:
+                rename_map[col] = canonico
+
+    if rename_map:
+        df = df.rename(columns=rename_map)
+        logger.info(f"homologar_columnas: {rename_map}")
+
+    return df
+
+
+def validar_template(df: pd.DataFrame, schema: str = "ventas") -> dict:
+    """
+    Valida un DataFrame contra el schema del template FRADMA.
+
+    Args:
+        df: DataFrame ya homologado (columnas canónicas)
+        schema: "ventas" | "cxc" | "catalogo"
+
+    Returns:
+        dict con claves:
+            ok (bool): True si todos los campos obligatorios están presentes
+            obligatorios_ok   (list[str])
+            obligatorios_faltantes (list[str])
+            recomendados_ok   (list[str])
+            recomendados_faltantes (list[str])
+            opcionales_ok     (list[str])
+            columnas_extra    (list[str])
+    """
+    schemas = {"ventas": SCHEMA_VENTAS, "cxc": SCHEMA_CXC, "catalogo": SCHEMA_CATALOGO}
+    schema_def = schemas.get(schema, SCHEMA_VENTAS)
+
+    cols = set(df.columns)
+    oblig   = schema_def["obligatorios"]
+    recom   = schema_def["recomendados"]
+    opc     = schema_def["opcionales"]
+    conocidos = set(oblig + recom + opc)
+
+    oblig_ok  = [c for c in oblig if c in cols]
+    oblig_falt = [c for c in oblig if c not in cols]
+    recom_ok  = [c for c in recom if c in cols]
+    recom_falt = [c for c in recom if c not in cols]
+    opc_ok    = [c for c in opc   if c in cols]
+    extra     = sorted(cols - conocidos)
+
+    return {
+        "ok": len(oblig_falt) == 0,
+        "obligatorios_ok":       oblig_ok,
+        "obligatorios_faltantes": oblig_falt,
+        "recomendados_ok":       recom_ok,
+        "recomendados_faltantes": recom_falt,
+        "opcionales_ok":         opc_ok,
+        "columnas_extra":        extra,
+    }
