@@ -103,7 +103,7 @@ def test_calculate_analyst_cost_equivalent_returns_expected_fields():
 
     assert result["workdays"] == 5.5
     assert result["months_analyst"] == 0.25
-    assert result["monthly_savings"] == 13200
+    assert abs(result["roi_mxn"] - 7500.0) < 0.01
     assert result["analyst_salary"] == 30000
     assert "0.25" in result["justification"]
 
@@ -119,7 +119,7 @@ def test_get_summary_aggregates_tracked_actions():
     assert summary["today"]["hrs"] == 1.0
     assert summary["total"]["actions"] == 2
     assert summary["total"]["value"] == 500.0
-    assert summary["today"]["analyst_equiv"]["monthly_savings"] == 300.0
+    assert abs(summary["today"]["analyst_equiv"]["roi_mxn"] - 142.05) < 0.1
 
 
 def test_get_recent_actions_limits_to_last_items():
