@@ -2566,9 +2566,7 @@ BLOCKED_EXAMPLE_QUESTIONS = {
     "¿Cuál es la tendencia de nuevos clientes por mes?": "Depende de una definición validada de alta de cliente y primera compra.",
     "¿Cuáles clientes compran cada vez menos?": "Depende de una metodología de deterioro de compra validada por negocio.",
     "Segmentación RFM de clientes": "Depende de una metodología RFM validada y umbrales por tenant.",
-    "Concentración de clientes (riesgo)": "Depende de una metodología de riesgo comercial validada.",
     "Detectar facturas anómalas (outliers)": "Depende de un criterio estadístico de anomalías validado.",
-    "¿Cuál es el riesgo de concentración de clientes?": "Depende de una metodología de riesgo comercial validada.",
     "¿Cuál es el DSO y tasa de cobro de los últimos 3 meses?": "Depende de una definición financiera validada de DSO y cobranza efectiva.",
 }
 
