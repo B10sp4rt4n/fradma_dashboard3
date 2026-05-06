@@ -605,8 +605,11 @@ def _coerce_numeric_like_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _format_numeric_display_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    """Aplica formato visible a columnas numéricas para tablas del asistente."""
-    numeric_cols = df.select_dtypes(include=['number']).columns
+    """Aplica formato visible a columnas numéricas para tablas del asistente.
+
+    Itera sobre TODOS los nombres de columna (no solo select_dtypes) para que
+    columnas Decimal de psycopg2 –almacenadas como object– también reciban formato.
+    """
     count_keywords = ['num_', 'count', 'cantidad', 'total_clientes', 'total_facturas', 'conteo', 'registros', 'facturas', 'ranking']
     money_keywords = [
         'total', 'monto', 'facturacion', 'venta', 'ventas', 'ventas_mes', 'importe',
@@ -616,20 +619,43 @@ def _format_numeric_display_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     ]
 
     display_df = df.copy()
-    for col in numeric_cols:
+
+    for col in display_df.columns:
         col_lower = col.lower()
-        is_count = any(kw in col_lower for kw in count_keywords)
+        is_count   = any(kw in col_lower for kw in count_keywords)
         is_percent = 'pct' in col_lower or 'porcentaje' in col_lower or col_lower.endswith('_pct') or '%' in col
-        is_money = not is_count and any(kw in col_lower for kw in money_keywords)
+        is_money   = not is_count and any(kw in col_lower for kw in money_keywords)
+
+        if not (is_count or is_percent or is_money):
+            # Solo formatear si la columna ya es numérica
+            if not pd.api.types.is_numeric_dtype(display_df[col]):
+                continue
+
+        def _safe_fmt(value, fmt):
+            try:
+                v = float(value)
+                if pd.isna(v):
+                    return ""
+                return fmt(v)
+            except (ValueError, TypeError):
+                return str(value) if value is not None else ""
 
         if is_percent:
-            display_df[col] = display_df[col].map(lambda value: f"{float(value):,.1f}%" if pd.notna(value) else "")
+            display_df[col] = display_df[col].map(
+                lambda v: _safe_fmt(v, lambda x: f"{round(x, 2):,.2f}%")
+            )
         elif is_money:
-            display_df[col] = display_df[col].map(lambda value: f"${float(value):,.2f}" if pd.notna(value) else "")
+            display_df[col] = display_df[col].map(
+                lambda v: _safe_fmt(v, lambda x: f"${x:,.2f}")
+            )
         elif is_count:
-            display_df[col] = display_df[col].map(lambda value: f"{int(value):,}" if pd.notna(value) else "")
+            display_df[col] = display_df[col].map(
+                lambda v: _safe_fmt(v, lambda x: f"{int(x):,}")
+            )
         else:
-            display_df[col] = display_df[col].map(lambda value: f"{float(value):,.2f}" if pd.notna(value) else "")
+            display_df[col] = display_df[col].map(
+                lambda v: _safe_fmt(v, lambda x: f"{x:,.2f}")
+            )
 
     return display_df
 
