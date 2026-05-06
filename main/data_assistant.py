@@ -1574,7 +1574,18 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
         # --- DONUT ---
         if chart_type == "donut" and num_cols and (cat_cols or x_col in plot_df.columns):
             logger.info(f"📊 Renderizando DONUT: names={x_col}, values={y_col}, rows={len(plot_df)}")
-            donut_df = plot_df.head(15).copy()
+            # Si ya viene con fila 'Otros' del SQL usamos todas las filas; si no, top 12 + agregamos 'Otros'
+            has_otros = (plot_df[x_col].astype(str).str.upper() == "OTROS").any() if x_col in plot_df.columns else False
+            if has_otros or len(plot_df) <= 15:
+                donut_df = plot_df.copy()
+            else:
+                top = plot_df.head(12).copy()
+                otros_val = plot_df.iloc[12:][y_col].sum()
+                otros_row = {c: (0 if c in plot_df.select_dtypes("number").columns else "") for c in plot_df.columns}
+                otros_row[x_col] = "Otros"
+                otros_row[y_col] = otros_val
+                import pandas as _pd
+                donut_df = _pd.concat([top, _pd.DataFrame([otros_row])], ignore_index=True)
             if donut_df[x_col].dtype != 'object':
                 donut_df[x_col] = donut_df[x_col].astype(str)
             fig = px.pie(
