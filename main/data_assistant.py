@@ -575,7 +575,8 @@ def _coerce_numeric_like_columns(df: pd.DataFrame) -> pd.DataFrame:
             continue
 
         col_lower = str(col).lower()
-        looks_numeric = any(kw in col_lower for kw in count_keywords + money_keywords)
+        looks_numeric = any(kw in col_lower for kw in count_keywords + money_keywords) or \
+                        'pct' in col_lower or 'porcentaje' in col_lower or col_lower.endswith('_pct')
         if not looks_numeric:
             continue
 
