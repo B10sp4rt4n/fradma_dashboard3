@@ -255,7 +255,7 @@ def test_build_numeric_column_config_formats_money_with_thousand_separators():
     assert col_config["promedio_movil_3m"]["type_config"]["format"] == "$%,.2f"
     assert col_config["ventas_mes"]["type_config"]["format"] == "$%,.2f"
     assert col_config["acumulado"]["type_config"]["format"] == "$%,.2f"
-    assert col_config["registros"]["type_config"]["format"] == "%,d"
+    assert col_config["registros"]["type_config"]["format"] == "%,.0f"
 
 
 def test_format_numeric_display_dataframe_renders_visible_thousand_separators():
