@@ -861,15 +861,12 @@ def _render_kpi_tab(df: pd.DataFrame):
 
 def _render_plotly_chart_and_save(fig, use_container_width=True):
     """Renderiza figura de Plotly y la guarda en session_state para exportación."""
-    import hashlib, json as _json
     # Guardar en session_state para uso posterior (ej. PDF)
     st.session_state['last_plotly_fig'] = fig
-    # Generar key único por figura para evitar StreamlitDuplicateElementId
-    try:
-        fig_hash = hashlib.md5(_json.dumps(fig.to_dict(), default=str, sort_keys=True).encode()).hexdigest()[:12]
-    except Exception:
-        fig_hash = str(id(fig))
-    st.plotly_chart(fig, use_container_width=use_container_width, key=f"chart_{fig_hash}")
+    # Contador único por re-run de Streamlit → evita StreamlitDuplicateElementId
+    idx = st.session_state.get('_chart_render_idx', 0) + 1
+    st.session_state['_chart_render_idx'] = idx
+    st.plotly_chart(fig, use_container_width=use_container_width, key=f"chart_{idx}")
 
 def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: dict = None):
     """
@@ -1705,13 +1702,12 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
         import traceback
         logger.error(traceback.format_exc())
 
-    # Default: tabla con formato
+    # Default: tabla con formato (usa conversión a string para cubrir Decimal de psycopg2)
     df = _coerce_numeric_like_columns(df)
     st.dataframe(
-        df,
+        _format_numeric_display_dataframe(df),
         use_container_width=True,
         hide_index=True,
-        column_config=_build_numeric_column_config(df),
     )
 
 
@@ -3831,6 +3827,9 @@ def _render_sql_playground():
 # =====================================================================
 def run():
     """Punto de entrada del módulo Asistente de Datos."""
+
+    # Resetear contador de gráficas en cada re-run para evitar StreamlitDuplicateElementId
+    st.session_state['_chart_render_idx'] = 0
 
     # Verificar dependencias
     if not PSYCOPG2_AVAILABLE:
