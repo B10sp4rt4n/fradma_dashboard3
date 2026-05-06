@@ -426,7 +426,7 @@ EXAMPLE_QUESTIONS = [
         "questions": [
             "Clasificación ABC de clientes (Pareto 80/20)",
             "Segmentación RFM de clientes",
-            "Ranking de clientes por facturación",
+            "Ranking de clientes por número de facturas",
             "Concentración de clientes (riesgo)",
         ]
     },
@@ -847,7 +847,7 @@ SQL: SELECT DATE_TRUNC('month', fecha_emision) AS mes, SUM(total * COALESCE(tipo
 Pregunta: Promedio móvil de 3 meses de facturación
 SQL: WITH ventas_mes AS (SELECT DATE_TRUNC('month', fecha_emision) AS mes, SUM(total * COALESCE(tipo_cambio, 1)) AS total_mxn FROM cfdi_ventas GROUP BY mes ORDER BY mes) SELECT mes, ROUND(total_mxn, 2) AS ventas, ROUND(AVG(total_mxn) OVER (ORDER BY mes ROWS BETWEEN 2 PRECEDING AND CURRENT ROW), 2) AS promedio_movil_3m FROM ventas_mes LIMIT {self.max_rows};
 
-Pregunta: Ranking de clientes por facturación
+Pregunta: Ranking de clientes por número de facturas
 SQL: WITH clientes AS (SELECT receptor_nombre AS cliente, COUNT(*) AS num_facturas, SUM(total * COALESCE(tipo_cambio, 1)) AS total_mxn FROM cfdi_ventas WHERE empresa_id = '{empresa_id}' AND tipo_comprobante = 'I' AND total > 0 GROUP BY receptor_nombre) SELECT cliente, ROUND(total_mxn, 2) AS total_mxn, ROW_NUMBER() OVER (ORDER BY num_facturas DESC, total_mxn DESC) AS ranking, num_facturas AS facturas FROM clientes ORDER BY num_facturas DESC, total_mxn DESC LIMIT {self.max_rows};
 
 Pregunta: Clasificación ABC de clientes (Pareto)
