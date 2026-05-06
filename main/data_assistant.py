@@ -861,10 +861,15 @@ def _render_kpi_tab(df: pd.DataFrame):
 
 def _render_plotly_chart_and_save(fig, use_container_width=True):
     """Renderiza figura de Plotly y la guarda en session_state para exportación."""
+    import hashlib, json as _json
     # Guardar en session_state para uso posterior (ej. PDF)
     st.session_state['last_plotly_fig'] = fig
-    # Renderizar normalmente con Streamlit
-    st.plotly_chart(fig, use_container_width=use_container_width)
+    # Generar key único por figura para evitar StreamlitDuplicateElementId
+    try:
+        fig_hash = hashlib.md5(_json.dumps(fig.to_dict(), default=str, sort_keys=True).encode()).hexdigest()[:12]
+    except Exception:
+        fig_hash = str(id(fig))
+    st.plotly_chart(fig, use_container_width=use_container_width, key=f"chart_{fig_hash}")
 
 def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: dict = None):
     """
