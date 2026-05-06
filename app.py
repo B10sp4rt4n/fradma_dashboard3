@@ -1543,48 +1543,60 @@ with st.sidebar:
     _user_for_admin = get_current_user()
     if _user_for_admin and _user_for_admin.can_manage_users():
         with st.expander("⚙️ Administración", expanded=False):
-            if st.button("👥 Usuarios", use_container_width=True, key="admin_nav_usuarios"):
-                st.session_state["_menu_navegar_a"] = "⚙️ Gestión de Usuarios"
-                st.rerun()
-            if st.button("🔧 Configuración", use_container_width=True, key="admin_nav_config"):
-                st.session_state["_menu_navegar_a"] = "🔧 Configuración"
-                st.rerun()
-    with st.expander("🎨 Personalización CIMA", expanded=False):
-        st.markdown("**🖼️ Logo de empresa**")
-        logo_file = st.file_uploader(
-            "Sube tu logo (PNG, JPG)",
-            type=["png", "jpg", "jpeg", "svg", "webp"],
-            key="logo_uploader",
-            label_visibility="collapsed",
-            help="Se mostrará en el encabezado del dashboard."
-        )
-        if logo_file is not None:
-            st.session_state["company_logo"] = logo_file.getvalue()
-            st.session_state["company_logo_name"] = logo_file.name
-            st.success("Logo actualizado ✓")
-        if st.session_state.get("company_logo"):
-            st.image(st.session_state["company_logo"], use_container_width=True)
-            if st.button("🗑️ Quitar logo", key="btn_remove_logo", use_container_width=True):
-                st.session_state.pop("company_logo", None)
-                st.session_state.pop("company_logo_name", None)
-                st.rerun()
+            # ─── Gestión Admin ─────────────────────────────────────
+            st.markdown("### 👤 Gestión de Usuarios")
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("👥 Usuarios", use_container_width=True, key="admin_nav_usuarios"):
+                    st.session_state["_menu_navegar_a"] = "⚙️ Gestión de Usuarios"
+                    st.rerun()
+            with col2:
+                if st.button("🔧 Configuración", use_container_width=True, key="admin_nav_config"):
+                    st.session_state["_menu_navegar_a"] = "🔧 Configuración"
+                    st.rerun()
 
-    with st.expander("⚙️ Ajustes ROI", expanded=False):
-        st.markdown("**💼 Sueldo de Referencia**")
-        roi_tracker_config = init_roi_tracker(st.session_state)
-        current_salary = roi_tracker_config.get_analyst_salary()
-        new_salary = st.number_input(
-            "Sueldo mensual de analista (MXN)",
-            min_value=5000,
-            max_value=100000,
-            value=int(current_salary),
-            step=1000,
-            help="Ajusta el sueldo de referencia para calcular equivalencias. Típico: $20k-$30k MXN/mes"
-        )
-        if new_salary != current_salary:
-            roi_tracker_config.set_analyst_salary(new_salary)
-            st.success(f"✅ Sueldo actualizado a ${new_salary:,} MXN/mes")
-            st.info("💡 Los cálculos de ROI usarán este nuevo valor de referencia")
+            st.markdown("---")
+
+            # ─── Personalización CIMA ─────────────────────────────────────
+            st.markdown("### 🎨 Personalización CIMA")
+            st.markdown("**🖼️ Logo de empresa**")
+            logo_file = st.file_uploader(
+                "Sube tu logo (PNG, JPG)",
+                type=["png", "jpg", "jpeg", "svg", "webp"],
+                key="logo_uploader",
+                label_visibility="collapsed",
+                help="Se mostrará en el encabezado del dashboard."
+            )
+            if logo_file is not None:
+                st.session_state["company_logo"] = logo_file.getvalue()
+                st.session_state["company_logo_name"] = logo_file.name
+                st.success("Logo actualizado ✓")
+            if st.session_state.get("company_logo"):
+                st.image(st.session_state["company_logo"], use_container_width=True)
+                if st.button("🗑️ Quitar logo", key="btn_remove_logo", use_container_width=True):
+                    st.session_state.pop("company_logo", None)
+                    st.session_state.pop("company_logo_name", None)
+                    st.rerun()
+
+            st.markdown("---")
+
+            # ─── Ajustes ROI ─────────────────────────────────────
+            st.markdown("### ⚙️ Ajustes ROI")
+            st.markdown("**💼 Sueldo de Referencia**")
+            roi_tracker_config = init_roi_tracker(st.session_state)
+            current_salary = roi_tracker_config.get_analyst_salary()
+            new_salary = st.number_input(
+                "Sueldo mensual de analista (MXN)",
+                min_value=5000,
+                max_value=100000,
+                value=int(current_salary),
+                step=1000,
+                help="Ajusta el sueldo de referencia para calcular equivalencias. Típico: $20k-$30k MXN/mes"
+            )
+            if new_salary != current_salary:
+                roi_tracker_config.set_analyst_salary(new_salary)
+                st.success(f"✅ Sueldo actualizado a ${new_salary:,} MXN/mes")
+                st.info("💡 Los cálculos de ROI usarán este nuevo valor de referencia")
 
     st.markdown("---")
     st.toggle(
