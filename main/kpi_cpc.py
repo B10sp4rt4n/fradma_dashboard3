@@ -21,6 +21,7 @@ from utils.cxc_helper import (
     calcular_score_salud, clasificar_score_salud, clasificar_antiguedad,
     obtener_semaforo_morosidad, obtener_semaforo_riesgo, obtener_semaforo_concentracion
 )
+from utils.cxc_aging_engine import prepare_cxc_metrics  # fuente única de verdad CxC
 from utils.cxc_metricas_cliente import (
     calcular_metricas_por_cliente, obtener_top_n_clientes, obtener_facturas_cliente
 )
@@ -268,9 +269,14 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
             logger.warning("Columna 'vendedor' NO detectada en df_deudas")
 
         # ---------------------------------------------------------------------
-        # Normalización de CxC alineada con Reporte Ejecutivo usando funciones helper
+        # Normalización de CxC — fuente única de verdad (cxc_aging_engine)
+        # prepare_cxc_metrics aplica la misma lógica que Reporte Ejecutivo y
+        # Reporte Consolidado, garantizando métricas consistentes.
         # ---------------------------------------------------------------------
-        df_deudas, df_np, mask_pagado = preparar_datos_cxc(df_deudas)
+        cxc_m = prepare_cxc_metrics(df_deudas)
+        df_deudas   = cxc_m['df_prep']       # con dias_overdue calculado
+        df_np        = cxc_m['df_np']         # registros no pagados
+        mask_pagado  = cxc_m['mask_pagado']
         
         # === TRACKING ROI: Registrar análisis de CxC ===
         try:
@@ -295,33 +301,25 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
         # ---------------------------------------------------------------------
         st.header("📊 Reporte de Cuentas por Cobrar")
         
-        # KPIs principales usando función helper
-        metricas = calcular_metricas_basicas(df_np)
-        total_adeudado = metricas['total_adeudado']
-        vigente = metricas['vigente']
-        vencida = metricas['vencida']
-        vencida_0_30 = metricas['vencida_0_30']
-        critica = metricas['critica']
-        deuda_alto_riesgo = metricas['alto_riesgo']
-        pct_vigente = metricas['pct_vigente']
-        pct_critica = metricas['pct_critica']
-        pct_vencida_total = metricas['pct_vencida']
-        pct_alto_riesgo = metricas['pct_alto_riesgo']
-        pct_vencida_0_30 = metricas.get('pct_vencida_0_30', 0)
-        pct_vencida_31_60 = metricas.get('pct_vencida_31_60', 0)
-        pct_vencida_61_90 = metricas.get('pct_vencida_61_90', 0)
+        # KPIs principales desde fuente única de verdad
+        total_adeudado    = cxc_m['total_adeudado']
+        vigente           = cxc_m['vigente']
+        vencida           = cxc_m['vencida']
+        vencida_0_30      = cxc_m['vencida_0_30']
+        critica           = cxc_m['critica']
+        deuda_alto_riesgo = cxc_m['alto_riesgo']
+        pct_vigente       = cxc_m['pct_vigente']
+        pct_critica       = cxc_m['pct_critica']
+        pct_vencida_total = cxc_m['pct_vencida']
+        pct_alto_riesgo   = cxc_m['pct_alto_riesgo']
+        pct_vencida_0_30  = cxc_m['pct_vencida_0_30']
+        pct_vencida_31_60 = cxc_m['pct_vencida_31_60']
+        pct_vencida_61_90 = cxc_m['pct_vencida_61_90']
+        score_salud       = cxc_m['score_salud']
+        score_status, score_color = clasificar_score_salud(score_salud)
         top_deudores = df_np.groupby('deudor')['saldo_adeudado'].sum().nlargest(5)
         top3_deuda = df_np.groupby('deudor')['saldo_adeudado'].sum().nlargest(3).sum()
         pct_concentracion = (top3_deuda / total_adeudado * 100) if total_adeudado > 0 else 0
-        score_salud = calcular_score_salud(
-            pct_vigente,
-            pct_critica,
-            pct_vencida_0_30,
-            pct_vencida_31_60,
-            pct_vencida_61_90,
-            pct_alto_riesgo,
-        )
-        score_status, score_color = clasificar_score_salud(score_salud)
 
         st.write("### 🧭 Lectura Prioritaria")
         st.caption(

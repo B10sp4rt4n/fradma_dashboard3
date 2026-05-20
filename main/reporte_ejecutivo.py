@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from utils.formatos import formato_moneda, formato_porcentaje, formato_compacto, now_mx
 from utils.logger import configurar_logger
 from utils.ai_helper_premium import generar_insights_ejecutivo_consolidado
-from utils.cxc_helper import calcular_cxc_aging
+from utils.cxc_aging_engine import prepare_cxc_metrics  # fuente única de verdad CxC
 from utils.roi_tracker import init_roi_tracker
 
 # Configurar logger para este módulo
@@ -143,29 +143,9 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
     # -------------------------
 
     # Asegurar columna de saldo
-    if "saldo_adeudado" not in df_cxc.columns:
-        for candidato in [
-            "saldo",
-            "saldo_adeudo",
-            "adeudo",
-            "importe",
-            "monto",
-            "total",
-            "saldo_usd",
-        ]:
-            if candidato in df_cxc.columns:
-                df_cxc = df_cxc.rename(columns={candidato: "saldo_adeudado"})
-                break
+    # Normalización de saldo manejada internamente por prepare_cxc_metrics.
+    # No se pre-procesa df_cxc aquí para evitar doble normalización.
 
-    if "saldo_adeudado" in df_cxc.columns:
-        # Limpieza típica: quitar separadores de miles y símbolos
-        saldo_txt = df_cxc["saldo_adeudado"].astype(str)
-        saldo_txt = saldo_txt.str.replace(",", "", regex=False)
-        saldo_txt = saldo_txt.str.replace("$", "", regex=False)
-        df_cxc["saldo_adeudado"] = pd.to_numeric(saldo_txt, errors="coerce").fillna(0)
-    else:
-        df_cxc["saldo_adeudado"] = 0
-    
     st.title("📊 Reporte Ejecutivo")
     st.markdown("### Vista Consolidada del Negocio — Dashboard para Dirección")
 
@@ -303,8 +283,8 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
     else:
         ventas_mes_actual = total_ventas
 
-    # CxC: normalizar y calcular métricas con helper unificado
-    cxc = calcular_cxc_aging(df_cxc)
+    # CxC: calcular métricas con fuente única de verdad
+    cxc = prepare_cxc_metrics(df_cxc)
     df_cxc_local = cxc["df_prep"]
     df_cxc_np = cxc["df_np"]
     mask_pagado = cxc["mask_pagado"]
@@ -736,4 +716,21 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
                 st.info("Sin columna de vendedor/agente en los datos de CxC.")
 
     st.markdown("---")
+
+    # ── Diagnóstico técnico CxC ────────────────────────────────────────────
+    with st.expander("🔧 Diagnóstico técnico CxC (fuente única de verdad)", expanded=False):
+        st.caption(f"Fuente: `{cxc.get('fuente_calculo', 'utils/cxc_aging_engine.py')}`")
+        _diag_cols = st.columns(3)
+        _diag_cols[0].metric("Fecha de corte", str(cxc.get("fecha_corte_ts", "").date() if hasattr(cxc.get("fecha_corte_ts"), "date") else cxc.get("fecha_corte_str", "—")))
+        _diag_cols[1].metric("Columna fecha usada", cxc.get("columna_fecha_usada") or "—")
+        _diag_cols[2].metric("Columna monto usada", cxc.get("columna_monto_usada") or "—")
+        _diag_cols2 = st.columns(4)
+        _diag_cols2[0].metric("Filas consideradas", cxc.get("filas_consideradas", 0))
+        _diag_cols2[1].metric("Filas descartadas", cxc.get("filas_descartadas", 0))
+        _diag_cols2[2].metric("Suma buckets", f"${cxc.get('suma_buckets', 0):,.0f}")
+        _diag_cols2[3].metric("Δ total vs buckets", f"${cxc.get('diferencia_total_vs_buckets', 0):,.2f}")
+        if cxc.get("diagnostico"):
+            for _msg in cxc["diagnostico"]:
+                st.caption(f"• {_msg}")
+
     st.caption(f"📅 Reporte generado: {now_mx().strftime('%d/%m/%Y %H:%M')}")
