@@ -1,0 +1,29 @@
+{
+  "schema_id": "cfdi_neon_mapa_clientes_v1",
+  "nombre": "CFDI Neon Mapa Clientes",
+  "descripcion": "Esquema de datos CFDI persistidos en Neon PostgreSQL para el modulo de mapa de clientes.",
+  "fuente": "neon_cfdi",
+  "campos_obligatorios": [
+    "receptor_domicilio_fiscal",
+    "total_mxn"
+  ],
+  "campos_recomendados": [
+    "receptor_rfc",
+    "receptor_nombre",
+    "uuid"
+  ],
+  "campos_opcionales": [
+    "fecha_emision",
+    "moneda",
+    "tipo_cambio",
+    "emisor_rfc"
+  ],
+  "salidas_disponibles": [
+    "mapa_clientes",
+    "distribucion_geografica",
+    "concentracion_cp"
+  ],
+  "tipo_archivo_soportado": ["neon_query"],
+  "notas": "receptor_domicilio_fiscal es el codigo postal del receptor. Se usa para geolocalizar via cp_coords.csv. Sin CP no se puede generar el mapa.",
+  "version": "1.0.0"
+}

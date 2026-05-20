@@ -1,0 +1,24 @@
+{
+  "schema_id": "ventas_comercial_v1",
+  "nombre": "Ventas Comercial",
+  "descripcion": "Esquema para analisis comercial por fecha, monto, cliente, vendedor, linea y producto.",
+  "fuente": "ventas_excel",
+  "campos_obligatorios": ["fecha", "monto"],
+  "campos_recomendados": ["cliente", "vendedor", "linea_de_negocio", "producto"],
+  "campos_opcionales": ["region", "canal", "moneda", "forma_pago", "sucursal"],
+  "salidas_disponibles": [
+    "ventas_totales",
+    "tendencia_mensual",
+    "top_clientes",
+    "desempeno_vendedor",
+    "ventas_por_linea",
+    "ventas_por_producto",
+    "heatmap_ventas",
+    "comparativo_anual",
+    "ytd_lineas",
+    "ytd_productos"
+  ],
+  "tipo_archivo_soportado": ["csv", "xlsx"],
+  "notas": "Esquema completo para activar todos los modulos comerciales de CIMA. Los campos recomendados amplian significativamente las salidas disponibles.",
+  "version": "1.0.0"
+}

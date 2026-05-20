@@ -1,0 +1,64 @@
+{
+  "contract_id": "canonical_sales_v1",
+  "nombre": "Contrato Canonico de Ventas",
+  "descripcion": "Estructura estandar de un registro de venta que CIMA usa internamente, independientemente del sistema de origen.",
+  "version": "1.0.0",
+  "campos": {
+    "fecha": {
+      "tipo": "date",
+      "obligatorio": true,
+      "descripcion": "Fecha de la venta (ISO 8601: YYYY-MM-DD)"
+    },
+    "monto": {
+      "tipo": "float",
+      "obligatorio": true,
+      "descripcion": "Importe de la venta en moneda local"
+    },
+    "cliente": {
+      "tipo": "string",
+      "obligatorio": false,
+      "descripcion": "Nombre del cliente"
+    },
+    "vendedor": {
+      "tipo": "string",
+      "obligatorio": false,
+      "descripcion": "Nombre del vendedor o agente"
+    },
+    "linea_de_negocio": {
+      "tipo": "string",
+      "obligatorio": false,
+      "descripcion": "Linea de negocio o categoria de producto"
+    },
+    "producto": {
+      "tipo": "string",
+      "obligatorio": false,
+      "descripcion": "Nombre o codigo del producto vendido"
+    },
+    "region": {
+      "tipo": "string",
+      "obligatorio": false,
+      "descripcion": "Region o zona geografica"
+    },
+    "canal": {
+      "tipo": "string",
+      "obligatorio": false,
+      "descripcion": "Canal de venta (Directo, Canal, eCommerce, etc.)"
+    },
+    "moneda": {
+      "tipo": "string",
+      "obligatorio": false,
+      "default": "MXN",
+      "descripcion": "Codigo de moneda ISO 4217"
+    },
+    "fuente_origen": {
+      "tipo": "string",
+      "obligatorio": true,
+      "descripcion": "ID del sistema de origen (e.g. ventas_excel, sae, contpaqi)"
+    },
+    "extracted_at": {
+      "tipo": "datetime",
+      "obligatorio": true,
+      "descripcion": "Timestamp UTC de cuando se extrajo el registro (ISO 8601)"
+    }
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "contract_id": "canonical_product_v1",
+  "nombre": "Contrato Canonico de Productos",
+  "descripcion": "Estructura estandar de un producto del catalogo que CIMA usa internamente.",
+  "version": "1.0.0",
+  "campos": {
+    "producto": {
+      "tipo": "string",
+      "obligatorio": true,
+      "descripcion": "Nombre o descripcion del producto"
+    },
+    "linea_de_negocio": {
+      "tipo": "string",
+      "obligatorio": false,
+      "descripcion": "Linea de negocio o categoria a la que pertenece el producto"
+    },
+    "sku": {
+      "tipo": "string",
+      "obligatorio": false,
+      "descripcion": "Codigo de articulo o SKU en el sistema de origen"
+    },
+    "precio_unitario": {
+      "tipo": "float",
+      "obligatorio": false,
+      "descripcion": "Precio unitario de lista en moneda local"
+    },
+    "unidad": {
+      "tipo": "string",
+      "obligatorio": false,
+      "descripcion": "Unidad de medida (pieza, litro, hora, etc.)"
+    },
+    "fuente_origen": {
+      "tipo": "string",
+      "obligatorio": true,
+      "descripcion": "ID del sistema de origen"
+    },
+    "extracted_at": {
+      "tipo": "datetime",
+      "obligatorio": true,
+      "descripcion": "Timestamp UTC de extraccion (ISO 8601)"
+    }
+  }
+}

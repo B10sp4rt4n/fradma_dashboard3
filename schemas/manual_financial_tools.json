@@ -1,0 +1,27 @@
+{
+  "schema_id": "manual_financial_tools_v1",
+  "nombre": "Herramientas Financieras Manual",
+  "descripcion": "Entrada manual para herramientas financieras: tipo de cambio, tasas, inputs de simulacion.",
+  "fuente": "manual_input",
+  "campos_obligatorios": [],
+  "campos_recomendados": [],
+  "campos_opcionales": [
+    "tipo_cambio_usd",
+    "tipo_cambio_eur",
+    "tasa_interes_anual",
+    "plazo_meses",
+    "monto_prestamo",
+    "tasa_inflacion",
+    "costo_capital",
+    "margen_objetivo"
+  ],
+  "salidas_disponibles": [
+    "calculo_tipo_cambio",
+    "simulador_financiero",
+    "roi_calculator",
+    "escenario_sensibilidad"
+  ],
+  "tipo_archivo_soportado": ["ui_form"],
+  "notas": "Este esquema no tiene campos obligatorios. Los valores se ingresan directamente en el UI de Streamlit. No se usa CSV ni XLSX para esta fuente.",
+  "version": "1.0.0"
+}

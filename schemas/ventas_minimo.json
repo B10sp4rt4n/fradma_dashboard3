@@ -1,0 +1,17 @@
+{
+  "schema_id": "ventas_minimo_v1",
+  "nombre": "Ventas Minimo",
+  "descripcion": "Esquema minimo para analisis de ventas. Solo requiere fecha y monto.",
+  "fuente": "ventas_excel",
+  "campos_obligatorios": ["fecha", "monto"],
+  "campos_recomendados": ["cliente"],
+  "campos_opcionales": ["vendedor", "linea_de_negocio", "producto", "region", "canal"],
+  "salidas_disponibles": [
+    "ventas_totales",
+    "tendencia_mensual",
+    "clientes_activos"
+  ],
+  "tipo_archivo_soportado": ["csv", "xlsx"],
+  "notas": "Con solo fecha+monto se puede generar tendencia mensual y KPI de ventas totales. Agregar cliente para contar clientes activos.",
+  "version": "1.0.0"
+}
