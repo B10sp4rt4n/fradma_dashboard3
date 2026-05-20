@@ -493,7 +493,7 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
             ))
             fig_ventas.update_layout(
                 title="Evolución de Ventas por Mes",
-                xaxis_title="Mes", xaxis=dict(type='category'),
+                xaxis=dict(type='category', title='Mes'),
                 yaxis_title="Ventas (MXN/USD)",
                 height=380, showlegend=False,
             )
