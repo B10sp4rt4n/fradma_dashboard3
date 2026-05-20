@@ -138,6 +138,7 @@ def crear_grafico_ventas_periodo(df_agrupado, tipo_periodo):
     fig.update_layout(
         title=titulo_periodo.get(tipo_periodo, 'Ventas por Período'),
         xaxis_title='Período',
+        xaxis=dict(type='category'),
         yaxis_title='Ventas USD',
         hovermode='x unified',
         showlegend=True,
