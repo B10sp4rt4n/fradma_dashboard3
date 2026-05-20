@@ -319,6 +319,7 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
     pct_vencida_0_30 = cxc["pct_vencida_0_30"]
     pct_critica = cxc["pct_critica"]
     pct_vencida = cxc["pct_vencida"]
+    pct_vencida_total = pct_vencida  # alias usado en alertas e IA
     pct_alto_riesgo = cxc["pct_alto_riesgo"]
     days_ov = df_cxc_local["dias_overdue"] if "dias_overdue" in df_cxc_local.columns else pd.Series(dtype="float64")
     col_fecha_cxc = cxc.get("columna_fecha_usada")
