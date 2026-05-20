@@ -215,6 +215,41 @@ def run():
         "descubre qué módulos de CIMA pueden activarse._"
     )
 
+    # ── Flujo visual siempre visible ──────────────────────────────────────
+    _tiene_archivo = st.session_state.get("cima_uploaded_df") is not None
+    _tiene_activo  = st.session_state.get("df") is not None
+
+    _paso1_color = "#27ae60" if _tiene_archivo else "#3498db"
+    _paso2_color = "#27ae60" if _tiene_archivo else "#7f8c8d"
+    _paso3_color = "#27ae60" if _tiene_activo  else "#7f8c8d"
+    _paso1_icono = "✅" if _tiene_archivo else "1️⃣"
+    _paso2_icono = "✅" if _tiene_archivo else "2️⃣"
+    _paso3_icono = "✅" if _tiene_activo  else "3️⃣"
+
+    st.markdown(
+        f"""
+        <div style='display:flex;align-items:center;gap:0;margin:10px 0 18px 0;flex-wrap:wrap;'>
+          <div style='background:{_paso1_color};color:white;border-radius:8px 0 0 8px;
+               padding:8px 18px;font-weight:700;font-size:14px;'>
+            {_paso1_icono} Sube tu archivo
+          </div>
+          <div style='background:#1a2a3a;color:#90CAF9;padding:8px 10px;
+               font-size:18px;font-weight:700;'>›</div>
+          <div style='background:{_paso2_color};color:white;padding:8px 18px;
+               font-weight:700;font-size:14px;'>
+            {_paso2_icono} Valida el esquema
+          </div>
+          <div style='background:#1a2a3a;color:#90CAF9;padding:8px 10px;
+               font-size:18px;font-weight:700;'>›</div>
+          <div style='background:{_paso3_color};color:white;border-radius:0 8px 8px 0;
+               padding:8px 18px;font-weight:700;font-size:14px;'>
+            {_paso3_icono} Activa el DataFrame y ve al módulo
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
     # ── Mensajes de ayuda ─────────────────────────────────────────────────
     with st.expander("💡 ¿Cómo funciona?", expanded=False):
         st.markdown("""
@@ -735,9 +770,43 @@ Este validador **no modifica tus datos**. Solo evalúa estructura, contexto y co
                 pass  # No critico
 
             st.success(
-                "✅ Archivo asignado como DataFrame activo para módulos compatibles. "
-                "Ve al módulo de análisis que desees usar."
+                "✅ Archivo asignado como DataFrame activo para módulos compatibles."
             )
+
+            # ── Próximos pasos ────────────────────────────────────────────
+            _act_mods = st.session_state.get("cima_activable_modules", {})
+            _mods_ok  = _act_mods.get("modulos_activables", [])
+            _mods_par = [m.get("modulo", m) if isinstance(m, dict) else m
+                         for m in _act_mods.get("modulos_parciales", [])]
+
+            # Mapa módulo CIMA → ítem de menú con emoji
+            _MOD_MENU = {
+                "Reporte Ejecutivo":      "🎯 Reporte Ejecutivo",
+                "Reporte Consolidado":    "📋 Reporte Consolidado",
+                "KPI Cartera CxC":        "💳 KPI Cartera CxC",
+                "Desempeño Comercial":    "📈 Desempeño Comercial",
+                "Comparativo Anual":      "📊 Comparativo Anual",
+                "YTD vs Año Anterior":    "📅 YTD vs Año Anterior",
+                "Mapa de Clientes":       "📍 Mapa de Clientes",
+                "Asistente de Datos":     "🤖 Asistente de Datos",
+            }
+
+            _sugeridos = [
+                _MOD_MENU[m] for m in _mods_ok if m in _MOD_MENU
+            ] or [
+                _MOD_MENU[m] for m in _mods_par if m in _MOD_MENU
+            ]
+
+            if _sugeridos:
+                st.markdown("**👉 Próximos pasos — módulos disponibles con este archivo:**")
+                for _item in _sugeridos:
+                    st.markdown(
+                        f"- Usa el menú lateral y selecciona **{_item}**"
+                    )
+            else:
+                st.markdown(
+                    "**👉 Usa el menú lateral para ir al módulo que desees analizar.**"
+                )
 
     elif archivo is not None:
         st.warning("⚠️ El archivo fue recibido pero no pudo procesarse. Revisa el formato.")
