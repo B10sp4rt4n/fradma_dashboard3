@@ -1,5 +1,6 @@
 """Tests unitarios para utils/roi_tracker.py."""
 
+import pytest
 from types import SimpleNamespace
 
 from utils.roi_tracker import ROITracker, init_roi_tracker, quick_track
@@ -39,14 +40,14 @@ def test_get_user_hourly_rate_uses_user_role_value():
     session_state.user = SimpleNamespace(role=SimpleNamespace(value="cfo"))
     tracker = ROITracker(session_state)
 
-    assert tracker.get_user_hourly_rate() == 3000
+    assert tracker.get_user_hourly_rate() == round(80000 / (22 * 8), 2)  # 454.55
 
 
 def test_get_user_hourly_rate_falls_back_to_default_user_rate():
     session_state = SessionState()
     tracker = ROITracker(session_state)
 
-    assert tracker.get_user_hourly_rate() == 500
+    assert tracker.get_user_hourly_rate() == round(20000 / (22 * 8), 2)  # 113.64
 
 
 def test_track_action_uses_benchmark_and_updates_totals():
@@ -55,10 +56,11 @@ def test_track_action_uses_benchmark_and_updates_totals():
 
     result = tracker.track_action("assistant", "nl2sql_query", quantity=2)
 
+    user_rate = round(20000 / (22 * 8), 2)  # 113.64
     assert result["hrs_saved"] == 1.0
-    assert result["value"] == 500.0
+    assert result["value"] == round(1.0 * user_rate, 2)
     assert tracker.session_state.roi_data["total_hrs_saved"] == 1.0
-    assert tracker.session_state.roi_data["total_value"] == 500.0
+    assert tracker.session_state.roi_data["total_value"] == round(1.0 * user_rate, 2)
     assert tracker.session_state.roi_data["today"]["actions_count"] == 1
     assert tracker.session_state.roi_data["actions"][-1]["action"] == "nl2sql_query"
 
@@ -69,8 +71,9 @@ def test_track_action_allows_custom_hours_override():
 
     result = tracker.track_action("exec", "generate_exec_report", custom_hrs_saved=3.25)
 
+    user_rate = round(20000 / (22 * 8), 2)  # 113.64
     assert result["hrs_saved"] == 3.25
-    assert result["value"] == 1625.0
+    assert result["value"] == round(3.25 * user_rate, 2)
 
 
 def test_track_risk_avoided_adds_value_and_category():
@@ -103,7 +106,8 @@ def test_calculate_analyst_cost_equivalent_returns_expected_fields():
 
     assert result["workdays"] == 5.5
     assert result["months_analyst"] == 0.25
-    assert abs(result["roi_mxn"] - 7500.0) < 0.01
+    analyst_rate = round(25000 / (22 * 8), 2)  # 142.05
+    assert result["monthly_savings"] == pytest.approx(44 * analyst_rate, rel=1e-6)
     assert result["analyst_salary"] == 30000
     assert "0.25" in result["justification"]
 
@@ -116,10 +120,13 @@ def test_get_summary_aggregates_tracked_actions():
 
     summary = tracker.get_summary()
 
+    user_rate = round(20000 / (22 * 8), 2)  # 113.64
+    analyst_rate = round(25000 / (22 * 8), 2)  # 142.05
+    total_value = round(1.0 * user_rate, 2)
     assert summary["today"]["hrs"] == 1.0
     assert summary["total"]["actions"] == 2
-    assert summary["total"]["value"] == 500.0
-    assert abs(summary["today"]["analyst_equiv"]["roi_mxn"] - 142.05) < 0.1
+    assert summary["total"]["value"] == total_value
+    assert summary["today"]["analyst_equiv"]["monthly_savings"] == round(1.0 * analyst_rate, 2)
 
 
 def test_get_recent_actions_limits_to_last_items():
@@ -161,6 +168,7 @@ def test_quick_track_uses_helper_and_returns_tracking_result():
 
     result = quick_track(session_state, "assistant", "nl2sql_export", quantity=2)
 
+    user_rate = round(20000 / (22 * 8), 2)  # 113.64
     assert result["hrs_saved"] == 0.3
-    assert result["value"] == 150.0
+    assert result["value"] == pytest.approx(0.3 * user_rate, rel=1e-6)
     assert session_state.roi_tracker.session_state is session_state

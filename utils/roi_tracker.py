@@ -52,22 +52,23 @@ class ROITracker:
     }
     
     # Costos por hora según rol (default)
-    DEFAULT_HOURLY_RATES = {
-        "admin": 5000,      # CEO/Director
-        "cfo": 3000,        # CFO
-        "manager": 1500,    # Gerente
-        "accountant": 500,  # Contador
-        "analyst": 300,     # Analista
-        "user": 500,        # Usuario estándar
-    }
-    
     # Constantes para cálculo de días laborales
     HOURS_PER_WORKDAY = 8
     WORKDAYS_PER_MONTH = 22
     WORKDAYS_PER_YEAR = 260
-    
+
     # Sueldo de referencia de un analista (MXN mensual)
     ANALYST_MONTHLY_SALARY = 25000  # $25k MXN/mes típico
+
+    # Costo por hora = sueldo_mensual / (22 días × 8 hrs) = sueldo / 176
+    DEFAULT_HOURLY_RATES = {
+        "admin":       round(120000 / (22 * 8), 2),  # $681.82/hr
+        "cfo":         round(80000  / (22 * 8), 2),  # $454.55/hr
+        "manager":     round(45000  / (22 * 8), 2),  # $255.68/hr
+        "accountant":  round(20000  / (22 * 8), 2),  # $113.64/hr
+        "analyst":     round(25000  / (22 * 8), 2),  # $142.05/hr
+        "user":        round(20000  / (22 * 8), 2),  # $113.64/hr
+    }
     
     def __init__(self, session_state):
         """
@@ -121,7 +122,7 @@ class ROITracker:
             role = user.role.value if hasattr(user.role, 'value') else str(user.role)
             return self.DEFAULT_HOURLY_RATES.get(role.lower(), 500)
         
-        return 500  # Default
+        return self.DEFAULT_HOURLY_RATES.get("user")  # Default: usuario estándar
     
     def track_action(
         self, 
@@ -243,17 +244,6 @@ class ROITracker:
         """Configura el sueldo de referencia del analista"""
         self.session_state["analyst_monthly_salary"] = max(1000, salary)  # Mínimo $1k
     
-    def get_hourly_rate(self) -> float:
-        """Calcula la tasa horaria dinámica basada en sueldo mensual y días laborables de México
-        
-        Fórmula:
-        - Sueldo mensual / (22 días laborables * 8 horas/día)
-        - Ejemplo: $25,000 / 176 horas = $142.05/hora
-        """
-        monthly_salary = self.get_analyst_salary()
-        total_hours_per_month = self.WORKDAYS_PER_MONTH * self.HOURS_PER_WORKDAY
-        return monthly_salary / total_hours_per_month
-    
     def hrs_to_workdays(self, hours: float) -> float:
         """Convierte horas a días laborales (8 hrs = 1 día)"""
         return hours / self.HOURS_PER_WORKDAY
@@ -268,25 +258,23 @@ class ROITracker:
         Returns:
             Dict con equivalencias: {
                 'workdays': días laborales,
-                'roi_mxn': ahorro en MXN calculado sobre base mensual,
-                'hourly_rate': tasa horaria dinámica,
                 'months_analyst': meses de analista equivalentes,
+                'monthly_savings': ahorro mensual si fuera recurrente
             }
         """
         workdays = self.hrs_to_workdays(hours)
-        hourly_rate = self.get_hourly_rate()
-        roi_mxn = hours * hourly_rate
         # Un analista trabaja ~22 días/mes
         months_analyst = workdays / self.WORKDAYS_PER_MONTH
+        # Si esto se repitiera cada mes
+        monthly_savings = (hours * self.DEFAULT_HOURLY_RATES['analyst']) 
         analyst_salary = self.get_analyst_salary()
         
         return {
             'workdays': workdays,
-            'roi_mxn': roi_mxn,
-            'hourly_rate': hourly_rate,
             'months_analyst': months_analyst,
+            'monthly_savings': monthly_savings,
             'analyst_salary': analyst_salary,
-            'justification': f"${roi_mxn:,.0f} MXN ({hourly_rate:.2f}/hr × {hours:.1f} hrs | {months_analyst:.2f} meses de analista)"
+            'justification': f"Equivalente a {months_analyst:.2f} mes(es) de un analista a ${analyst_salary:,}/mes"
         }
     
     def get_summary(self) -> Dict:

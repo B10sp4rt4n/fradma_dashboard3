@@ -21,7 +21,7 @@ from utils.logger import configurar_logger
 from utils.formatos import now_mx
 from utils.ai_helper import validar_api_key, generar_analisis_consolidado_ia
 from utils.filters_helper import obtener_lineas_filtradas, generar_contexto_filtros
-from utils.cxc_helper import calcular_metricas_basicas, calcular_score_salud, clasificar_score_salud, calcular_dias_overdue
+from utils.cxc_helper import calcular_metricas_basicas, calcular_score_salud, clasificar_score_salud, calcular_dias_overdue, calcular_cxc_aging
 from utils.data_normalizer import normalizar_datos_cxc, normalizar_columna_fecha, detectar_columnas_cxc
 from utils.constantes import DIAS_CREDITO_ESTANDAR
 from utils.auth import get_current_user
@@ -295,28 +295,21 @@ def _calcular_metricas_cxc(df_cxc):
         return None
     
     try:
-        # IMPORTANTE: Usar preparar_datos_cxc para excluir registros pagados
-        # calcular_metricas_basicas espera recibir SOLO registros no pagados (df_np)
-        from utils.cxc_helper import preparar_datos_cxc
-        _, df_cxc_no_pagados, mask_pagado = preparar_datos_cxc(df_cxc)
-        
-        # Ahora calcular métricas sobre datos no pagados
-        metricas = calcular_metricas_basicas(df_cxc_no_pagados)
-        score = calcular_score_salud(
-            metricas['pct_vigente'], 
-            metricas['pct_critica'],
-            metricas.get('pct_vencida_0_30', 0),
-            metricas.get('pct_vencida_31_60', 0),
-            metricas.get('pct_vencida_61_90', 0),
-            metricas.get('pct_alto_riesgo', 0)
-        )
-        status, _ = clasificar_score_salud(score)
+        resultado = calcular_cxc_aging(df_cxc)
         
         return {
-            'metricas': metricas,
-            'score': score,
-            'status': status,
-            'df_np': df_cxc_no_pagados,
+            'metricas': resultado,
+            'score': resultado['score_salud'],
+            'status': resultado['clasificacion_salud'],
+            'df_np': resultado['df_np'],
+            'diagnostico': {
+                'fecha_corte_usada': resultado.get('fecha_corte_usada'),
+                'columna_fecha_usada': resultado.get('columna_fecha_usada'),
+                'columnas_monto_detectadas': resultado.get('columnas_monto_detectadas', []),
+                'filas_consideradas': resultado.get('filas_consideradas', 0),
+                'monto_validado_total': resultado.get('monto_validado_total', 0),
+                'diferencia_total_buckets': resultado.get('diferencia_total_buckets', 0),
+            },
         }
     except Exception as e:
         logger.error(f"Error calculando métricas CxC: {e}")

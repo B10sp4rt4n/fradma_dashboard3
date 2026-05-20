@@ -10,6 +10,8 @@ from datetime import timedelta
 from utils.cxc_helper import (
     calcular_dias_overdue,
     preparar_datos_cxc,
+    preparar_metricas_cxc,
+    calcular_cxc_aging,
     calcular_metricas_basicas,
     calcular_score_salud,
     clasificar_score_salud,
@@ -313,6 +315,62 @@ class TestPrepararDatosCxC:
         
         assert 'dias_vencido' in df_prep.columns
         assert 'dias_vencido' in df_np.columns
+
+
+class TestCalcularCxCAgingUnificado:
+    """Tests del helper unificado para aging y score CxC."""
+
+    def test_usa_fecha_vencimiento_y_excluye_pagados(self):
+        fecha_corte = pd.Timestamp("2025-05-01")
+        df = pd.DataFrame({
+            'fecha_vencimiento': [
+                '2025-05-05',  # vigente
+                '2025-04-20',  # 0-30
+                '2025-03-10',  # 31-60
+                '2025-02-01',  # 61-90
+                '2024-12-01',  # >90 pero pagado
+            ],
+            'fecha': [
+                '2024-01-01',
+                '2024-01-01',
+                '2024-01-01',
+                '2024-01-01',
+                '2024-01-01',
+            ],
+            'saldo_adeudado': [100, 50, 150, 200, 25],
+            'estatus': ['Pendiente', 'Pendiente', 'Pendiente', 'Pendiente', 'Pagado'],
+        })
+
+        result = preparar_metricas_cxc(df, fecha_corte=fecha_corte)
+
+        assert result['columna_fecha_usada'] == 'fecha_vencimiento'
+        assert result['fecha_corte_usada'] == fecha_corte
+        assert result['total_adeudado'] == 500
+        assert result['vigente_monto'] == 100
+        assert result['bucket_0_30'] == 50
+        assert result['bucket_31_60'] == 150
+        assert result['bucket_61_90'] == 200
+        assert result['bucket_mas_90'] == 0
+        assert result['critica_mas_30'] == 350
+        assert result['diferencia_total_buckets'] == 0
+        assert result['filas_consideradas'] == 4
+        assert result['score_salud'] == pytest.approx(47.0, abs=0.01)
+
+    def test_calcular_cxc_aging_retorna_df_y_mapa_estandar(self):
+        df = pd.DataFrame({
+            'fecha_vencimiento': ['2025-05-01'],
+            'saldo_adeudado': [250],
+            'estatus': ['Pendiente'],
+        })
+
+        result = calcular_cxc_aging(df, fecha_corte=pd.Timestamp('2025-05-01'))
+
+        assert 'df_prep' in result
+        assert 'df_np' in result
+        assert 'mask_pagado' in result
+        assert result['total_adeudado'] == 250
+        assert result['vigente_monto'] == 250
+        assert result['bucket_0_30'] == 0
 
 
 class TestCalcularMetricasBasicas:

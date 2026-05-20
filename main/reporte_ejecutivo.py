@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from utils.formatos import formato_moneda, formato_porcentaje, formato_compacto, now_mx
 from utils.logger import configurar_logger
 from utils.ai_helper_premium import generar_insights_ejecutivo_consolidado
-from utils.cxc_helper import calcular_score_salud
+from utils.cxc_helper import calcular_cxc_aging
 from utils.roi_tracker import init_roi_tracker
 
 # Configurar logger para este módulo
@@ -303,62 +303,29 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
     else:
         ventas_mes_actual = total_ventas
 
-    # CxC: normalizar y calcular métricas (compartido entre General y CxC tab)
-    df_cxc_local = df_cxc.copy()
-    col_estatus = next((c for c in ["estatus", "status", "pagado"] if c in df_cxc_local.columns), None)
-    mask_pagado    = df_cxc_local[col_estatus].astype(str).str.strip().str.lower().str.contains("pagado") if col_estatus else pd.Series(False, index=df_cxc_local.index)
-    mask_no_pagado = ~mask_pagado
-    # Guardar máscaras antes de reasignar df_cxc (evitar dependencia de índice posterior)
-    _mask_no_pagado_idx = mask_no_pagado.values
-
-    if "saldo_adeudado" not in df_cxc_local.columns:
-        for candidato in ["saldo_usd", "saldo", "adeudo", "importe", "monto", "total"]:
-            if candidato in df_cxc_local.columns:
-                df_cxc_local = df_cxc_local.rename(columns={candidato: "saldo_adeudado"})
-                break
-    saldo_txt = df_cxc_local.get("saldo_adeudado", pd.Series(0, index=df_cxc_local.index)).astype(str)
-    saldo_txt = saldo_txt.str.replace(",", "", regex=False).str.replace("$", "", regex=False)
-    df_cxc_local["saldo_adeudado"] = pd.to_numeric(saldo_txt, errors="coerce").fillna(0)
-    total_adeudado = df_cxc_local.loc[mask_no_pagado, "saldo_adeudado"].sum()
-
-    # Días vencidos
-    col_dias = None
-    if "dias_vencido" in df_cxc_local.columns:
-        dias_overdue = pd.to_numeric(df_cxc_local["dias_vencido"].astype(str).str.replace(",", "", regex=False), errors="coerce").fillna(0)
-    elif "dias_restante" in df_cxc_local.columns:
-        dias_overdue = -pd.to_numeric(df_cxc_local["dias_restante"].astype(str).str.replace(",", "", regex=False), errors="coerce").fillna(0)
-    else:
-        col_venc = next((c for c in ["vencimient", "vencimiento", "fecha_vencimiento"] if c in df_cxc_local.columns), None)
-        if col_venc:
-            venc = pd.to_datetime(df_cxc_local[col_venc], errors="coerce")
-        else:
-            col_fp = next((c for c in ["fecha_de_pago", "fecha_pago", "fecha_tentativa_de_pag"] if c in df_cxc_local.columns), None)
-            col_cr = next((c for c in ["dias_de_credito", "dias_de_credit", "dias_credito"] if c in df_cxc_local.columns), None)
-            fecha_base = pd.to_datetime(df_cxc_local[col_fp], errors="coerce") if col_fp else pd.NaT
-            dias_credito = pd.to_numeric(df_cxc_local[col_cr].astype(str).str.replace(",", "", regex=False), errors="coerce").fillna(0).astype(int) if col_cr else pd.Series(0, index=df_cxc_local.index)
-            venc = fecha_base + pd.to_timedelta(dias_credito, unit="D")
-        dias_overdue = (pd.Timestamp.today().normalize() - venc).apply(lambda x: x.days if pd.notna(x) else 0)
-        dias_overdue = pd.to_numeric(dias_overdue, errors="coerce").fillna(0)
-
-    df_cxc_local["dias_overdue"] = days_ov = pd.to_numeric(dias_overdue, errors="coerce").fillna(0)
-    col_dias = "dias_overdue"
+    # CxC: normalizar y calcular métricas con helper unificado
+    cxc = calcular_cxc_aging(df_cxc)
+    df_cxc_local = cxc["df_prep"]
+    df_cxc_np = cxc["df_np"]
+    mask_pagado = cxc["mask_pagado"]
+    total_adeudado = cxc["total_adeudado"]
+    vigente = cxc["vigente_monto"]
+    vencida_0_30 = cxc["bucket_0_30"]
+    vencida_31_60 = cxc["bucket_31_60"]
+    vencida_61_90 = cxc["bucket_61_90"]
+    alto_riesgo = cxc["bucket_mas_90"]
+    critica = cxc["critica_mas_30"]
+    pct_vigente = cxc["vigente_pct"]
+    pct_vencida_0_30 = cxc["pct_vencida_0_30"]
+    pct_critica = cxc["pct_critica"]
+    pct_vencida = cxc["pct_vencida"]
+    pct_alto_riesgo = cxc["pct_alto_riesgo"]
+    days_ov = df_cxc_local["dias_overdue"] if "dias_overdue" in df_cxc_local.columns else pd.Series(dtype="float64")
+    col_fecha_cxc = cxc.get("columna_fecha_usada")
+    fecha_corte_cxc = cxc.get("fecha_corte_usada")
+    score_salud_cxc = cxc["score_salud"]
+    clasificacion_salud_cxc = cxc["clasificacion_salud"]
     df_cxc = df_cxc_local
-    # Recalcular máscara sobre el df ya enriquecido con dias_overdue
-    mask_no_pagado = pd.Series(_mask_no_pagado_idx, index=df_cxc.index)
-
-    vigente      = df_cxc.loc[mask_no_pagado & (days_ov <= 0), "saldo_adeudado"].sum()
-    vencida_0_30 = df_cxc.loc[mask_no_pagado & (days_ov > 0)  & (days_ov <= 30),  "saldo_adeudado"].sum()
-    vencida_31_60= df_cxc.loc[mask_no_pagado & (days_ov > 30) & (days_ov <= 60),  "saldo_adeudado"].sum()
-    vencida_61_90= df_cxc.loc[mask_no_pagado & (days_ov > 60) & (days_ov <= 90),  "saldo_adeudado"].sum()
-    critica      = df_cxc.loc[mask_no_pagado & (days_ov > 30), "saldo_adeudado"].sum()
-    alto_riesgo  = df_cxc.loc[mask_no_pagado & (days_ov > 90), "saldo_adeudado"].sum()
-
-    pct_vigente        = (vigente      / total_adeudado * 100) if total_adeudado else 100
-    pct_vencida_0_30   = (vencida_0_30 / total_adeudado * 100) if total_adeudado else 0
-    pct_critica        = (critica      / total_adeudado * 100) if total_adeudado else 0
-    pct_vencida_total  = pct_vencida_0_30 + pct_critica
-    pct_vencida        = pct_vencida_total
-    pct_alto_riesgo    = (alto_riesgo  / total_adeudado * 100) if total_adeudado else 0
     # DSO estándar: (Cartera / Ventas_anualizadas) × 365
     # Usa ventas de los últimos 12 meses para anualizar; si hay menos historial usa lo disponible
     if total_adeudado > 0 and total_ventas > 0 and "fecha" in df_v.columns and not df_v.empty:
@@ -377,10 +344,6 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
         dso = 0
     eficiencia_ops     = (total_ventas / total_adeudado) if total_adeudado else 0
 
-    score_salud_cxc = calcular_score_salud(
-        pct_vigente, pct_critica,
-        pct_vencida_0_30, 0, 0, pct_alto_riesgo
-    )
     # Columna cliente normalizada (compartida entre tabs)
     _col_cliente_cxc = next((c for c in ["cliente", "receptor_nombre", "razon_social"] if c in df_cxc.columns), None)
     _col_cliente_v   = next((c for c in ["cliente", "receptor_nombre", "razon_social"] if c in df_v.columns), None)
@@ -427,8 +390,8 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
             alertas.append(("🔴 CRÍTICO", f"Alto riesgo de incobrabilidad: {formato_moneda(alto_riesgo)} (>{pct_alto_riesgo:.1f}%)", "Evaluar provisión e iniciar acciones legales"))
         if variacion_ventas < -10:
             alertas.append(("🟠 ALERTA",  f"Caída en ventas: {variacion_ventas:.1f}% vs mes anterior", "Revisar estrategia comercial"))
-        if _col_cliente_cxc and total_adeudado > 0:
-            top_deudor_pct = (df_cxc.groupby(_col_cliente_cxc)["saldo_adeudado"].sum().max() / total_adeudado * 100)
+        if _col_cliente_cxc and total_adeudado > 0 and not df_cxc_np.empty:
+            top_deudor_pct = (df_cxc_np.groupby(_col_cliente_cxc)["saldo_adeudado"].sum().max() / total_adeudado * 100)
             if top_deudor_pct > 30:
                 alertas.append(("🟡 PRECAUCIÓN", f"Concentración de cartera: un cliente representa {top_deudor_pct:.1f}%", "Diversificar cartera"))
 
@@ -467,7 +430,7 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
                 with st.spinner("🔄 Generando diagnóstico integral..."):
                     try:
                         top_linea_ventas = df_v.groupby("linea_de_negocio")["valor_mxn"].sum().idxmax() if "linea_de_negocio" in df_v.columns and not df_v.empty else "N/A"
-                        casos_urgentes   = int(df_cxc[df_cxc["dias_overdue"] > 90].shape[0]) if "dias_overdue" in df_cxc.columns else 0
+                        casos_urgentes   = int(df_cxc_np[df_cxc_np["dias_overdue"] > 90].shape[0]) if "dias_overdue" in df_cxc_np.columns else 0
                         insights = generar_insights_ejecutivo_consolidado(
                             total_ventas_periodo=total_ventas,
                             crecimiento_ventas_pct=variacion_ventas,
@@ -638,8 +601,21 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
 
         with col_plan:
             st.markdown("#### 📆 Plan de Cobro por Segmento")
-            cobrable_semana = vigente * 0.3   # estimado conservador
-            cobrable_mes    = vencida_0_30
+            if col_fecha_cxc and col_fecha_cxc in df_cxc.columns and fecha_corte_cxc is not None:
+                fecha_base = pd.to_datetime(df_cxc[col_fecha_cxc], errors="coerce")
+                dias_para_vencer = (fecha_base - fecha_corte_cxc).dt.days
+                mask_no_pagado = ~mask_pagado
+                cobrable_semana = df_cxc.loc[
+                    mask_no_pagado & (dias_para_vencer >= 0) & (dias_para_vencer <= 7),
+                    "saldo_adeudado",
+                ].sum()
+                cobrable_mes = df_cxc.loc[
+                    mask_no_pagado & (dias_para_vencer > 7) & (dias_para_vencer <= 30),
+                    "saldo_adeudado",
+                ].sum()
+            else:
+                cobrable_semana = vigente * 0.3   # estimado conservador
+                cobrable_mes    = vencida_0_30
             con_gestion     = max(0, float(critica) - float(alto_riesgo))
             provisionable   = alto_riesgo
             plan_df = pd.DataFrame({
