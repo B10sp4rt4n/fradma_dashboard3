@@ -21,7 +21,8 @@ from utils.logger import configurar_logger
 from utils.formatos import now_mx
 from utils.ai_helper import validar_api_key, generar_analisis_consolidado_ia
 from utils.filters_helper import obtener_lineas_filtradas, generar_contexto_filtros
-from utils.cxc_helper import calcular_metricas_basicas, calcular_score_salud, clasificar_score_salud, calcular_dias_overdue, calcular_cxc_aging
+from utils.cxc_helper import calcular_metricas_basicas, calcular_score_salud, clasificar_score_salud, calcular_dias_overdue
+from utils.cxc_aging_engine import prepare_cxc_metrics  # fuente única de verdad CxC
 from utils.data_normalizer import normalizar_datos_cxc, normalizar_columna_fecha, detectar_columnas_cxc
 from utils.constantes import DIAS_CREDITO_ESTANDAR
 from utils.auth import get_current_user
@@ -295,20 +296,24 @@ def _calcular_metricas_cxc(df_cxc):
         return None
     
     try:
-        resultado = calcular_cxc_aging(df_cxc)
-        
+        resultado = prepare_cxc_metrics(df_cxc)  # fuente única de verdad
+
         return {
             'metricas': resultado,
             'score': resultado['score_salud'],
             'status': resultado['clasificacion_salud'],
             'df_np': resultado['df_np'],
             'diagnostico': {
-                'fecha_corte_usada': resultado.get('fecha_corte_usada'),
-                'columna_fecha_usada': resultado.get('columna_fecha_usada'),
-                'columnas_monto_detectadas': resultado.get('columnas_monto_detectadas', []),
-                'filas_consideradas': resultado.get('filas_consideradas', 0),
-                'monto_validado_total': resultado.get('monto_validado_total', 0),
-                'diferencia_total_buckets': resultado.get('diferencia_total_buckets', 0),
+                'fecha_corte_usada':         resultado.get('fecha_corte_ts'),
+                'columna_fecha_usada':       resultado.get('columna_fecha_usada'),
+                'columna_monto_usada':       resultado.get('columna_monto_usada'),
+                'filas_consideradas':        resultado.get('filas_consideradas', 0),
+                'filas_descartadas':         resultado.get('filas_descartadas', 0),
+                'monto_validado_total':      resultado.get('monto_validado_total', 0),
+                'suma_buckets':              resultado.get('suma_buckets', 0),
+                'diferencia_total_buckets':  resultado.get('diferencia_total_vs_buckets', 0),
+                'diagnostico_lista':         resultado.get('diagnostico', []),
+                'fuente_calculo':            resultado.get('fuente_calculo'),
             },
         }
     except Exception as e:

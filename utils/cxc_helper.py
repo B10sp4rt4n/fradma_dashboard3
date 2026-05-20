@@ -289,15 +289,18 @@ def calcular_cxc_aging(df: pd.DataFrame, fecha_corte=None, config: Optional[Dict
         col_estatus = detectar_columna(df_prep, COLUMNAS_ESTATUS)
     mask_pagado = excluir_pagados(df_prep, col_estatus)
 
-    col_fecha = _detectar_columna_fecha_aging(df_prep, config)
-    if col_fecha:
-        fecha_base = _parsear_fechas(df_prep[col_fecha])
-        if col_fecha in ('fecha_vencimiento', 'vencimiento', 'fecha_venc', 'vencimient'):
-            dias_overdue = (fecha_corte_usada - fecha_base).dt.days
-        else:
-            dias_overdue = calcular_dias_overdue(df_prep, fecha_corte=fecha_corte_usada, config=config)
-    else:
-        dias_overdue = calcular_dias_overdue(df_prep, fecha_corte=fecha_corte_usada, config=config)
+    # fix/cxc-aging-single-source-of-truth:
+    # Siempre usar calcular_dias_overdue para respetar la cadena de prioridad correcta:
+    #   1. dias_vencido directo (incluyendo valores pre-ajustados por app.py para
+    #      hojas VIGENTES/VENCIDAS — negativos=vigente, positivos=vencido)
+    #   2. fecha_vencimiento / vencimiento  (fecha_corte - fecha_venc).days
+    #   3. fecha_emision + dias_credito     (fecha_venc calculada)
+    #   4. fecha sola + 30 días estándar    (estimado)
+    # ANTES: el shortcut 'if col_fecha in vencimiento' ignoraba dias_vencido
+    # pre-ajustado, causando que Reporte Ejecutivo mostrara Score 100 espurio
+    # cuando la columna vencimiento existía pero los días ya estaban corregidos.
+    dias_overdue = calcular_dias_overdue(df_prep, fecha_corte=fecha_corte_usada, config=config)
+    col_fecha = _detectar_columna_fecha_aging(df_prep, config)  # solo para metadata
 
     df_prep['dias_overdue'] = pd.to_numeric(dias_overdue, errors='coerce').fillna(0)
     if 'dias_vencido' not in df_prep.columns:

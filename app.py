@@ -2139,6 +2139,77 @@ if "df" in st.session_state and _filtros_vista:
     st.session_state["df"] = _df_filt
 
 # =====================================================================
+# HELPER: ensamblado de df_cxc desde Excel (fuente única de verdad)
+# Reutilizado por Reporte Ejecutivo y Reporte Consolidado para garantizar
+# que ambas vistas reciban exactamente el mismo DataFrame de CxC.
+# =====================================================================
+def _ensamblar_cxc_de_excel(xls, hojas):
+    """
+    Construye df_cxc desde un ExcelFile ya cargado.
+
+    Prioridad:
+      1. Hojas 'CXC VIGENTES' + 'CXC VENCIDAS'
+      2. Cualquier hoja con nombre que contenga 'cxc', 'cuenta' o 'cobrar'
+      3. DataFrame vacío si no hay hojas CxC
+
+    Notas de pre-ajuste de dias_vencido:
+      - VIGENTES: dias_vencido se fuerza a ≤ 0 para que calcular_dias_overdue
+        los clasifique como vigentes aun cuando exista columna de vencimiento.
+      - VENCIDAS: dias_vencido se fuerza a ≥ 1.
+    """
+    def _norm_cols(df):
+        nuevas = []
+        for col in df.columns:
+            col_str = str(col).lower().strip().replace(" ", "_")
+            col_str = unidecode(col_str)
+            nuevas.append(col_str)
+        df.columns = nuevas
+        return df
+
+    def _ajustar_vigentes(df):
+        for c in ('dias_vencido', 'dias_vencidos'):
+            if c in df.columns:
+                df[c] = -pd.to_numeric(df[c], errors='coerce').abs()
+                break
+        return df
+
+    def _ajustar_vencidas(df):
+        for c in ('dias_vencido', 'dias_vencidos'):
+            if c in df.columns:
+                _dv = pd.to_numeric(df[c], errors='coerce')
+                df[c] = _dv.where(_dv > 0, 1)
+                break
+        return df
+
+    if "CXC VIGENTES" in hojas and "CXC VENCIDAS" in hojas:
+        df_v = _ajustar_vigentes(_norm_cols(pd.read_excel(xls, sheet_name='CXC VIGENTES')))
+        df_vc = _ajustar_vencidas(_norm_cols(pd.read_excel(xls, sheet_name='CXC VENCIDAS')))
+        return pd.concat([df_v, df_vc], ignore_index=True, sort=False)
+
+    # Búsqueda de hojas alternativas CxC (VG, VCD, etc.)
+    _CXC_KW = ("cxc", "cuenta", "cobrar")
+    _VIG_KW  = ("vg", "vigente", "vigen")
+    _VEN_KW  = ("vcd", "vencid")
+
+    hojas_cxc = [h for h in hojas if any(k in h.lower() for k in _CXC_KW)]
+    if hojas_cxc:
+        _dfs_vig, _dfs_vec, _dfs_gen = [], [], []
+        for h in hojas_cxc:
+            _df = _norm_cols(pd.read_excel(xls, sheet_name=h))
+            hn = h.upper()
+            if any(k in hn for k in [s.upper() for s in _VIG_KW]):
+                _dfs_vig.append(_ajustar_vigentes(_df))
+            elif any(k in hn for k in [s.upper() for s in _VEN_KW]):
+                _dfs_vec.append(_ajustar_vencidas(_df))
+            else:
+                _dfs_gen.append(_df)
+        todos = _dfs_vig + _dfs_vec + _dfs_gen
+        return pd.concat(todos, ignore_index=True, sort=False) if todos else pd.DataFrame()
+
+    return pd.DataFrame(columns=['cliente', 'saldo_adeudado', 'dias_vencido'])
+
+
+# =====================================================================
 # RENDERIZADO DE VISTAS
 # =====================================================================
 
@@ -2154,51 +2225,10 @@ if menu == "🎯 Reporte Ejecutivo":
                     xls = pd.ExcelFile(archivo_excel) if archivo_excel else None
                     hojas = xls.sheet_names if xls else []
 
-                    # Prioridad 1: Usar hojas específicas de CxC (igual que KPI CxC)
-                    if "CXC VIGENTES" in hojas and "CXC VENCIDAS" in hojas:
-                        df_vigentes = pd.read_excel(xls, sheet_name='CXC VIGENTES')
-                        df_vencidas = pd.read_excel(xls, sheet_name='CXC VENCIDAS')
-                        
-                        # Normalizar columnas para ambas hojas
-                        for df_temp in [df_vigentes, df_vencidas]:
-                            nuevas_columnas = []
-                            for col in df_temp.columns:
-                                col_str = str(col).lower().strip().replace(" ", "_")
-                                col_str = unidecode(col_str)
-                                nuevas_columnas.append(col_str)
-                            df_temp.columns = nuevas_columnas
-                        
-                        # Registros de CXC VIGENTES son por definición vigentes:
-                        # negar dias_vencido para que queden negativos (= días restantes)
-                        for col_dias in ['dias_vencido', 'dias_vencidos']:
-                            if col_dias in df_vigentes.columns:
-                                df_vigentes[col_dias] = -pd.to_numeric(df_vigentes[col_dias], errors='coerce').abs()
-                                break
-                        
-                        # Combinar ambas hojas
-                        df_cxc = pd.concat([df_vigentes, df_vencidas], ignore_index=True, sort=False)
-                        
-                    # Prioridad 2: Buscar hoja genérica de CxC
-                    else:
-                        hoja_cxc = None
-                        for nombre_hoja in hojas:
-                            if "cxc" in nombre_hoja.lower() or "cuenta" in nombre_hoja.lower() or "cobrar" in nombre_hoja.lower():
-                                hoja_cxc = nombre_hoja
-                                break
-                        
-                        if hoja_cxc:
-                            df_cxc_raw = pd.read_excel(xls, sheet_name=hoja_cxc)
-                            
-                            # Normalizar columnas
-                            df_cxc = df_cxc_raw.copy()
-                            nuevas_columnas = []
-                            for col in df_cxc.columns:
-                                col_str = str(col).lower().strip().replace(" ", "_")
-                                col_str = unidecode(col_str)
-                                nuevas_columnas.append(col_str)
-                            df_cxc.columns = nuevas_columnas
-                        else:
-                            df_cxc = pd.DataFrame(columns=['cliente', 'saldo_adeudado', 'dias_vencido'])
+                    # Ensamble de CxC usando helper centralizado (fuente única)
+                    df_cxc = _ensamblar_cxc_de_excel(xls, hojas) if xls else pd.DataFrame(
+                        columns=['cliente', 'saldo_adeudado', 'dias_vencido']
+                    )
 
                     # Pasar parámetros de IA premium al módulo
                     ia_habilitada = st.session_state.get("ia_premium_activada", False)
@@ -2309,66 +2339,11 @@ elif menu == "📊 Reporte Consolidado":
                 # Obtener datos de ventas (igual que Reporte Ejecutivo)
                 df_ventas = st.session_state["df"]
                 
-                # Obtener datos de CxC (misma lógica que Reporte Ejecutivo)
+                # Obtener datos de CxC usando helper centralizado (fuente única)
                 archivo_excel = st.session_state["archivo_excel"]
                 xls = pd.ExcelFile(archivo_excel)
                 hojas = xls.sheet_names
-                
-                # Prioridad 1: Usar hojas específicas de CxC (igual que KPI CxC)
-                if "CXC VIGENTES" in hojas and "CXC VENCIDAS" in hojas:
-                    df_vigentes = pd.read_excel(xls, sheet_name='CXC VIGENTES')
-                    df_vencidas = pd.read_excel(xls, sheet_name='CXC VENCIDAS')
-                    
-                    # Normalizar columnas para ambas hojas
-                    for df_temp in [df_vigentes, df_vencidas]:
-                        nuevas_columnas = []
-                        for col in df_temp.columns:
-                            col_str = str(col).lower().strip().replace(" ", "_")
-                            col_str = unidecode(col_str)
-                            nuevas_columnas.append(col_str)
-                        df_temp.columns = nuevas_columnas
-                    
-                    # Registros de CXC VIGENTES son por definición vigentes:
-                    # negar dias_vencido para que queden negativos (= días restantes)
-                    for col_dias in ['dias_vencido', 'dias_vencidos']:
-                        if col_dias in df_vigentes.columns:
-                            df_vigentes[col_dias] = -pd.to_numeric(df_vigentes[col_dias], errors='coerce').abs()
-                            break
-                    
-                    # Combinar ambas hojas
-                    df_cxc = pd.concat([df_vigentes, df_vencidas], ignore_index=True, sort=False)
-                    
-                # Prioridad 2: Combinar todas las hojas CxC respetando VG=vigente / VCD=vencida
-                else:
-                    _hojas_cxc_rc = [
-                        h for h in hojas
-                        if "cxc" in h.lower() or "cuenta" in h.lower() or "cobrar" in h.lower()
-                    ]
-                    if _hojas_cxc_rc:
-                        _dfs_rc = []
-                        for _h in _hojas_cxc_rc:
-                            _df_h = normalizar_columnas(pd.read_excel(xls, sheet_name=_h))
-                            _n = _h.upper()
-                            if any(k in _n for k in ("VG", "VIGENTE")):
-                                # Forzar dias_vencido negativo para que preparar_datos_cxc lo marque como vigente
-                                for _c in ("dias_vencido", "dias_vencidos"):
-                                    if _c in _df_h.columns:
-                                        _df_h[_c] = -pd.to_numeric(_df_h[_c], errors="coerce").abs()
-                                        break
-                            elif any(k in _n for k in ("VCD", "VENCID")):
-                                # Forzar dias_vencido positivo si está vacío
-                                for _c in ("dias_vencido", "dias_vencidos"):
-                                    if _c in _df_h.columns:
-                                        _vals = pd.to_numeric(_df_h[_c], errors="coerce")
-                                        _df_h[_c] = _vals.where(_vals.notna() & (_vals > 0), 1)
-                                        break
-                                    else:
-                                        _df_h["dias_vencido"] = 1
-                                        break
-                            _dfs_rc.append(_df_h)
-                        df_cxc = pd.concat(_dfs_rc, ignore_index=True, sort=False) if _dfs_rc else pd.DataFrame()
-                    else:
-                        df_cxc = pd.DataFrame()
+                df_cxc = _ensamblar_cxc_de_excel(xls, hojas)
                 
                 # Pasar parámetros de IA premium al módulo
                 ia_habilitada = st.session_state.get("ia_premium_activada", False)
