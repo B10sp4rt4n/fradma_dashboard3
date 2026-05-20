@@ -1,0 +1,30 @@
+{
+  "schema_id": "data_assistant_flexible_v1",
+  "nombre": "Asistente de Datos Flexible",
+  "descripcion": "Esquema flexible para el asistente de datos. Acepta cualquier DataFrame y realiza deteccion automatica de campos.",
+  "fuente": "dataframe_flexible",
+  "campos_obligatorios": [],
+  "campos_recomendados": ["fecha", "monto", "cliente"],
+  "campos_opcionales": [
+    "vendedor",
+    "linea_de_negocio",
+    "producto",
+    "region",
+    "canal",
+    "saldo_adeudado",
+    "dias_vencido",
+    "factura",
+    "estatus",
+    "uuid",
+    "receptor_rfc"
+  ],
+  "salidas_disponibles": [
+    "deteccion_automatica_modulos",
+    "score_completitud",
+    "consulta_natural_language",
+    "resumen_dataframe"
+  ],
+  "tipo_archivo_soportado": ["csv", "xlsx", "json", "dataframe"],
+  "notas": "Este esquema no tiene campos obligatorios. El asistente detecta los campos disponibles y activa los modulos correspondientes segun el score de contexto. Es el esquema mas flexible del sistema.",
+  "version": "1.0.0"
+}

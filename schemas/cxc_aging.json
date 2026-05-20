@@ -1,0 +1,22 @@
+{
+  "schema_id": "cxc_aging_v1",
+  "nombre": "CxC Aging",
+  "descripcion": "Esquema completo de cartera con vencimiento, aging, vendedor y factura para analisis ejecutivo de CxC.",
+  "fuente": "cxc_excel",
+  "campos_obligatorios": ["cliente", "saldo_adeudado", "fecha_vencimiento"],
+  "campos_recomendados": ["dias_vencido", "vendedor", "factura", "estatus", "fecha_emision"],
+  "campos_opcionales": ["region", "linea_de_negocio", "moneda", "sucursal"],
+  "salidas_disponibles": [
+    "total_adeudado",
+    "top_deudores",
+    "aging_buckets",
+    "score_salud_cartera",
+    "cxc_por_vendedor",
+    "kpi_cartera",
+    "reporte_ejecutivo",
+    "reporte_consolidado"
+  ],
+  "tipo_archivo_soportado": ["xlsx"],
+  "notas": "Esquema de CxC recomendado para activar todos los modulos de cartera. Los buckets de aging se calculan con dias_vencido. Si no hay dias_vencido se puede derivar de fecha_emision + dias_credito.",
+  "version": "1.0.0"
+}

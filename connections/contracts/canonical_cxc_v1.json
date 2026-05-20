@@ -1,0 +1,63 @@
+{
+  "contract_id": "canonical_cxc_v1",
+  "nombre": "Contrato Canonico de Cuentas por Cobrar",
+  "descripcion": "Estructura estandar de un registro de CxC que CIMA usa internamente para analisis de cartera.",
+  "version": "1.0.0",
+  "campos": {
+    "cliente": {
+      "tipo": "string",
+      "obligatorio": true,
+      "descripcion": "Nombre del cliente deudor"
+    },
+    "saldo_adeudado": {
+      "tipo": "float",
+      "obligatorio": true,
+      "descripcion": "Saldo pendiente de cobro en moneda local"
+    },
+    "fecha_emision": {
+      "tipo": "date",
+      "obligatorio": false,
+      "descripcion": "Fecha de emision del documento (ISO 8601: YYYY-MM-DD)"
+    },
+    "fecha_vencimiento": {
+      "tipo": "date",
+      "obligatorio": false,
+      "descripcion": "Fecha de vencimiento del documento (ISO 8601: YYYY-MM-DD)"
+    },
+    "dias_credito": {
+      "tipo": "integer",
+      "obligatorio": false,
+      "descripcion": "Dias de credito pactados"
+    },
+    "dias_vencido": {
+      "tipo": "integer",
+      "obligatorio": false,
+      "descripcion": "Dias transcurridos desde la fecha de vencimiento. Negativo = vigente."
+    },
+    "vendedor": {
+      "tipo": "string",
+      "obligatorio": false,
+      "descripcion": "Vendedor responsable de la cuenta"
+    },
+    "factura": {
+      "tipo": "string",
+      "obligatorio": false,
+      "descripcion": "Numero o folio del documento"
+    },
+    "estatus": {
+      "tipo": "string",
+      "obligatorio": false,
+      "descripcion": "Estado del documento (Vigente, Vencida, Pagada, Cancelada)"
+    },
+    "fuente_origen": {
+      "tipo": "string",
+      "obligatorio": true,
+      "descripcion": "ID del sistema de origen"
+    },
+    "extracted_at": {
+      "tipo": "datetime",
+      "obligatorio": true,
+      "descripcion": "Timestamp UTC de extraccion (ISO 8601)"
+    }
+  }
+}

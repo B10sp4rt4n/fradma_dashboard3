@@ -1,0 +1,4 @@
+cliente,saldo_adeudado,fecha_emision,fecha_vencimiento,dias_credito,dias_vencido,vendedor,factura,estatus
+Empresa ABC,8500.00,2026-01-01,2026-01-31,30,15,Ana Lopez,F-1001,Vencida
+Empresa XYZ,15200.00,2026-02-01,2026-03-02,30,0,Carlos Mendez,F-1002,Vigente
+Industrias MNO,4300.00,2025-12-01,2025-12-31,30,45,Ana Lopez,F-0988,Vencida

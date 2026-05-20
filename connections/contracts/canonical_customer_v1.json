@@ -1,0 +1,43 @@
+{
+  "contract_id": "canonical_customer_v1",
+  "nombre": "Contrato Canonico de Clientes",
+  "descripcion": "Estructura estandar de un cliente que CIMA usa internamente, incluyendo campos fiscales y de segmentacion.",
+  "version": "1.0.0",
+  "campos": {
+    "cliente": {
+      "tipo": "string",
+      "obligatorio": true,
+      "descripcion": "Nombre o razon social del cliente"
+    },
+    "rfc": {
+      "tipo": "string",
+      "obligatorio": false,
+      "descripcion": "RFC del cliente (13 caracteres para personas fisicas, 12 para morales)"
+    },
+    "domicilio_fiscal": {
+      "tipo": "string",
+      "obligatorio": false,
+      "descripcion": "Codigo postal del domicilio fiscal del receptor (CFDI 4.0)"
+    },
+    "region": {
+      "tipo": "string",
+      "obligatorio": false,
+      "descripcion": "Region o zona geografica del cliente"
+    },
+    "vendedor": {
+      "tipo": "string",
+      "obligatorio": false,
+      "descripcion": "Vendedor o ejecutivo de cuenta asignado"
+    },
+    "fuente_origen": {
+      "tipo": "string",
+      "obligatorio": true,
+      "descripcion": "ID del sistema de origen"
+    },
+    "extracted_at": {
+      "tipo": "datetime",
+      "obligatorio": true,
+      "descripcion": "Timestamp UTC de extraccion (ISO 8601)"
+    }
+  }
+}

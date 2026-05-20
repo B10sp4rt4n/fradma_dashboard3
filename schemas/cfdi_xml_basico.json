@@ -1,0 +1,41 @@
+{
+  "schema_id": "cfdi_xml_basico_v1",
+  "nombre": "CFDI XML Basico",
+  "descripcion": "Esquema para facturas CFDI 4.0 parseadas desde archivos XML.",
+  "fuente": "cfdi_xml",
+  "campos_obligatorios": [
+    "uuid",
+    "fecha_emision",
+    "total",
+    "receptor_rfc",
+    "receptor_nombre"
+  ],
+  "campos_recomendados": [
+    "subtotal",
+    "iva",
+    "moneda",
+    "tipo_cambio",
+    "tipo_comprobante",
+    "forma_pago",
+    "metodo_pago",
+    "emisor_rfc",
+    "emisor_nombre"
+  ],
+  "campos_opcionales": [
+    "receptor_domicilio_fiscal",
+    "concepto_descripcion",
+    "concepto_importe",
+    "serie",
+    "folio",
+    "lugar_expedicion"
+  ],
+  "salidas_disponibles": [
+    "universo_cfdi",
+    "analisis_fiscal",
+    "facturacion_cliente",
+    "concentrado_iva"
+  ],
+  "tipo_archivo_soportado": ["xml"],
+  "notas": "Los XML de CFDI 4.0 se parsean con el modulo cfdi/parser.py. No se acepta CSV para esta fuente. UUID es obligatorio como clave primaria.",
+  "version": "1.0.0"
+}

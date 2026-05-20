@@ -1,0 +1,17 @@
+{
+  "schema_id": "cxc_minimo_v1",
+  "nombre": "CxC Minimo",
+  "descripcion": "Esquema minimo para cartera de cuentas por cobrar. Solo requiere cliente y saldo.",
+  "fuente": "cxc_excel",
+  "campos_obligatorios": ["cliente", "saldo_adeudado"],
+  "campos_recomendados": ["fecha"],
+  "campos_opcionales": ["factura", "vendedor", "estatus"],
+  "salidas_disponibles": [
+    "total_adeudado",
+    "top_deudores",
+    "cartera_basica"
+  ],
+  "tipo_archivo_soportado": ["xlsx"],
+  "notas": "Sin fecha ni dias_vencido no es posible calcular aging ni score de salud. Agregar fecha_vencimiento o dias_vencido para activar CxC Aging.",
+  "version": "1.0.0"
+}
