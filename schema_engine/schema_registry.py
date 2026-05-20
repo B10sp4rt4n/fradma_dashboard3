@@ -103,12 +103,12 @@ SCHEMA_REGISTRY: dict = {
         "campos_recomendados": [
             "fecha_emision",
             "fecha_vencimiento",
+            "dias_vencido",
             "dias_credito",
             "vendedor",
             "estatus",
         ],
         "campos_opcionales": [
-            "dias_vencido",
             "factura",
             "linea_negocio",
             "moneda",

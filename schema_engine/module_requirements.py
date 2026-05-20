@@ -87,7 +87,7 @@ MODULE_REQUIREMENTS = {
         "fuentes_opcionales":  ["cxc_excel"],
         "schemas_compatibles": ["ventas_comercial_v1", "cxc_aging_v1"],
         "campos_minimos":      ["fecha", "monto"],
-        "campos_recomendados": ["cliente", "saldo_adeudado", "fecha_vencimiento"],
+        "campos_recomendados": ["cliente", "saldo_adeudado", "dias_vencido", "fecha_vencimiento"],
     },
 
     "reporte_consolidado": {
@@ -107,7 +107,7 @@ MODULE_REQUIREMENTS = {
         "fuentes_opcionales":  [],
         "schemas_compatibles": ["cxc_minimo_v1", "cxc_aging_v1"],
         "campos_minimos":      ["cliente", "saldo_adeudado"],
-        "campos_recomendados": ["fecha_vencimiento", "vendedor", "estatus"],
+        "campos_recomendados": ["fecha_vencimiento", "dias_vencido", "vendedor", "estatus"],
     },
 
     "vendedores_cxc": {
@@ -117,7 +117,7 @@ MODULE_REQUIREMENTS = {
         "fuentes_opcionales":  [],
         "schemas_compatibles": ["ventas_comercial_v1", "cxc_aging_v1"],
         "campos_minimos":      ["cliente", "saldo_adeudado", "vendedor", "monto"],
-        "campos_recomendados": ["fecha_vencimiento", "estatus", "fecha"],
+        "campos_recomendados": ["dias_vencido", "estatus", "fecha"],
     },
 
     "mapa_clientes": {

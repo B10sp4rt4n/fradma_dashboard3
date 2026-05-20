@@ -1,4 +1,4 @@
-cliente,saldo_adeudado,fecha_emision,fecha_vencimiento,dias_credito,vendedor,factura,estatus
-Empresa ABC,8500.0,2026-01-01,2026-01-31,30,Ana López,F-1001,Vencida
-Empresa XYZ,15200.0,2026-04-01,2026-05-01,30,Carlos Méndez,F-1002,Vigente
-Industrias MNO,9800.0,2025-11-01,2025-11-30,30,Ana López,F-0988,Vencida
+cliente,saldo_adeudado,fecha_emision,fecha_vencimiento,dias_credito,dias_vencido,vendedor,factura,estatus
+Empresa ABC,8500.0,2026-01-01,2026-01-31,30,109,Ana López,F-1001,Vencida
+Empresa XYZ,15200.0,2026-04-01,2026-05-01,30,-11,Carlos Méndez,F-1002,Vigente
+Industrias MNO,9800.0,2025-11-01,2025-11-30,30,171,Ana López,F-0988,Vencida

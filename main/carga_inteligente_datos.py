@@ -315,9 +315,8 @@ Este validador **no modifica tus datos**. Solo evalúa estructura, contexto y co
                 "titulo":      "📅 Aging y riesgo de cobranza",
                 "descripcion": "Antigüedad de deuda por bucket, score de salud y clientes en riesgo.",
                 "obtienes":    ["💳 KPI Cartera CxC completo", "📋 Reporte Consolidado CxC", "🏥 Score de salud"],
-                "campos":      ["cliente", "saldo_adeudado", "fecha_vencimiento"],
-                "campos_plus": ["fecha_emision", "dias_credito", "vendedor", "factura", "estatus"],
-                "nota":        "dias_vencido se calcula automáticamente (hoy − fecha_vencimiento)",
+                "campos":      ["cliente", "saldo_adeudado", "dias_vencido"],
+                "campos_plus": ["fecha_emision", "fecha_vencimiento", "dias_credito", "vendedor", "factura", "estatus"],
                 "plantillas":  [("cxc_aging.csv", "Plantilla CxC Aging")],
                 "color":       "#6A1B9A",
             },
@@ -328,9 +327,8 @@ Este validador **no modifica tus datos**. Solo evalúa estructura, contexto y co
                 "obtienes":    ["🎯 Reporte Ejecutivo", "📋 Reporte Consolidado", "🤝 Vendedores + CxC",
                                 "📈 Desempeño Comercial", "📅 YTD", "🔥 Heatmap", "💳 KPI CxC + Aging"],
                 "campos":      ["fecha", "monto", "cliente", "vendedor", "linea_de_negocio", "producto",
-                                "saldo_adeudado", "fecha_vencimiento"],
-                "campos_plus": ["region", "canal", "fecha_emision", "dias_credito", "factura", "estatus"],
-                "nota":        "dias_vencido se calcula automáticamente (hoy − fecha_vencimiento)",
+                                "saldo_adeudado", "dias_vencido", "fecha_vencimiento"],
+                "campos_plus": ["region", "canal", "dias_credito", "factura", "estatus"],
                 "plantillas":  [("plantilla_maestra.xlsx", "📥 Plantilla Maestra (Excel 3 hojas)")],
                 "color":       "#1B5E20",
             },
@@ -379,12 +377,7 @@ Este validador **no modifica tus datos**. Solo evalúa estructura, contexto y co
                     + f"</code></p>"
                     f"<p style='color:#888;font-size:11px;margin:0;'>"
                     f"Mejora con: {' · '.join(_caso['campos_plus'])}</p>"
-                    + (
-                        f"<p style='color:#F9A825;font-size:11px;margin:4px 0 0 0;'>"
-                        f"⚡ {_caso['nota']}</p>"
-                        if _caso.get("nota") else ""
-                    )
-                    + f"</div>",
+                    f"</div>",
                     unsafe_allow_html=True,
                 )
                 # Botones de descarga de plantilla
