@@ -581,23 +581,22 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
 
         with col_gauge:
             st.markdown("#### 🎯 Score de Salud")
-            color_gauge = "#2ecc71" if score_salud_cxc >= 80 else "#f39c12" if score_salud_cxc >= 60 else "#e74c3c"
             fig_gauge = go.Figure(go.Indicator(
                 mode="gauge+number",
                 value=score_salud_cxc,
                 number={"suffix": "/100", "font": {"size": 28}},
                 gauge={
                     "axis": {"range": [0, 100], "tickwidth": 1},
-                    "bar": {"color": color_gauge},
+                    "bar": {"color": "#1F4E79"},
                     "steps": [
-                        {"range": [0,  60], "color": "#fadbd8"},
-                        {"range": [60, 80], "color": "#fdebd0"},
-                        {"range": [80, 100], "color": "#d5f5e3"},
+                        {"range": [0,  40], "color": "#F44336"},
+                        {"range": [40, 70], "color": "#FFC107"},
+                        {"range": [70, 100], "color": "#4CAF50"},
                     ],
-                    "threshold": {"line": {"color": "white", "width": 3}, "value": score_salud_cxc},
+                    "threshold": {"line": {"color": "white", "width": 3}, "thickness": 0.75, "value": score_salud_cxc},
                 },
             ))
-            fig_gauge.update_layout(height=220, margin=dict(t=20, b=10, l=20, r=20))
+            fig_gauge.update_layout(height=260, margin=dict(t=30, b=0, l=20, r=20))
             st.plotly_chart(fig_gauge, use_container_width=True)
 
         with col_plan:
@@ -648,7 +647,7 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
             if not cartera_df.empty:
                 # Obtener paleta de colores según modo
                 _paleta = _obtener_paleta_colores(st.session_state.get("reporte_modo_monocromatico", False))
-                _colores_pie = [_paleta['success'], _paleta['warning'], _paleta['danger'], '#e74c3c'] if st.session_state.get("reporte_modo_monocromatico") else ["#2ecc71", "#3498db", "#f39c12", "#e74c3c"]
+                _colores_pie = [_paleta['success'], _paleta['warning'], _paleta['danger'], '#F44336'] if st.session_state.get("reporte_modo_monocromatico") else ['#4CAF50', '#FFC107', '#FF9800', '#F44336']
                 
                 fig_pie = go.Figure(data=[go.Pie(
                     labels=cartera_df["Categoría"],
