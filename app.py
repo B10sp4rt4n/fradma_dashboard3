@@ -1682,7 +1682,7 @@ _FILTROS_POR_VISTA = {
             "monto":   "Muestra solo clientes con operaciones dentro del rango de monto.",
         }
     },
-    "�️ Carga Inteligente de Datos": {"filtros": [], "descripcion": ""},
+    "🗂️ Carga Inteligente de Datos": {"filtros": [], "descripcion": ""},
     "�💳 KPI Cartera CxC":          {"filtros": [], "descripcion": ""},
     "👥 Vendedores + CxC":         {"filtros": [], "descripcion": ""},
     "🧰 Herramientas Financieras": {"filtros": [], "descripcion": ""},
@@ -1842,7 +1842,7 @@ with st.sidebar.expander("ℹ️ Acerca de esta vista"):
         - Ver historial de accesos
         - Activar/desactivar usuarios
         """)
-    elif menu == "�️ Carga Inteligente de Datos":
+    elif menu == "🗂️ Carga Inteligente de Datos":
         st.markdown("""
         **Validación inteligente de archivos con CIMA Schema Engine**
 
@@ -2305,10 +2305,10 @@ elif menu == "🧰 Herramientas Financieras":
     # Las herramientas financieras no requieren datos cargados
     herramientas_financieras.run()
 
-elif menu == "�️ Carga Inteligente de Datos":
+elif menu == "🗂️ Carga Inteligente de Datos":
     carga_inteligente_datos.run()
 
-elif menu == "�📂 Cargar mis facturas":
+elif menu == "📂 Cargar mis facturas":
     # La ingesta de CFDIs no requiere datos cargados previamente
     ingesta_cfdi.main()
 
