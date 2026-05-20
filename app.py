@@ -33,6 +33,7 @@ from main import mapa_clientes
 from main import knowledge_base
 from main import data_assistant
 from main import wiki_problemas
+from main import carga_inteligente_datos
 from utils.data_cleaner import limpiar_columnas_texto, detectar_duplicados_similares
 from utils.data_normalizer import normalizar_columnas, homologar_columnas, validar_template
 from utils.logger import configurar_logger, log_dataframe_info, log_execution_time
@@ -1135,6 +1136,7 @@ _grupos = {
     "Análisis Comercial CIMA": {
         "icon": "speedometer2",
         "items": [
+            ("🗂️ Carga Inteligente de Datos", "cloud-upload-fill"),
             ("🎯 Reporte Ejecutivo",         "file-earmark-bar-graph"),
             ("📊 Reporte Consolidado",       "grid-1x2"),
             ("📈 Desempeño Comercial",       "bar-chart-line"),
@@ -1680,7 +1682,8 @@ _FILTROS_POR_VISTA = {
             "monto":   "Muestra solo clientes con operaciones dentro del rango de monto.",
         }
     },
-    "💳 KPI Cartera CxC":          {"filtros": [], "descripcion": ""},
+    "�️ Carga Inteligente de Datos": {"filtros": [], "descripcion": ""},
+    "�💳 KPI Cartera CxC":          {"filtros": [], "descripcion": ""},
     "👥 Vendedores + CxC":         {"filtros": [], "descripcion": ""},
     "🧰 Herramientas Financieras": {"filtros": [], "descripcion": ""},
     "📂 Cargar mis facturas":      {"filtros": [], "descripcion": ""},
@@ -1839,7 +1842,18 @@ with st.sidebar.expander("ℹ️ Acerca de esta vista"):
         - Ver historial de accesos
         - Activar/desactivar usuarios
         """)
-    elif menu == "🔧 Configuración":
+    elif menu == "�️ Carga Inteligente de Datos":
+        st.markdown("""
+        **Validación inteligente de archivos con CIMA Schema Engine**
+
+        - Valida estructura CSV/Excel contra esquemas declarados
+        - Detecta y mapea columnas al vocabulario canónico de CIMA
+        - Calcula score de contexto disponible (0-100)
+        - Determina qué módulos pueden activarse con los datos disponibles
+        - Descarga plantillas base y reporte de diagnóstico estructural
+        - Sin conexiones externas — solo valida estructura
+        """)
+    elif menu == "�🔧 Configuración":
         st.markdown("""
         **Configuración del sistema** (Solo Admin)
         
@@ -2261,7 +2275,10 @@ elif menu == "🧰 Herramientas Financieras":
     # Las herramientas financieras no requieren datos cargados
     herramientas_financieras.run()
 
-elif menu == "📂 Cargar mis facturas":
+elif menu == "�️ Carga Inteligente de Datos":
+    carga_inteligente_datos.run()
+
+elif menu == "�📂 Cargar mis facturas":
     # La ingesta de CFDIs no requiere datos cargados previamente
     ingesta_cfdi.main()
 
