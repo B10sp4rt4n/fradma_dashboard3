@@ -32,7 +32,7 @@ try:
     from schema_engine.schema_registry import get_schema, list_schemas
     from schema_engine.schema_validator import validate_dataframe_against_schema
     from schema_engine.context_score import calculate_context_score, score_label
-    from schema_engine.module_requirements import get_activable_modules
+    from schema_engine.module_requirements import get_activable_modules, MODULE_REQUIREMENTS
     from schema_engine.column_mapper import map_columns, get_detected_canonical_fields
     _SCHEMA_ENGINE_OK = True
 except ImportError as _e:
@@ -268,6 +268,138 @@ Este validador **no modifica tus datos**. Solo evalúa estructura, contexto y co
 4. Revisa el diagnóstico y score de contexto
 5. Descarga el reporte o usa el archivo como DataFrame activo
         """)
+
+    # ════════════════════════════════════════════════════════════════════
+    # PANEL DE CASOS DE USO — ¿qué quiero analizar? → plantilla
+    # ════════════════════════════════════════════════════════════════════
+    with st.expander("🗺️ ¿Qué quiero analizar? — casos de uso y plantillas", expanded=True):
+        st.caption(
+            "Elige el caso de uso que describe tu necesidad. "
+            "Descarga la plantilla, llénala con tus datos y súbela aquí."
+        )
+
+        # ── Definición de casos de uso ────────────────────────────────
+        _CASOS_USO = [
+            {
+                "id":          "ventas_basico",
+                "titulo":      "📈 Ver desempeño de ventas",
+                "descripcion": "¿Cómo van mis ventas mes a mes? ¿Quiénes son mis mejores clientes?",
+                "obtienes":    ["📊 Desempeño Comercial", "📆 Comparativo Año vs Año"],
+                "campos":      ["fecha", "monto"],
+                "campos_plus": ["cliente", "vendedor", "linea_de_negocio", "producto"],
+                "plantillas":  [("ventas_minimo.csv", "Plantilla Ventas Mínimo")],
+                "color":       "#1565C0",
+            },
+            {
+                "id":          "ventas_avanzado",
+                "titulo":      "🏢 Análisis comercial completo",
+                "descripcion": "Tendencias, líneas de negocio, productos top, YTD y heatmap de ventas.",
+                "obtienes":    ["📈 Desempeño Comercial", "📅 YTD por Línea", "🏷️ YTD por Producto", "🔥 Heatmap"],
+                "campos":      ["fecha", "monto", "linea_de_negocio"],
+                "campos_plus": ["producto", "vendedor", "cliente", "region"],
+                "plantillas":  [("ventas_comercial.csv", "Plantilla Ventas Comercial")],
+                "color":       "#0D47A1",
+            },
+            {
+                "id":          "cxc_basico",
+                "titulo":      "💳 Saber quién me debe",
+                "descripcion": "¿Cuánto me deben en total? ¿Está vencido? Listado de deudores.",
+                "obtienes":    ["💳 KPI Cartera CxC (básico)"],
+                "campos":      ["cliente", "saldo_adeudado"],
+                "campos_plus": ["estatus", "vendedor", "dias_vencido"],
+                "plantillas":  [("cxc_minimo.csv", "Plantilla CxC Mínimo")],
+                "color":       "#4A148C",
+            },
+            {
+                "id":          "cxc_aging",
+                "titulo":      "📅 Aging y riesgo de cobranza",
+                "descripcion": "Antigüedad de deuda por bucket, score de salud y clientes en riesgo.",
+                "obtienes":    ["💳 KPI Cartera CxC completo", "📋 Reporte Consolidado CxC", "🏥 Score de salud"],
+                "campos":      ["cliente", "saldo_adeudado", "dias_vencido"],
+                "campos_plus": ["fecha_emision", "fecha_vencimiento", "dias_credito", "vendedor", "factura", "estatus"],
+                "plantillas":  [("cxc_aging.csv", "Plantilla CxC Aging")],
+                "color":       "#6A1B9A",
+            },
+            {
+                "id":          "ejecutivo",
+                "titulo":      "🎯 Reporte Ejecutivo completo",
+                "descripcion": "Ventas + cartera CxC en un solo archivo. Todos los campos → todos los módulos.",
+                "obtienes":    ["🎯 Reporte Ejecutivo", "📋 Reporte Consolidado", "🤝 Vendedores + CxC",
+                                "📈 Desempeño Comercial", "📅 YTD", "🔥 Heatmap", "💳 KPI CxC + Aging"],
+                "campos":      ["fecha", "monto", "cliente", "vendedor", "linea_de_negocio", "producto",
+                                "saldo_adeudado", "dias_vencido", "fecha_vencimiento"],
+                "campos_plus": ["region", "canal", "dias_credito", "factura", "estatus"],
+                "plantillas":  [("plantilla_maestra.xlsx", "📥 Plantilla Maestra (Excel 3 hojas)")],
+                "color":       "#1B5E20",
+            },
+        ]
+
+        # ── Renderizar cards — fila 1: ventas (2 cols) + cxc básico ──
+        _row1 = st.columns([1, 1, 1])
+        _row2 = st.columns([1, 2])
+        _layout = [
+            (_row1[0], _CASOS_USO[0]),
+            (_row1[1], _CASOS_USO[1]),
+            (_row1[2], _CASOS_USO[2]),
+            (_row2[0], _CASOS_USO[3]),
+            (_row2[1], _CASOS_USO[4]),
+        ]
+
+        for _col, _caso in _layout:
+            with _col:
+                # Cabecera de color
+                st.markdown(
+                    f"<div style='background:{_caso['color']};color:white;"
+                    f"border-radius:8px 8px 0 0;padding:10px 14px;"
+                    f"font-weight:700;font-size:14px;'>"
+                    f"{_caso['titulo']}</div>",
+                    unsafe_allow_html=True,
+                )
+                # Cuerpo de la card
+                st.markdown(
+                    f"<div style='border:1px solid {_caso['color']};border-top:none;"
+                    f"border-radius:0 0 8px 8px;padding:10px 14px;margin-bottom:8px;"
+                    f"background:#0e1117;'>"
+                    f"<p style='color:#ccc;font-size:13px;margin:0 0 8px 0;'>"
+                    f"{_caso['descripcion']}</p>"
+                    f"<p style='color:#90CAF9;font-size:12px;margin:0 0 4px 0;'>"
+                    f"<b>Obtienes:</b></p>"
+                    + "".join(
+                        f"<span style='display:inline-block;background:#1a2a3a;"
+                        f"color:#e0e0e0;border-radius:4px;padding:2px 8px;"
+                        f"margin:2px 2px;font-size:12px;'>{m}</span>"
+                        for m in _caso["obtienes"]
+                    )
+                    + f"<p style='color:#90CAF9;font-size:12px;margin:8px 0 2px 0;'>"
+                    f"<b>Campos mínimos:</b> "
+                    f"<code style='color:#fff;'>"
+                    + " · ".join(_caso["campos"])
+                    + f"</code></p>"
+                    f"<p style='color:#888;font-size:11px;margin:0;'>"
+                    f"Mejora con: {' · '.join(_caso['campos_plus'])}</p>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+                # Botones de descarga de plantilla
+                for _fname, _label in _caso["plantillas"]:
+                    _fpath = os.path.join(_TEMPLATES_DIR, _fname)
+                    if os.path.exists(_fpath):
+                        _mime = (
+                            "application/vnd.openxmlformats-officedocument"
+                            ".spreadsheetml.sheet"
+                            if _fname.endswith(".xlsx") else "text/csv"
+                        )
+                        with open(_fpath, "rb") as _f:
+                            st.download_button(
+                                label=_label,
+                                data=_f.read(),
+                                file_name=_fname,
+                                mime=_mime,
+                                key=f"uc_{_caso['id']}_{_fname}",
+                                use_container_width=True,
+                            )
+                    else:
+                        st.caption(f"_{_label} (no disponible)_")
 
     st.markdown("---")
 

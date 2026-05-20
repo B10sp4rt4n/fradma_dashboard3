@@ -1,4 +1,4 @@
-cliente,saldo_adeudado,fecha
-Empresa ABC,8500.00,2026-01-15
-Empresa XYZ,15200.00,2026-02-01
-Industrias MNO,4300.00,2026-01-28
+cliente,saldo_adeudado,estatus
+Empresa ABC,8500.0,Vencida
+Empresa XYZ,15200.0,Vigente
+Industrias MNO,4300.0,Vigente
