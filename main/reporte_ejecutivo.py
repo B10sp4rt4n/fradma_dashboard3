@@ -596,7 +596,7 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
                     "threshold": {"line": {"color": "white", "width": 3}, "thickness": 0.75, "value": score_salud_cxc},
                 },
             ))
-            fig_gauge.update_layout(height=260, margin=dict(t=30, b=0, l=20, r=20))
+            fig_gauge.update_layout(height=260, margin=dict(t=30, b=0, l=20, r=90))
             st.plotly_chart(fig_gauge, use_container_width=True)
 
         with col_plan:
