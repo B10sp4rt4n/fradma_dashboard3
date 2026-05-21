@@ -268,6 +268,16 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
         else:
             logger.warning("Columna 'vendedor' NO detectada en df_deudas")
 
+        # Detectar columna documental — factura/folio/uuid no equivalen a venta.
+        # CxC es cartera pendiente; la columna documental es la llave del documento.
+        # Preparado para soportar es_venta / id_venta en futuras versiones.
+        _doc_candidatas = [c for c in ('factura', 'folio', 'uuid') if c in df_deudas.columns]
+        col_doc = _doc_candidatas[0] if _doc_candidatas else None
+        if col_doc:
+            logger.info(f"Columna documental detectada: '{col_doc}' (llave de documento CxC)")
+        else:
+            logger.info("Sin columna documental (factura/folio/uuid) — registros tratados como cartera CxC")
+
         # ---------------------------------------------------------------------
         # Normalización de CxC — fuente única de verdad (cxc_aging_engine)
         # prepare_cxc_metrics aplica la misma lógica que Reporte Ejecutivo y
@@ -1346,6 +1356,9 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
         # =====================================================================
         # FASE 4: ANÁLISIS POR LÍNEA DE NEGOCIO
         # =====================================================================
+        # Inicializar col_linea antes del bloque condicional para evitar
+        # UnboundLocalError cuando el archivo CxC no trae esta columna.
+        col_linea = None
         if 'linea_negocio' in df_deudas.columns or 'linea_de_negocio' in df_deudas.columns:
             riesgo_view.header("🏭 Análisis por Línea de Negocio")
             
@@ -2215,8 +2228,8 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                 
                 df_detalle_export = df_deudas[export_cols].copy()
                 
-                # Renombrar col_linea si existe
-                if col_linea in df_detalle_export.columns:
+                # Renombrar col_linea si existe (guard None por si el archivo no trae la columna)
+                if col_linea and col_linea in df_detalle_export.columns:
                     df_detalle_export = df_detalle_export.rename(columns={col_linea: 'linea_negocio'})
                     
                 df_detalle_export.to_excel(writer, sheet_name='Detalle Completo', index=False)
