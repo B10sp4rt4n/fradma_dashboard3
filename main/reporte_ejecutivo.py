@@ -280,8 +280,13 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
         variacion_ventas    = ((ventas_mes_actual - ventas_mes_anterior) / ventas_mes_anterior * 100) if ventas_mes_anterior > 0 else 0
         mes_actual_nombre   = fecha_max.strftime("%B %Y")
         mes_anterior_nombre = mes_anterior.strftime("%B %Y")
+        # Descripción explícita del período evaluado (para mostrarse en insights y alertas)
+        _rango_actual   = f"{mes_actual.strftime('%d %b')}–{fecha_max.strftime('%d %b %Y')}"
+        _rango_anterior = f"{mes_anterior.strftime('%d %b')}–{fecha_limite_mes_anterior.strftime('%d %b %Y')}"
+        _desc_periodo   = f"{mes_actual_nombre} ({_rango_actual}) vs {mes_anterior_nombre} ({_rango_anterior})"
     else:
         ventas_mes_actual = total_ventas
+        _desc_periodo = ""
 
     # CxC: calcular métricas con fuente única de verdad
     cxc = prepare_cxc_metrics(df_cxc)
@@ -370,7 +375,7 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
         if pct_alto_riesgo > 15:
             alertas.append(("🔴 CRÍTICO", f"Alto riesgo de incobrabilidad: {formato_moneda(alto_riesgo)} (>{pct_alto_riesgo:.1f}%)", "Evaluar provisión e iniciar acciones legales"))
         if variacion_ventas < -10:
-            alertas.append(("🟠 ALERTA",  f"Caída en ventas: {variacion_ventas:.1f}% vs mes anterior", "Revisar estrategia comercial"))
+            alertas.append(("🟠 ALERTA",  f"Caída en ventas: {variacion_ventas:.1f}% — {_desc_periodo}", "Revisar estrategia comercial"))
         if _col_cliente_cxc and total_adeudado > 0 and not df_cxc_np.empty:
             top_deudor_pct = (df_cxc_np.groupby(_col_cliente_cxc)["saldo_adeudado"].sum().max() / total_adeudado * 100)
             if top_deudor_pct > 30:
@@ -387,9 +392,15 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
         st.subheader("💡 Insights Estratégicos")
         insights_list = []
         if variacion_ventas > 0:
-            insights_list.append(f"📈 **Crecimiento positivo:** ventas aumentaron {variacion_ventas:.1f}% vs mes anterior.")
+            insights_list.append(
+                f"📈 **Crecimiento positivo:** ventas aumentaron {variacion_ventas:.1f}% "
+                f"— período evaluado: {_desc_periodo}."
+            )
         elif variacion_ventas < 0:
-            insights_list.append(f"📉 **Atención:** ventas cayeron {abs(variacion_ventas):.1f}%. Revisar estrategia comercial.")
+            insights_list.append(
+                f"📉 **Atención:** ventas cayeron {abs(variacion_ventas):.1f}% "
+                f"— período evaluado: {_desc_periodo}. Revisar estrategia comercial."
+            )
         if pct_vigente > 80:
             insights_list.append(f"✅ **Cartera saludable:** {pct_vigente:.1f}% vigente. Buena gestión de cobranza.")
         elif pct_vigente < 60:

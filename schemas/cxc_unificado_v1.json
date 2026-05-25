@@ -1,0 +1,38 @@
+{
+  "schema_id": "cxc_unificado_v1",
+  "nombre": "CxC Unificado",
+  "descripcion": "Esquema unificado de Cuentas por Cobrar. Elimina tablas separadas de vigentes/vencidas. El estatus se calcula automáticamente desde saldo_actual y fecha_vencimiento. No permite captura manual de estatus.",
+  "fuente": "cxc_excel",
+  "campos_obligatorios": ["id_cxc", "id_factura", "saldo_actual", "fecha_vencimiento"],
+  "campos_recomendados": ["id_venta", "cliente_id", "vendedor_id"],
+  "campos_opcionales": ["folio", "fecha_emision", "moneda", "notas"],
+  "campos_prohibidos": ["estatus", "status", "estado", "pagado", "pagada"],
+  "estatus_derivado": {
+    "campo": "estatus",
+    "logica": "if saldo_actual == 0 → Pagada; elif hoy <= fecha_vencimiento → Vigente; else → Vencida",
+    "editable": false
+  },
+  "vistas_derivadas": {
+    "cxc_vigentes": "SELECT * FROM cxc WHERE estatus = 'Vigente'",
+    "cxc_vencidas": "SELECT * FROM cxc WHERE estatus = 'Vencida'",
+    "cxc_pagadas":  "SELECT * FROM cxc WHERE estatus = 'Pagada'"
+  },
+  "integridad_referencial": {
+    "id_factura": "facturas.id_factura (FK obligatoria)",
+    "id_venta":   "ventas.id_venta (FK derivada vía facturas)"
+  },
+  "salidas_disponibles": [
+    "total_adeudado",
+    "cartera_vigente",
+    "cartera_vencida",
+    "aging_buckets",
+    "score_salud_cxc",
+    "top_deudores",
+    "plan_cobranza",
+    "desempeno_cobranza_vendedor",
+    "ventas_sin_factura",
+    "facturas_sin_cobro"
+  ],
+  "tipo_archivo_soportado": ["xlsx"],
+  "version": "1.0.0"
+}

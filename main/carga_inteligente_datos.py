@@ -45,19 +45,21 @@ _TEMPLATES_DIR = os.path.join(_ROOT, "templates")
 
 # ── Mapas de apoyo ─────────────────────────────────────────────────────────
 _TIPO_A_SCHEMAS = {
-    "Ventas":               ["ventas_minimo_v1", "ventas_comercial_v1"],
-    "Cuentas por Cobrar":   ["cxc_minimo_v1", "cxc_aging_v1"],
+    "Ventas":               ["ventas_minimo_v1", "ventas_comercial_v1", "ventas_relacional_v1"],
+    "Cuentas por Cobrar":   ["cxc_unificado_v1", "cxc_aging_v1", "cxc_minimo_v1"],
+    "Facturas":             ["facturas_v1"],
     "CFDI / XML":           ["cfdi_xml_basico_v1", "cfdi_neon_mapa_clientes_v1"],
     "Herramientas / Manual":["manual_financial_tools_v1"],
     "DataFrame flexible":   ["data_assistant_flexible_v1"],
-    "Deteccion automatica": ["ventas_minimo_v1", "ventas_comercial_v1",
-                             "cxc_minimo_v1", "cxc_aging_v1",
-                             "data_assistant_flexible_v1"],
+    "Deteccion automatica": ["ventas_relacional_v1", "ventas_minimo_v1", "ventas_comercial_v1",
+                             "cxc_unificado_v1", "cxc_aging_v1", "cxc_minimo_v1",
+                             "facturas_v1", "data_assistant_flexible_v1"],
 }
 
 _TIPO_A_FUENTE = {
     "Ventas":               "ventas_excel",
     "Cuentas por Cobrar":   "cxc_excel",
+    "Facturas":             "cxc_excel",
     "CFDI / XML":           "cfdi_xml",
     "Herramientas / Manual":"manual_input",
     "DataFrame flexible":   "dataframe_flexible",
@@ -65,10 +67,13 @@ _TIPO_A_FUENTE = {
 }
 
 _TEMPLATES_DISPONIBLES = [
-    ("Ventas minimo",    "ventas_minimo.csv"),
-    ("Ventas comercial", "ventas_comercial.csv"),
-    ("CxC minimo",       "cxc_minimo.csv"),
-    ("CxC aging",        "cxc_aging.csv"),
+    ("Ventas minimo",       "ventas_minimo.csv"),
+    ("Ventas comercial",    "ventas_comercial.csv"),
+    ("Ventas relacional",   "ventas_relacional.csv"),
+    ("CxC unificado",       "cxc_unificado.csv"),
+    ("CxC minimo",          "cxc_minimo.csv"),
+    ("CxC aging",           "cxc_aging.csv"),
+    ("Facturas",            "facturas.csv"),
 ]
 
 _SCORE_COLORES = {
@@ -556,6 +561,71 @@ Este validador **no modifica tus datos**. Solo evalúa estructura, contexto y co
     # SECCIÓN D — Procesamiento y validación
     # ════════════════════════════════════════════════════════════════════
     if df is not None and not df.empty:
+
+        # ── Aplicar reglas del modelo unificado ANTES de guardar ─────
+        try:
+            from utils.modelo_unificado import (
+                normalizar_cxc_desde_excel,
+                normalizar_ventas_desde_excel,
+                normalizar_facturas_desde_excel,
+                COLUMNAS_ESTATUS_PROHIBIDAS,
+            )
+            _es_cxc     = schema_id in ("cxc_unificado_v1", "cxc_aging_v1", "cxc_minimo_v1")
+            _es_ventas  = schema_id in ("ventas_relacional_v1", "ventas_comercial_v1", "ventas_minimo_v1")
+            _es_facturas = schema_id == "facturas_v1"
+
+            _alertas_modelo: list = []
+            _errores_modelo: list = []
+
+            if _es_cxc:
+                df, _alertas_modelo, _errores_modelo = normalizar_cxc_desde_excel(df)
+            elif _es_ventas:
+                # Obtener IDs de facturas del session_state si el usuario ya cargó facturas
+                _ids_facturas = None
+                _df_facturas_ss = st.session_state.get("cima_df_facturas")
+                if _df_facturas_ss is not None and "id_factura" in _df_facturas_ss.columns:
+                    _ids_facturas = set(_df_facturas_ss["id_factura"].dropna().astype(str))
+                df, _alertas_modelo, _errores_modelo = normalizar_ventas_desde_excel(
+                    df, ids_facturas_validos=_ids_facturas
+                )
+                # Bloquear carga si hay errores estructurales de factura
+                if _errores_modelo:
+                    st.error(
+                        "### ❌ Carga bloqueada — Errores de integridad en ventas\n\n"
+                        + "\n\n".join(f"- {e}" for e in _errores_modelo)
+                    )
+                    st.warning(
+                        "Corrige el archivo Excel y vuelve a cargarlo. "
+                        "No se permite edición manual para saltar esta validación."
+                    )
+                    return  # Detener procesamiento
+            elif _es_facturas:
+                df, _alertas_modelo, _errores_modelo = normalizar_facturas_desde_excel(df)
+                # Guardar facturas en session_state para validar ventas posteriores
+                if not _errores_modelo and "id_factura" in df.columns:
+                    st.session_state["cima_df_facturas"] = df
+            else:
+                # Para cualquier tipo: eliminar columnas de estatus manual prohibidas
+                cols_prohibidas = [
+                    c for c in df.columns if c.lower() in COLUMNAS_ESTATUS_PROHIBIDAS
+                ]
+                if cols_prohibidas:
+                    df = df.drop(columns=cols_prohibidas)
+                    _alertas_modelo.append(
+                        f"Columna(s) de estatus manual eliminadas: {cols_prohibidas}."
+                    )
+
+            if _errores_modelo:
+                st.error(
+                    "**Errores de integridad referencial detectados:**\n\n"
+                    + "\n\n".join(f"- {e}" for e in _errores_modelo)
+                )
+            if _alertas_modelo:
+                with st.expander("⚠️ Alertas del modelo unificado", expanded=True):
+                    for alerta in _alertas_modelo:
+                        st.warning(alerta)
+        except ImportError:
+            pass  # modelo_unificado no disponible — continuar sin validación extendida
 
         # Guardar en session_state
         st.session_state["cima_uploaded_df"]     = df

@@ -4,6 +4,42 @@ Define umbrales, listas de columnas y configuraciones globales.
 """
 
 # =====================================================================
+# MODELO UNIFICADO — CAMPOS CANÓNICOS (ventas → facturas → cxc)
+# =====================================================================
+# REGLA OBLIGATORIA: el estatus de CxC es DERIVADO, nunca manual.
+# Usar utils.modelo_unificado para calcular/aplicar estatus.
+
+# Tabla: ventas
+CAMPO_ID_VENTA       = "id_venta"
+CAMPO_CLIENTE_ID     = "cliente_id"
+CAMPO_VENDEDOR_ID    = "vendedor_id"
+CAMPO_FECHA_VENTA    = "fecha_venta"
+CAMPO_IMPORTE_TOTAL  = "importe_total"
+
+# Tabla: facturas
+CAMPO_ID_FACTURA         = "id_factura"
+CAMPO_FOLIO              = "folio"
+CAMPO_FECHA_EMISION      = "fecha_emision"
+CAMPO_IMPORTE_FACTURADO  = "importe_facturado"
+
+# Tabla: cxc (estatus = DERIVADO)
+CAMPO_ID_CXC            = "id_cxc"
+CAMPO_FECHA_VENCIMIENTO = "fecha_vencimiento"
+CAMPO_SALDO_ACTUAL      = "saldo_actual"
+CAMPO_ESTATUS_DERIVADO  = "estatus"   # Solo lectura — no capturar desde Excel
+
+# Valores de estatus derivado
+ESTATUS_CXC_PAGADA  = "Pagada"
+ESTATUS_CXC_VIGENTE = "Vigente"
+ESTATUS_CXC_VENCIDA = "Vencida"
+
+# Columnas de estatus que NO deben cargarse desde Excel
+COLUMNAS_ESTATUS_PROHIBIDAS_EXCEL = frozenset({
+    "estatus", "status", "estado", "pagado", "pagada",
+    "condicion", "situacion", "flag_pagado",
+})
+
+# =====================================================================
 # DETECCIÓN DE COLUMNAS
 # =====================================================================
 

@@ -1,0 +1,35 @@
+{
+  "schema_id": "ventas_relacional_v1",
+  "nombre": "Ventas Relacional",
+  "descripcion": "Esquema de ventas para el modelo relacional completo ventas→facturas→cxc. Activa métricas por vendedor, detección de ventas no facturadas y aging real.",
+  "fuente": "ventas_excel",
+  "campos_obligatorios": ["id_venta", "cliente_id", "fecha_venta", "importe_total", "id_factura", "folio_factura"],
+  "campos_recomendados": ["vendedor_id"],
+  "campos_opcionales": ["region", "linea_de_negocio", "canal", "moneda", "sucursal"],
+  "integridad_referencial": {
+    "id_factura":   "facturas.id_factura (FK obligatoria por línea de venta)",
+    "descripcion":  "id_venta es la PK. Se referencia desde facturas.id_venta"
+  },
+  "validaciones": [
+    "id_venta debe ser único",
+    "importe_total debe ser mayor que 0",
+    "fecha_venta debe ser una fecha válida",
+    "cliente_id no puede estar vacío (relacionar por ID, nunca por nombre)",
+    "id_factura es OBLIGATORIO: no se permiten filas de venta sin factura asociada",
+    "id_factura no puede ser nulo ni vacío",
+    "id_factura debe existir en la tabla de facturas",
+    "folio_factura es OBLIGATORIO: no se permiten filas de venta sin folio de factura",
+    "folio_factura no puede ser nulo ni vacío"
+  ],
+  "salidas_disponibles": [
+    "ventas_totales",
+    "tendencia_mensual",
+    "top_clientes",
+    "desempeno_vendedor",
+    "ventas_no_facturadas",
+    "ratio_deuda_vs_ventas_vendedor",
+    "metricas_por_vendedor"
+  ],
+  "tipo_archivo_soportado": ["csv", "xlsx"],
+  "version": "1.0.0"
+}

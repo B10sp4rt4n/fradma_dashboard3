@@ -1,0 +1,4 @@
+id_venta,cliente_id,vendedor_id,fecha_venta,importe_total,id_factura,folio_factura,region,linea_de_negocio,canal,moneda
+V00001,CLI-001,VEN-01,2026-01-15,12500.00,F00001,A-0001,Norte,Ciberseguridad,Directo,MXN
+V00002,CLI-002,VEN-02,2026-02-10,8750.50,F00002,A-0002,Centro,Protección Corrosión,Canal,MXN
+V00003,CLI-001,VEN-01,2026-03-05,21000.00,F00003,A-0003,Sur,Recubrimientos,Directo,MXN

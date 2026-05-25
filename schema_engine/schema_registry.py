@@ -244,6 +244,85 @@ SCHEMA_REGISTRY: dict = {
         "version": "1.0.0",
         "json_file": "data_assistant_flexible.json",
     },
+
+    # ── Modelo Unificado (ventas → facturas → cxc) ────────────────────────
+    "cxc_unificado_v1": {
+        "schema_id": "cxc_unificado_v1",
+        "nombre": "CxC Unificado",
+        "descripcion": (
+            "Esquema unificado de Cuentas por Cobrar. "
+            "Estatus derivado automáticamente (Pagada/Vigente/Vencida). "
+            "No permite estatus manual. "
+            "Reemplaza cxc_vigentes y cxc_vencidas como tablas separadas."
+        ),
+        "fuente": "cxc_excel",
+        "campos_obligatorios": ["id_cxc", "id_factura", "saldo_actual", "fecha_vencimiento"],
+        "campos_recomendados": ["id_venta", "cliente_id", "vendedor_id"],
+        "campos_opcionales": ["folio", "fecha_emision", "moneda", "notas"],
+        "campos_prohibidos": ["estatus", "status", "estado", "pagado", "pagada"],
+        "estatus_derivado": True,
+        "salidas_disponibles": [
+            "total_adeudado",
+            "cartera_vigente",
+            "cartera_vencida",
+            "aging_buckets",
+            "score_salud_cxc",
+            "top_deudores",
+            "plan_cobranza",
+            "desempeno_cobranza_vendedor",
+            "ventas_sin_factura",
+            "facturas_sin_cobro",
+        ],
+        "tipo_archivo_soportado": ["xlsx"],
+        "version": "1.0.0",
+        "json_file": "cxc_unificado_v1.json",
+    },
+
+    "facturas_v1": {
+        "schema_id": "facturas_v1",
+        "nombre": "Facturas",
+        "descripcion": (
+            "Esquema de facturas emitidas. Toda factura debe referenciar una venta válida. "
+            "No puede existir factura sin venta (integridad referencial obligatoria)."
+        ),
+        "fuente": "cxc_excel",
+        "campos_obligatorios": ["id_factura", "id_venta", "fecha_emision", "importe_facturado"],
+        "campos_recomendados": ["folio", "cliente_id"],
+        "campos_opcionales": ["moneda", "uuid", "serie", "tipo_comprobante", "notas"],
+        "salidas_disponibles": [
+            "facturas_por_venta",
+            "facturas_no_cobradas",
+            "conciliacion_ventas_facturas",
+        ],
+        "tipo_archivo_soportado": ["xlsx"],
+        "version": "1.0.0",
+        "json_file": "facturas_v1.json",
+    },
+
+    "ventas_relacional_v1": {
+        "schema_id": "ventas_relacional_v1",
+        "nombre": "Ventas Relacional",
+        "descripcion": (
+            "Esquema de ventas para el modelo relacional ventas→facturas→cxc. "
+            "Activa métricas por vendedor, detección de ventas no facturadas y aging real."
+        ),
+        "fuente": "ventas_excel",
+        "campos_obligatorios": ["id_venta", "cliente_id", "fecha_venta", "importe_total"],
+        "campos_recomendados": ["vendedor_id"],
+        "campos_opcionales": ["region", "linea_de_negocio", "canal", "moneda", "sucursal"],
+        "salidas_disponibles": [
+            "ventas_totales",
+            "tendencia_mensual",
+            "top_clientes",
+            "desempeno_vendedor",
+            "ventas_no_facturadas",
+            "ratio_deuda_vs_ventas_vendedor",
+            "metricas_por_vendedor",
+        ],
+        "tipo_archivo_soportado": ["csv", "xlsx"],
+        "version": "1.0.0",
+        "json_file": "ventas_relacional_v1.json",
+    },
 }
 
 

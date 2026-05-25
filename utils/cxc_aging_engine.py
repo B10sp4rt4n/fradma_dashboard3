@@ -15,6 +15,11 @@ TODOS los módulos de CIMA que necesiten métricas de CxC deben importar
 `prepare_cxc_metrics` de aquí.  Nunca calcular aging o score en módulos
 individuales.
 
+MODELO DE ESTATUS (canónico — Sección 2 del modelo unificado):
+  El estatus se deriva EXCLUSIVAMENTE de saldo_actual y fecha_vencimiento.
+  Nunca se lee ni acepta un estatus manual del archivo fuente.
+  Fuente canónica: utils.modelo_unificado.aplicar_estatus_a_dataframe
+
 SCORE SALUD (fórmula canónica — documentada para todas las vistas):
     score = (pct_vigente  * 100
            + pct_0_30    *  70
@@ -46,7 +51,8 @@ from utils.cxc_helper import (
     clasificar_score_salud,
     detectar_columna,
 )
-from utils.constantes import COLUMNAS_ESTATUS
+from utils.constantes import COLUMNAS_ESTATUS, COLUMNAS_ESTATUS_PROHIBIDAS_EXCEL
+from utils.modelo_unificado import aplicar_estatus_a_dataframe, ESTATUS_PAGADA
 from utils.logger import configurar_logger
 
 logger = configurar_logger("cxc_aging_engine", nivel="INFO")
@@ -156,8 +162,35 @@ def prepare_cxc_metrics(
     config = config or {}
     diagnostico: List[str] = []
 
+    # ── Eliminar estatus manual si viene en el DataFrame (modelo unificado) ─
+    cols_estatus_manuales = [
+        col for col in df_cxc.columns if col.lower() in COLUMNAS_ESTATUS_PROHIBIDAS_EXCEL
+    ]
+    if cols_estatus_manuales:
+        df_cxc = df_cxc.drop(columns=cols_estatus_manuales)
+        diagnostico.append(
+            f"Columna(s) de estatus manual eliminadas: {cols_estatus_manuales}. "
+            "El estatus se calcula automáticamente desde saldo_actual y fecha_vencimiento."
+        )
+
     # ── Motor base ─────────────────────────────────────────────────────────
     resultado = calcular_cxc_aging(df_cxc, fecha_corte=fecha_corte, config=config)
+
+    # ── Recalcular estatus derivado sobre df_prep (modelo unificado) ───────
+    _df_prep = resultado.get("df_prep", pd.DataFrame())
+    col_saldo_prep = "saldo_adeudado" if "saldo_adeudado" in _df_prep.columns else "saldo_actual"
+    col_venc_prep  = next(
+        (c for c in ("fecha_vencimiento", "vencimiento", "fecha_venc") if c in _df_prep.columns),
+        None,
+    )
+    if col_saldo_prep in _df_prep.columns and col_venc_prep:
+        _df_prep = aplicar_estatus_a_dataframe(
+            _df_prep,
+            col_saldo=col_saldo_prep,
+            col_vencimiento=col_venc_prep,
+            fecha_corte=fecha_corte,
+        )
+        resultado["df_prep"] = _df_prep
 
     # ── Extraer campos principales ─────────────────────────────────────────
     total_adeudado = resultado["total_adeudado"]
@@ -181,16 +214,17 @@ def prepare_cxc_metrics(
         )
 
     _df_prep_diag = resultado.get("df_prep", pd.DataFrame())
-    _col_estatus = detectar_columna(_df_prep_diag, COLUMNAS_ESTATUS)
-    if _col_estatus is None:
-        diagnostico.append(
-            "Sin columna de estatus; se asume que todos los registros "
-            "representan saldo abierto."
-        )
+    # Estatus ahora es siempre derivado; registrar en diagnóstico
+    if "estatus" in _df_prep_diag.columns:
+        pagadas = int((_df_prep_diag["estatus"] == ESTATUS_PAGADA).sum())
+        if pagadas > 0:
+            diagnostico.append(
+                f"{pagadas} registro(s) con estatus 'Pagada' (saldo == 0). "
+                "Excluidos del cálculo de cartera activa."
+            )
     elif filas_descartadas > 0:
         diagnostico.append(
-            f"{filas_descartadas} registro(s) excluidos por estar marcados como "
-            f"pagados/cerrados en columna '{_col_estatus}'."
+            f"{filas_descartadas} registro(s) excluidos por saldo cero."
         )
 
     dif_abs = abs(resultado["diferencia_total_buckets"])

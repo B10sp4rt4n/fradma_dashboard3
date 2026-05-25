@@ -1,4 +1,4 @@
-fecha,monto,cliente
-2026-01-15,12500.0,Empresa ABC
-2026-02-10,8750.5,Empresa XYZ
-2026-03-05,21000.0,Industrias MNO
+fecha,monto,cliente,id_factura,folio_factura
+2026-01-15,12500.0,Empresa ABC,F00001,A-0001
+2026-02-10,8750.5,Empresa XYZ,F00002,A-0002
+2026-03-05,21000.0,Industrias MNO,F00003,A-0003

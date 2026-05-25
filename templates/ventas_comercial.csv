@@ -1,4 +1,4 @@
-fecha,monto,cliente,vendedor,linea_de_negocio,producto,region,canal
-2026-01-15,12500.0,Empresa ABC,Ana López,Ciberseguridad,EDR-Pro,Norte,Directo
-2026-02-10,8750.5,Empresa XYZ,Carlos Méndez,Protección Corrosión,ZR-100,Centro,Canal
-2026-03-05,21000.0,Industrias MNO,Ana López,Recubrimientos,EZK-300,Sur,Directo
+fecha,monto,cliente,vendedor,linea_de_negocio,producto,region,canal,id_factura,folio_factura
+2026-01-15,12500.0,Empresa ABC,Ana López,Ciberseguridad,EDR-Pro,Norte,Directo,F00001,A-0001
+2026-02-10,8750.5,Empresa XYZ,Carlos Méndez,Protección Corrosión,ZR-100,Centro,Canal,F00002,A-0002
+2026-03-05,21000.0,Industrias MNO,Ana López,Recubrimientos,EZK-300,Sur,Directo,F00003,A-0003

@@ -1,6 +1,12 @@
 """
 Funciones helper para cálculos de Cuentas por Cobrar (CxC).
 Centraliza la lógica de negocio para evitar duplicación.
+
+NOTA — Modelo Unificado:
+  El estatus de CxC es DERIVADO. La función `excluir_pagados` detecta registros
+  pagados únicamente por saldo == 0 o por la columna `estatus` calculada por
+  `modelo_unificado.aplicar_estatus_a_dataframe`. No acepta estatus manual
+  proveniente de fuentes externas.
 """
 
 import pandas as pd
@@ -12,6 +18,7 @@ from .constantes import (
     COLUMNAS_FECHA_PAGO,
     COLUMNAS_DIAS_CREDITO,
     COLUMNAS_ESTATUS,
+    COLUMNAS_ESTATUS_PROHIBIDAS_EXCEL,
     UmbralesCxC,
     ScoreSalud,
     BINS_ANTIGUEDAD,
@@ -85,34 +92,45 @@ def _detectar_columna_fecha_aging(df: pd.DataFrame, config: Optional[Dict] = Non
 
 def excluir_pagados(df: pd.DataFrame, col_estatus: Optional[str] = None) -> pd.Series:
     """
-    Crea una máscara booleana para excluir registros pagados.
-    
+    Crea una máscara booleana para identificar registros pagados.
+
+    MODELO UNIFICADO — Prioridad de detección:
+      1. Columna 'estatus' con valor 'Pagada' (calculada por modelo_unificado)
+      2. Columna de saldo canónica (saldo_actual / saldo_adeudado) == 0
+      3. Columna de estatus legacy del Excel (solo como último recurso)
+
     Args:
-        df: DataFrame con datos de CxC
-        col_estatus: Nombre de la columna de estatus (opcional, se detecta automáticamente)
-        
+        df:          DataFrame con datos de CxC.
+        col_estatus: Nombre de columna de estatus (opcional, se detecta automáticamente).
+
     Returns:
-        pd.Series con máscara booleana (True = pagado, False = no pagado)
+        pd.Series[bool] — True = registro pagado/cerrado.
     """
+    # 1. Columna estatus derivado (prioridad máxima)
+    if "estatus" in df.columns:
+        return df["estatus"].astype(str).str.strip().str.lower() == "pagada"
+
+    # 2. Saldo == 0 (detección directa por modelo unificado)
+    for col_saldo in ("saldo_actual", "saldo_adeudado", "saldo"):
+        if col_saldo in df.columns:
+            saldo_num = pd.to_numeric(df[col_saldo], errors="coerce").fillna(-1)
+            return saldo_num == 0
+
+    # 3. Columna de estatus legacy (solo si no hay columnas del modelo unificado)
+    #    No acepta columnas prohibidas del Excel (estatus manual)
     if col_estatus is None:
-        col_estatus = detectar_columna(df, COLUMNAS_ESTATUS)
-    
-    if col_estatus:
+        candidatos_legacy = [
+            c for c in COLUMNAS_ESTATUS
+            if c.lower() not in COLUMNAS_ESTATUS_PROHIBIDAS_EXCEL
+        ]
+        col_estatus = detectar_columna(df, candidatos_legacy)
+
+    if col_estatus and col_estatus in df.columns:
         col_valores = df[col_estatus].astype(str).str.strip().str.lower()
 
-        # Caso especial: columna LLAMADA 'pagado' usa valores si/no, 1/0, true/false, x
         if str(col_estatus).lower() == 'pagado':
             return col_valores.isin(['si', 'sí', '1', 'true', 'yes', 'x', 'pagado', 'pagada'])
 
-        # Patrón regex ampliado: cubre masculino/femenino y variantes de estatus liquidado
-        # pagad   → pagado / pagada
-        # liquid  → liquidado / liquidada
-        # cancel  → cancelado / cancelada
-        # cerrad  → cerrado / cerrada
-        # finiquit→ finiquitado / finiquitada
-        # cobrad  → cobrado / cobrada
-        # saldad  → saldado / saldada
-        # paid    → paid (inglés)
         patron = r'pagad|liquid|cancel|cerrad|finiquit|paid|cobrad|saldad'
         return col_valores.str.contains(patron, na=False, regex=True)
 

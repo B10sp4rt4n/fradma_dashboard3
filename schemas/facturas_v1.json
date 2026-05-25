@@ -1,0 +1,25 @@
+{
+  "schema_id": "facturas_v1",
+  "nombre": "Facturas",
+  "descripcion": "Esquema de facturas emitidas. Toda factura debe referenciar una venta válida (id_venta). No puede existir factura sin venta asociada.",
+  "fuente": "cxc_excel",
+  "campos_obligatorios": ["id_factura", "id_venta", "fecha_emision", "importe_facturado"],
+  "campos_recomendados": ["folio", "cliente_id"],
+  "campos_opcionales": ["moneda", "uuid", "serie", "tipo_comprobante", "notas"],
+  "integridad_referencial": {
+    "id_venta": "ventas.id_venta (FK obligatoria — no puede existir factura sin venta)"
+  },
+  "validaciones": [
+    "id_factura debe ser único",
+    "id_venta debe existir en la tabla ventas",
+    "importe_facturado debe ser mayor que 0",
+    "suma(importe_facturado) por id_venta no debe exceder importe_total de la venta"
+  ],
+  "salidas_disponibles": [
+    "facturas_por_venta",
+    "facturas_no_cobradas",
+    "conciliacion_ventas_facturas"
+  ],
+  "tipo_archivo_soportado": ["xlsx"],
+  "version": "1.0.0"
+}
