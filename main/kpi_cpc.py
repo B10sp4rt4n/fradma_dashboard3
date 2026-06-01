@@ -1767,15 +1767,19 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                 
                 # Gráfico de barras con colores por categoría
                 seguimiento_view.write("### 📊 Distribución de Deuda por Antigüedad")
-                fig, ax = plt.subplots(figsize=(10, 5))
-                # Asignar colores según severidad de cada categoría
-                colores_barras = [MAPA_COLORES_RIESGO.get(nivel, '#808080') for nivel in riesgo_df['nivel_riesgo']]
-                bars = ax.bar(riesgo_df['nivel_riesgo'], riesgo_df['saldo_adeudado'], color=colores_barras)
-                ax.set_title('Distribución por Antigüedad de Deuda')
-                ax.set_ylabel('Monto Adeudado ($)')
+                fig, ax = plt.subplots(figsize=(12, 5), dpi=120)
+                # Asignar colores según severidad de cada categoría — orden explícito
+                _cat_order = list(riesgo_df['nivel_riesgo'])
+                colores_barras = [MAPA_COLORES_RIESGO.get(nivel, '#808080') for nivel in _cat_order]
+                bars = ax.bar(_cat_order, riesgo_df['saldo_adeudado'], color=colores_barras)
+                ax.set_title('Distribución por Antigüedad de Deuda', fontsize=13)
+                ax.set_ylabel('Monto Adeudado ($)', fontsize=11)
                 ax.yaxis.set_major_formatter('${x:,.2f}')
-                plt.xticks(rotation=45)
-                
+                ax.set_xticks(range(len(_cat_order)))
+                ax.set_xticklabels(_cat_order, rotation=45, ha='right', fontsize=10)
+                ax.margins(x=0.05)
+                fig.tight_layout()
+
                 # Agregar etiquetas de valor
                 for bar in bars:
                     height = bar.get_height()
@@ -1783,8 +1787,8 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                                 xy=(bar.get_x() + bar.get_width() / 2, height),
                                 xytext=(0, 3),  # 3 points vertical offset
                                 textcoords="offset points",
-                                ha='center', va='bottom')
-                
+                                ha='center', va='bottom', fontsize=9)
+
                 seguimiento_view.pyplot(fig, clear_figure=True)
                 plt.close(fig)
                 
@@ -1866,25 +1870,30 @@ def run(archivo, habilitar_ia=False, openai_api_key=None):
                 
                     # Crear gráfico de barras apiladas
                     seguimiento_view.write("### 📊 Distribución por Agente y Antigüedad")
-                    fig, ax = plt.subplots(figsize=(12, 6))
-                
-                    # Preparar datos para el gráfico usando constantes
+                    fig, ax = plt.subplots(figsize=(12, 6), dpi=120)
+
+                    # Preparar datos para el gráfico usando constantes — orden explícito
+                    _agentes_order = list(agente_categoria.index)
                     bottom = np.zeros(len(agente_categoria))
                     for i, categoria in enumerate(LABELS_ANTIGUEDAD_AGENTES):
                         if categoria in agente_categoria.columns:
-                            valores = agente_categoria[categoria]
-                            ax.bar(agente_categoria.index, valores, bottom=bottom, label=categoria, color=COLORES_ANTIGUEDAD_AGENTES[i])
+                            valores = agente_categoria[categoria].values
+                            ax.bar(_agentes_order, valores, bottom=bottom, label=categoria, color=COLORES_ANTIGUEDAD_AGENTES[i])
                             bottom += valores
-                
+
                     # Personalizar gráfico
                     ax.set_title('Deuda por Agente y Antigüedad', fontsize=14)
                     ax.set_ylabel('Monto Adeudado ($)', fontsize=12)
                     ax.set_xlabel('Agente', fontsize=12)
-                    ax.tick_params(axis='x', rotation=45)
+                    ax.set_xticks(range(len(_agentes_order)))
+                    ax.set_xticklabels(_agentes_order, rotation=45, ha='right', fontsize=10)
                     ax.legend(title='Días Vencidos', loc='upper right')
                     ax.yaxis.set_major_formatter('${x:,.2f}')
-                
-                    seguimiento_view.pyplot(fig)
+                    ax.margins(x=0.05)
+                    fig.tight_layout()
+
+                    seguimiento_view.pyplot(fig, clear_figure=True)
+                    plt.close(fig)
                 
                     # Mostrar tabla resumen
                     seguimiento_view.write("### 📋 Resumen por Agente")

@@ -216,8 +216,205 @@ CHART_COLORS = [
     "#3F51B5", "#FFEB3B", "#009688", "#F44336", "#673AB7",
 ]
 
+# Colores fijos para clasificación ABC — siempre los mismos
+ABC_COLOR_MAP = {"A": "#2ecc71", "B": "#f39c12", "C": "#e74c3c"}
+ABC_FALLBACK_COLOR = "#3498db"
+
+# Parámetros de layout fijos — garantizan visualización determinística entre reruns
+CHART_LAYOUT_DEFAULTS = dict(
+    autosize=False,
+    margin=dict(l=60, r=60, t=80, b=120),
+)
+
+MAX_CHART_LABELS = 15   # Límite de etiquetas en el eje X para evitar encimamientos
 MAX_CHAT_MESSAGES = 40
 MAX_SESSION_RESULT_ROWS = 300
+
+
+# =====================================================================
+# Funciones puras de render — reciben df ya calculado, devuelven fig
+# =====================================================================
+
+def render_pareto_chart(
+    df: pd.DataFrame,
+    x_col: str,
+    y_col: str,
+    pct_col: str | None = None,
+    abc_col: str | None = None,
+    title: str = "Análisis de Pareto (80/20)",
+) -> "go.Figure":
+    """
+    Construye y devuelve una figura Plotly de Pareto determinística.
+
+    Garantías de estabilidad visual:
+    - Siempre ordena por y_col descendente antes de calcular acumulado.
+    - Limita a MAX_CHART_LABELS ítems en el eje X; la tabla completa queda aparte.
+    - height=520, márgenes y escala del eje secundario fijos.
+    - categoryorder="array" para que Plotly no reordene las barras.
+    """
+    from plotly.subplots import make_subplots
+
+    # --- Ordenar siempre por valor descendente ---
+    pareto_df = df.sort_values(y_col, ascending=False).reset_index(drop=True)
+
+    # --- Calcular % acumulado si no viene en el df ---
+    if pct_col is None or pct_col not in pareto_df.columns:
+        total = pareto_df[y_col].sum()
+        pareto_df["_pct_acumulado"] = (
+            (pareto_df[y_col].cumsum() / total * 100).round(2) if total > 0 else 0.0
+        )
+        pct_col = "_pct_acumulado"
+
+    # --- Limitar etiquetas visibles ---
+    display_df = pareto_df.head(MAX_CHART_LABELS).copy()
+    category_order = display_df[x_col].astype(str).tolist()
+
+    # --- Colores fijos ---
+    if abc_col and abc_col in display_df.columns:
+        bar_colors = [
+            ABC_COLOR_MAP.get(str(v).upper(), ABC_FALLBACK_COLOR)
+            for v in display_df[abc_col]
+        ]
+    else:
+        bar_colors = ABC_FALLBACK_COLOR
+
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+    fig.add_trace(
+        go.Bar(
+            x=display_df[x_col].astype(str),
+            y=display_df[y_col],
+            name=y_col.replace("_", " ").title(),
+            marker_color=bar_colors,
+            text=[
+                f"${v:,.0f}" if v >= 1_000 else f"{v:,.2f}"
+                for v in display_df[y_col]
+            ],
+            textposition="outside",
+        ),
+        secondary_y=False,
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=display_df[x_col].astype(str),
+            y=display_df[pct_col],
+            name="% Acumulado",
+            mode="lines+markers+text",
+            line=dict(color="#e74c3c", width=3),
+            marker=dict(size=8, color="#e74c3c"),
+            text=[f"{v:.1f}%" for v in display_df[pct_col]],
+            textposition="top center",
+            textfont=dict(size=10, color="#e74c3c"),
+        ),
+        secondary_y=True,
+    )
+
+    fig.add_hline(
+        y=80,
+        line_dash="dash",
+        line_color="green",
+        annotation_text="80%",
+        annotation_position="right",
+        secondary_y=True,
+    )
+
+    fig.update_layout(
+        title=title,
+        height=520,
+        autosize=False,
+        xaxis=dict(
+            title=x_col.replace("_", " ").title(),
+            categoryorder="array",
+            categoryarray=category_order,
+            tickangle=-45,
+            automargin=True,
+        ),
+        showlegend=True,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(l=60, r=80, t=80, b=120),
+        bargap=0.15,
+    )
+    fig.update_yaxes(
+        title_text=y_col.replace("_", " ").title(),
+        secondary_y=False,
+        autorange=True,
+    )
+    fig.update_yaxes(
+        title_text="% Acumulado",
+        range=[0, 100],
+        fixedrange=True,
+        secondary_y=True,
+    )
+
+    return fig
+
+
+def render_abc_chart(
+    df: pd.DataFrame,
+    x_col: str,
+    y_col: str,
+    abc_col: str | None = None,
+    title: str = "Distribución de facturación por clasificación ABC",
+) -> "go.Figure":
+    """
+    Construye una figura Pareto con coloreado ABC determinístico.
+    Wrapper sobre render_pareto_chart con defaults propios de la vista ABC.
+    """
+    return render_pareto_chart(
+        df=df,
+        x_col=x_col,
+        y_col=y_col,
+        pct_col=None,
+        abc_col=abc_col,
+        title=title,
+    )
+
+
+def render_sales_by_client_chart(
+    df: pd.DataFrame,
+    x_col: str,
+    y_col: str,
+    title: str = "Ventas por cliente",
+) -> "go.Figure":
+    """
+    Barra horizontal determinística: clientes ordenados por ventas descendente,
+    altura fija, márgenes fijos, colores fijos, categoryarray explícito.
+    """
+    chart_df = df.sort_values(y_col, ascending=False).head(MAX_CHART_LABELS).copy()
+    chart_df = chart_df.sort_values(y_col, ascending=True)   # invertir para hbar legible
+    category_order = chart_df[x_col].astype(str).tolist()
+    height = max(400, min(len(chart_df) * 38, 700))
+
+    fig = go.Figure(
+        go.Bar(
+            x=chart_df[y_col],
+            y=chart_df[x_col].astype(str),
+            orientation="h",
+            marker_color=CHART_COLORS[0],
+            text=[
+                f"${v:,.0f}" if v >= 1_000 else f"{v:,.2f}"
+                for v in chart_df[y_col]
+            ],
+            textposition="outside",
+        )
+    )
+    fig.update_layout(
+        title=title,
+        height=height,
+        autosize=False,
+        yaxis=dict(
+            categoryorder="array",
+            categoryarray=category_order,
+            autorange=False,
+            range=[-0.5, len(category_order) - 0.5],
+            tickfont=dict(size=11),
+        ),
+        xaxis=dict(title=y_col.replace("_", " ").title()),
+        margin=dict(l=10, r=80, t=60, b=40),
+        bargap=0.15,
+    )
+    return fig
 
 
 def _append_chat_message(msg: dict):
@@ -859,14 +1056,31 @@ def _render_kpi_tab(df: pd.DataFrame):
                     st.info(f"ℹ️ **{top1_name}** es el principal con **{pct_top1:.1f}%** del total.")
 
 
-def _render_plotly_chart_and_save(fig, use_container_width=True):
-    """Renderiza figura de Plotly y la guarda en session_state para exportación."""
+def _render_plotly_chart_and_save(fig, use_container_width=True, stable_key: str | None = None):
+    """
+    Renderiza figura de Plotly y la guarda en session_state para exportación.
+
+    La clave del widget se genera a partir del título del gráfico para ser
+    determinística entre reruns (mismo gráfico → misma clave → sin parpadeo).
+    Si dos gráficos tienen el mismo título, un contador per-render-pass los
+    diferencia; el contador se reinicia en run() en cada ciclo de Streamlit.
+    """
+    import hashlib
     # Guardar en session_state para uso posterior (ej. PDF)
     st.session_state['last_plotly_fig'] = fig
-    # Contador único por re-run de Streamlit → evita StreamlitDuplicateElementId
-    idx = st.session_state.get('_chart_render_idx', 0) + 1
-    st.session_state['_chart_render_idx'] = idx
-    st.plotly_chart(fig, use_container_width=use_container_width, key=f"chart_{idx}")
+
+    # Clave estable: hash del título del gráfico + posición en el render actual
+    if stable_key:
+        chart_key = stable_key
+    else:
+        title_text = str(getattr(fig.layout.title, "text", "") or "")
+        # Contador per-render-pass (se reinicia a 0 en run() cada rerun)
+        idx = st.session_state.get('_chart_render_idx', 0) + 1
+        st.session_state['_chart_render_idx'] = idx
+        title_hash = hashlib.md5(title_text.encode()).hexdigest()[:6]
+        chart_key = f"chart_{title_hash}_{idx:03d}"
+
+    st.plotly_chart(fig, use_container_width=use_container_width, key=chart_key)
 
 def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: dict = None):
     """
@@ -969,6 +1183,9 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
             xaxis_tickangle=-45,
             legend_title_text="Serie",
             hovermode="x unified",
+            height=520,
+            autosize=False,
+            margin=dict(l=60, r=40, t=70, b=80),
         )
         _render_plotly_chart_and_save(fig, use_container_width=True)
         return
@@ -1155,7 +1372,12 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                     color_discrete_sequence=CHART_COLORS,
                     points="outliers",
                 )
-            fig.update_layout(showlegend=False)
+            fig.update_layout(
+                showlegend=False,
+                height=460,
+                autosize=False,
+                margin=dict(l=60, r=40, t=70, b=60),
+            )
             _render_plotly_chart_and_save(fig, use_container_width=True)
             return
 
@@ -1168,7 +1390,12 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                 color_discrete_sequence=[CHART_COLORS[0]],
                 marginal="box",
             )
-            fig.update_layout(bargap=0.05)
+            fig.update_layout(
+                bargap=0.05,
+                height=460,
+                autosize=False,
+                margin=dict(l=60, r=40, t=70, b=60),
+            )
             _render_plotly_chart_and_save(fig, use_container_width=True)
             return
 
@@ -1195,7 +1422,11 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                     },
                 },
             ))
-            fig.update_layout(height=300)
+            fig.update_layout(
+                height=320,
+                autosize=False,
+                margin=dict(l=40, r=40, t=60, b=40),
+            )
             _render_plotly_chart_and_save(fig, use_container_width=True)
             return
 
@@ -1238,8 +1469,15 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                 )
                 fig.update_layout(
                     showlegend=False,
-                    xaxis_tickangle=-25,
-                    margin=dict(l=10, r=40, t=50, b=20),
+                    height=460,
+                    autosize=False,
+                    xaxis=dict(
+                        categoryorder="array",
+                        categoryarray=[r["Métrica"] for r in metrics_data],
+                        tickangle=-25,
+                        automargin=True,
+                    ),
+                    margin=dict(l=10, r=60, t=70, b=80),
                 )
                 fig.update_traces(textposition="outside", texttemplate="%{y:,.0f}")
                 _render_plotly_chart_and_save(fig, use_container_width=True)
@@ -1268,6 +1506,7 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
             if use_hbar:
                 # Cambiar a horizontal para legibilidad
                 bar_df = bar_df.sort_values(y_col, ascending=True)
+                _cat_order_hbar = bar_df[x_col].astype(str).tolist()
                 fig = px.bar(
                     bar_df, x=y_col, y=x_col,
                     title=title,
@@ -1277,11 +1516,19 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                     color_discrete_sequence=CHART_COLORS if color_col else None,
                 )
                 fig.update_traces(texttemplate="")
+                _hbar_height = dyn_height or max(400, min(len(bar_df) * 38, 700))
                 fig.update_layout(
-                    height=dyn_height,
-                    yaxis=dict(autorange="reversed", tickfont=dict(size=11)),
+                    height=_hbar_height,
+                    autosize=False,
+                    yaxis=dict(
+                        categoryorder="array",
+                        categoryarray=_cat_order_hbar,
+                        autorange=False,
+                        range=[-0.5, len(_cat_order_hbar) - 0.5],
+                        tickfont=dict(size=11),
+                    ),
                     showlegend=bool(color_col),
-                    margin=dict(l=10, r=40, t=50, b=20),
+                    margin=dict(l=10, r=80, t=60, b=40),
                 )
                 # Si hay color_col (barras apiladas/agrupadas), anotar total por fila
                 if color_col:
@@ -1296,6 +1543,7 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                 else:
                     fig.update_traces(textposition="outside", texttemplate="%{x:,.0f}")
             else:
+                _cat_order_bar = bar_df[x_col].astype(str).tolist()
                 fig = px.bar(
                     bar_df, x=x_col, y=y_col,
                     title=title,
@@ -1308,8 +1556,20 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                 if is_temporal:
                     fig.update_xaxes(tickformat="%b %Y", tickangle=-45)
                 else:
-                    fig.update_layout(xaxis_tickangle=-45)
-                fig.update_layout(showlegend=bool(color_col))
+                    fig.update_layout(
+                        xaxis=dict(
+                            categoryorder="array",
+                            categoryarray=_cat_order_bar,
+                            tickangle=-45,
+                            automargin=True,
+                        )
+                    )
+                fig.update_layout(
+                    height=520,
+                    autosize=False,
+                    showlegend=bool(color_col),
+                    margin=dict(l=60, r=60, t=70, b=120),
+                )
                 # Si hay color_col (múltiples series), anotar total por nodo
                 if color_col:
                     _bar_totals = bar_df.groupby(x_col, sort=False)[y_col].sum()
@@ -1336,6 +1596,7 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
             
             if force_vertical:
                 # Usuario pidió vertical, renderizar como bar vertical
+                _cat_order_v = hbar_df[x_col].astype(str).tolist()
                 fig = px.bar(
                     hbar_df, x=x_col, y=y_col,
                     title=title,
@@ -1344,10 +1605,22 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                     color_discrete_sequence=CHART_COLORS if color_col else None,
                     text_auto=True,
                 )
-                fig.update_layout(xaxis_tickangle=-45, showlegend=bool(color_col))
+                fig.update_layout(
+                    height=520,
+                    autosize=False,
+                    xaxis=dict(
+                        categoryorder="array",
+                        categoryarray=_cat_order_v,
+                        tickangle=-45,
+                        automargin=True,
+                    ),
+                    showlegend=bool(color_col),
+                    margin=dict(l=60, r=60, t=70, b=120),
+                )
                 fig.update_traces(textposition="outside", texttemplate="%{y:,.0f}")
             else:
                 # Horizontal por defecto
+                _cat_order_h = hbar_df[x_col].astype(str).tolist()
                 fig = px.bar(
                     hbar_df, x=y_col, y=x_col,
                     title=title,
@@ -1358,9 +1631,16 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                 )
                 fig.update_layout(
                     height=dyn_height,
-                    yaxis=dict(autorange="reversed", tickfont=dict(size=11)),
+                    autosize=False,
+                    yaxis=dict(
+                        categoryorder="array",
+                        categoryarray=_cat_order_h,
+                        autorange=False,
+                        range=[-0.5, len(_cat_order_h) - 0.5],
+                        tickfont=dict(size=11),
+                    ),
                     showlegend=bool(color_col),
-                    margin=dict(l=10, r=40, t=50, b=20),
+                    margin=dict(l=10, r=80, t=60, b=40),
                 )
                 fig.update_traces(textposition="outside", texttemplate="%{x:,.0f}")
             _render_plotly_chart_and_save(fig, use_container_width=True)
@@ -1382,6 +1662,7 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                 return f"${v:,.0f}" if v >= 1000 else f"{v:,.2f}"
 
             if use_hbar:
+                _sb_cat_order_h = sb_df[x_col].astype(str).unique().tolist()
                 fig = px.bar(
                     sb_df, x=y_col, y=x_col,
                     color=color_col,
@@ -1398,8 +1679,20 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                         showarrow=False, xshift=5, xanchor="left",
                         font=dict(size=11, color="white"),
                     )
-                fig.update_layout(height=dyn_height, yaxis=dict(autorange="reversed", tickfont=dict(size=11)))
+                fig.update_layout(
+                    height=dyn_height or max(400, min(len(_sb_cat_order_h) * 38, 700)),
+                    autosize=False,
+                    yaxis=dict(
+                        categoryorder="array",
+                        categoryarray=_sb_cat_order_h,
+                        autorange=False,
+                        range=[-0.5, len(_sb_cat_order_h) - 0.5],
+                        tickfont=dict(size=11),
+                    ),
+                    margin=dict(l=10, r=80, t=60, b=40),
+                )
             else:
+                _sb_cat_order_v = sb_df[x_col].astype(str).unique().tolist()
                 fig = px.bar(
                     sb_df, x=x_col, y=y_col,
                     color=color_col,
@@ -1415,7 +1708,17 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                         showarrow=False, yshift=10, yanchor="bottom",
                         font=dict(size=11, color="white"),
                     )
-                fig.update_layout(xaxis_tickangle=-45)
+                fig.update_layout(
+                    height=520,
+                    autosize=False,
+                    xaxis=dict(
+                        categoryorder="array",
+                        categoryarray=_sb_cat_order_v,
+                        tickangle=-45,
+                        automargin=True,
+                    ),
+                    margin=dict(l=60, r=60, t=70, b=120),
+                )
             _render_plotly_chart_and_save(fig, use_container_width=True)
             return
 
@@ -1428,6 +1731,7 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
             elif user_orientation in ['v', 'vertical']:
                 use_hbar = False
             if use_hbar:
+                _gb_cat_order_h = gb_df[x_col].astype(str).unique().tolist()
                 fig = px.bar(
                     gb_df, x=y_col, y=x_col,
                     color=color_col,
@@ -1437,8 +1741,20 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                     barmode="group",
                     text_auto=True,
                 )
-                fig.update_layout(height=dyn_height, yaxis=dict(autorange="reversed", tickfont=dict(size=11)))
+                fig.update_layout(
+                    height=dyn_height or max(400, min(len(_gb_cat_order_h) * 38, 700)),
+                    autosize=False,
+                    yaxis=dict(
+                        categoryorder="array",
+                        categoryarray=_gb_cat_order_h,
+                        autorange=False,
+                        range=[-0.5, len(_gb_cat_order_h) - 0.5],
+                        tickfont=dict(size=11),
+                    ),
+                    margin=dict(l=10, r=80, t=60, b=40),
+                )
             else:
+                _gb_cat_order_v = gb_df[x_col].astype(str).unique().tolist()
                 fig = px.bar(
                     gb_df, x=x_col, y=y_col,
                     color=color_col,
@@ -1447,110 +1763,56 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                     barmode="group",
                     text_auto=True,
                 )
-                fig.update_layout(xaxis_tickangle=-45)
+                fig.update_layout(
+                    height=520,
+                    autosize=False,
+                    xaxis=dict(
+                        categoryorder="array",
+                        categoryarray=_gb_cat_order_v,
+                        tickangle=-45,
+                        automargin=True,
+                    ),
+                    margin=dict(l=60, r=60, t=70, b=120),
+                )
             _render_plotly_chart_and_save(fig, use_container_width=True)
             return
 
         # --- PARETO (barras descendentes + línea % acumulado) ---
         if chart_type == "pareto" and num_cols:
-            pareto_df = plot_df.copy()
-            
-            # Detectar columna de % acumulado si existe
-            pct_col = None
-            for c in pareto_df.columns:
+            # Detectar columna de % acumulado pre-calculada
+            pct_col_in = None
+            for c in plot_df.columns:
                 if any(kw in c.lower() for kw in ['pct_acum', 'acumulado', 'cumul', 'pct_total']):
-                    pct_col = c
+                    pct_col_in = c
                     break
-            
-            # Si no hay columna de % acumulado, calcularla
-            if pct_col is None:
-                pareto_df = pareto_df.sort_values(y_col, ascending=False)
-                total = pareto_df[y_col].sum()
-                if total > 0:
-                    pareto_df['_pct_acumulado'] = (pareto_df[y_col].cumsum() / total * 100).round(2)
-                else:
-                    pareto_df['_pct_acumulado'] = 0
-                pct_col = '_pct_acumulado'
-            else:
-                pareto_df = pareto_df.sort_values(y_col, ascending=False)
-            
-            # Detectar columna de clasificación ABC si existe
+
+            # Detectar columna de clasificación ABC
             abc_col = None
-            for c in pareto_df.columns:
+            for c in plot_df.columns:
                 if any(kw in c.lower() for kw in ['clasificacion', 'abc', 'categoria', 'segmento']):
                     abc_col = c
                     break
-            
-            # Crear figura con eje Y secundario
-            from plotly.subplots import make_subplots
-            fig = make_subplots(specs=[[{"secondary_y": True}]])
-            
-            # Colores por clasificación ABC si existe
-            if abc_col and abc_col in pareto_df.columns:
-                color_map = {'A': '#2ecc71', 'B': '#f39c12', 'C': '#e74c3c'}
-                bar_colors = [color_map.get(str(v).upper(), '#3498db') for v in pareto_df[abc_col]]
-            else:
-                bar_colors = '#3498db'
-            
-            # Barras de valores
-            fig.add_trace(
-                go.Bar(
-                    x=pareto_df[x_col],
-                    y=pareto_df[y_col],
-                    name=y_col.replace('_', ' ').title(),
-                    marker_color=bar_colors,
-                    text=[f"${v:,.0f}" if v >= 1000 else f"{v:,.2f}" for v in pareto_df[y_col]],
-                    textposition="outside",
-                ),
-                secondary_y=False,
-            )
-            
-            # Línea de % acumulado
-            fig.add_trace(
-                go.Scatter(
-                    x=pareto_df[x_col],
-                    y=pareto_df[pct_col],
-                    name="% Acumulado",
-                    mode="lines+markers+text",
-                    line=dict(color="#e74c3c", width=3),
-                    marker=dict(size=8, color="#e74c3c"),
-                    text=[f"{v:.1f}%" for v in pareto_df[pct_col]],
-                    textposition="top center",
-                    textfont=dict(size=10, color="#e74c3c"),
-                ),
-                secondary_y=True,
-            )
-            
-            # Línea horizontal al 80%
-            fig.add_hline(
-                y=80, line_dash="dash", line_color="green",
-                annotation_text="80%", annotation_position="right",
-                secondary_y=True,
-            )
-            
-            n_items = len(pareto_df)
-            fig.update_layout(
+
+            # Usar la función pura de render — garantiza layout determinístico
+            fig = render_pareto_chart(
+                df=plot_df,
+                x_col=x_col,
+                y_col=y_col,
+                pct_col=pct_col_in,
+                abc_col=abc_col,
                 title=title or "Análisis de Pareto (80/20)",
-                height=max(450, min(n_items * 40, 700)),
-                xaxis_tickangle=-45,
-                xaxis_title=x_col.replace('_', ' ').title(),
-                showlegend=True,
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                margin=dict(l=10, r=40, t=80, b=100),
             )
-            fig.update_yaxes(title_text=y_col.replace('_', ' ').title(), secondary_y=False)
-            fig.update_yaxes(title_text="% Acumulado", range=[0, 105], secondary_y=True)
-            
             _render_plotly_chart_and_save(fig, use_container_width=True)
-            
-            # Mostrar resumen ABC si hay clasificación
-            if abc_col and abc_col in pareto_df.columns:
-                counts = pareto_df[abc_col].value_counts()
+
+            # Mostrar resumen ABC si hay clasificación (usando datos completos, no truncados)
+            if abc_col and abc_col in plot_df.columns:
+                full_sorted = plot_df.sort_values(y_col, ascending=False)
+                counts = full_sorted[abc_col].value_counts()
                 cols_abc = st.columns(3)
                 for i, (cat, emoji) in enumerate([('A', '🟢'), ('B', '🟡'), ('C', '🔴')]):
                     with cols_abc[i]:
                         n = counts.get(cat, 0)
-                        total_cat = pareto_df[pareto_df[abc_col] == cat][y_col].sum()
+                        total_cat = full_sorted[full_sorted[abc_col] == cat][y_col].sum()
                         st.metric(
                             f"{emoji} Categoría {cat}",
                             f"{n} clientes",
@@ -1568,6 +1830,12 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                 markers=True,
             )
             fig.update_traces(line_width=3, marker_size=8)
+            fig.update_layout(
+                height=520,
+                autosize=False,
+                margin=dict(l=60, r=40, t=70, b=60),
+                xaxis=dict(tickangle=-45, automargin=True),
+            )
             _render_plotly_chart_and_save(fig, use_container_width=True)
             return
 
@@ -1578,6 +1846,12 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                 title=title,
                 color=color_col,
                 color_discrete_sequence=CHART_COLORS,
+            )
+            fig.update_layout(
+                height=520,
+                autosize=False,
+                margin=dict(l=60, r=40, t=70, b=60),
+                xaxis=dict(tickangle=-45, automargin=True),
             )
             _render_plotly_chart_and_save(fig, use_container_width=True)
             return
@@ -1597,6 +1871,11 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                 color_discrete_sequence=CHART_COLORS,
             )
             fig.update_traces(textposition="inside", textinfo="percent+label")
+            fig.update_layout(
+                height=500,
+                autosize=False,
+                margin=dict(l=20, r=20, t=70, b=40),
+            )
             _render_plotly_chart_and_save(fig, use_container_width=True)
             return
 
@@ -1638,6 +1917,11 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                 color_discrete_sequence=CHART_COLORS,
             )
             fig.update_traces(textposition="inside", textinfo="percent+label")
+            fig.update_layout(
+                height=500,
+                autosize=False,
+                margin=dict(l=20, r=20, t=70, b=40),
+            )
             _render_plotly_chart_and_save(fig, use_container_width=True)
             return
 
@@ -1654,6 +1938,11 @@ def _auto_chart(df: pd.DataFrame, chart_type: str, question: str, chart_spec: di
                 hover_data=cat_cols[:2] if cat_cols else None,
             )
             fig.update_traces(marker_size=10)
+            fig.update_layout(
+                height=520,
+                autosize=False,
+                margin=dict(l=60, r=40, t=70, b=60),
+            )
             _render_plotly_chart_and_save(fig, use_container_width=True)
             return
 
