@@ -158,6 +158,8 @@ pytest --durations=10          # Top 10 más lentos
 Ver [TESTING_GUIDE.md](TESTING_GUIDE.md) para más detalles.
 ## 🔒 Seguridad de Sesión
 
+> Variables configurables desde Railway → Settings → Variables.
+
 El sistema de autenticación incluye dos protecciones de producción configurables desde variables de entorno.
 
 ### Bloqueo por intentos fallidos
@@ -185,7 +187,7 @@ Cada sesión tiene un TTL de `SESSION_TTL_SECONDS` segundos (8 horas por defecto
 | `MAX_LOGIN_ATTEMPTS` | `5` | Intentos antes de bloqueo |
 | `SESSION_TTL_SECONDS` | `28800` | Duración de sesión (8 horas) |
 | `LOGIN_LOCKOUT_SECONDS` | `900` | Duración del bloqueo (15 minutos) |
-## � Deploy en Railway
+## 🚂 Deploy en Railway
 
 ### Prerequisitos
 
@@ -206,12 +208,15 @@ En **Settings → Variables**, agregar:
 
 | Variable | Descripción | Requerida |
 |---|---|---|
-| `NEON_DATABASE_URL` | `postgresql://user:pass@ep-xxx.neon.tech/fradma?sslmode=require` | ✅ |
+| `NEON_DATABASE_URL` | Cadena Neon: `postgresql://user:pass@host/db?sslmode=require` | ✅ |
 | `OPENAI_API_KEY` | API key de OpenAI | Opcional |
-| `PASSKEY_PREMIUM` | Clave para funciones premium (cambiar el default) | Recomendada |
+| `PASSKEY_PREMIUM` | Clave para funciones premium — cambiar default `fradma2026` | Recomendada |
 | `APP_ENV` | `production` | Recomendada |
-| `LOG_LEVEL` | `INFO` | Opcional |
-| `GUIDED_CATALOG_SOURCE` | `json` o `db` | Opcional |
+| `LOG_LEVEL` | `INFO` · `WARNING` · `DEBUG` | Opcional |
+| `GUIDED_CATALOG_SOURCE` | `json` · `db` | Opcional |
+| `MAX_LOGIN_ATTEMPTS` | Intentos antes de bloqueo (default `5`) | Opcional |
+| `SESSION_TTL_SECONDS` | Duración de sesión en seg (default `28800` = 8h) | Opcional |
+| `LOGIN_LOCKOUT_SECONDS` | Duración del bloqueo en seg (default `900` = 15 min) | Opcional |
 
 ### 3. Confirmar comando de arranque
 
@@ -295,13 +300,19 @@ railway rollback
 # Instalar dependencias
 pip install -r requirements.txt
 
-# Correr con variables de entorno
+# Correr exactamente como Railway (usar $PORT dinámico)
 export NEON_DATABASE_URL="postgresql://..."
 export OPENAI_API_KEY="sk-..."
-streamlit run app.py --server.address=0.0.0.0 --server.port=8501
+PORT=8501 streamlit run app.py --server.address=0.0.0.0 --server.port=$PORT --server.headless=true --server.enableCORS=false
 
 # Smoke tests (sin threshold de coverage)
 pytest tests/test_railway_smoke.py --no-cov -v
+
+# Suite auth security
+pytest tests/unit/test_auth_security.py --no-cov -v
+
+# Suite auth legacy
+pytest tests/unit/test_auth.py --no-cov -v
 ```
 
 ## �📊 Calidad del Código
