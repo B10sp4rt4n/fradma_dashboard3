@@ -1,4 +1,5 @@
 """Script para poblar la base de datos Neon con datos CFDI de ejemplo."""
+import os
 import psycopg2
 from psycopg2.extras import execute_values
 import random
@@ -6,7 +7,10 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 import uuid
 
-CONN = 'postgresql://neondb_owner:npg_jn0JPIoE1bKz@ep-solitary-math-aimeehli-pooler.c-4.us-east-1.aws.neon.tech/neondb?sslmode=require'
+CONN = os.getenv("NEON_DATABASE_URL", "")
+
+if not CONN:
+    raise RuntimeError("Define NEON_DATABASE_URL antes de ejecutar este script.")
 
 random.seed(42)
 

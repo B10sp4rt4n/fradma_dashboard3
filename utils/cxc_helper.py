@@ -1,12 +1,6 @@
 """
 Funciones helper para cálculos de Cuentas por Cobrar (CxC).
 Centraliza la lógica de negocio para evitar duplicación.
-
-NOTA — Modelo Unificado:
-  El estatus de CxC es DERIVADO. La función `excluir_pagados` detecta registros
-  pagados únicamente por saldo == 0 o por la columna `estatus` calculada por
-  `modelo_unificado.aplicar_estatus_a_dataframe`. No acepta estatus manual
-  proveniente de fuentes externas.
 """
 
 import pandas as pd
@@ -106,11 +100,18 @@ def excluir_pagados(df: pd.DataFrame, col_estatus: Optional[str] = None) -> pd.S
     Returns:
         pd.Series[bool] — True = registro pagado/cerrado.
     """
-    # 1. Columna estatus derivado (prioridad máxima)
+    # 1. Columna estatus: detectar variantes de pagado de forma case-insensitive.
     if "estatus" in df.columns:
-        return df["estatus"].astype(str).str.strip().str.lower() == "pagada"
+        estatus_norm = df["estatus"].astype(str).str.strip().str.lower()
+        mask_estatus = estatus_norm.str.contains(
+            r"pagad|liquid|cancel|cerrad|finiquit|paid|cobrad|saldad",
+            na=False,
+            regex=True,
+        )
+        if mask_estatus.any():
+            return mask_estatus
 
-    # 2. Saldo == 0 (detección directa por modelo unificado)
+    # 2. Saldo == 0 (fallback cuando no hay indicador de estatus pagado)
     for col_saldo in ("saldo_actual", "saldo_adeudado", "saldo"):
         if col_saldo in df.columns:
             saldo_num = pd.to_numeric(df[col_saldo], errors="coerce").fillna(-1)
