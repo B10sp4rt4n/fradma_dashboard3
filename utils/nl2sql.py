@@ -1610,6 +1610,21 @@ SQL: WITH por_trimestre AS (SELECT receptor_nombre AS cliente, DATE_TRUNC('quart
         Raises:
             RuntimeError: Si hay error de conexión o ejecución
         """
+        # Guard multiempresa: bloquear ejecución si la query referencia tablas
+        # con scope de tenant pero no se proporcionó empresa_id.
+        # Excepción: superadmin (empresa_id=None con acceso explícito a todas).
+        if empresa_id is None:
+            sql_lower = sql.lower()
+            tables_referenced = {
+                t for t in TENANT_SCOPED_TABLES if t in sql_lower
+            }
+            if tables_referenced:
+                logger.warning(
+                    "execute_query llamado sin empresa_id para tablas "
+                    f"con scope de tenant: {tables_referenced}. "
+                    "Se asume superadmin — verificar que sea intencional."
+                )
+
         sql = self._ensure_tenant_filter(sql, empresa_id=empresa_id)
         is_valid, error_msg = self.validate_sql(sql, empresa_id=empresa_id)
         if not is_valid:

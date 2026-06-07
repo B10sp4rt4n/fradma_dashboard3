@@ -1,0 +1,63 @@
+# Control de versiones
+.git
+.github
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.eggs
+*.egg-info
+
+# Entornos virtuales
+venv
+.venv
+env
+ENV
+
+# Secretos y configuración local
+.env
+.env.*
+.streamlit/secrets.toml
+
+# Testing y cobertura
+.pytest_cache
+.coverage
+coverage.xml
+htmlcov
+.tox
+.nox
+
+# Bases de datos locales
+*.sqlite
+*.db
+
+# Notebooks
+.ipynb_checkpoints
+*.ipynb
+
+# IDEs
+.vscode
+.idea
+.mypy_cache
+
+# Artefactos generados
+site/
+logs/
+*.log
+
+# Archivos temporales
+.DS_Store
+Thumbs.db
+*.swp
+*.bak
+*.tmp
+
+# Datos grandes locales (no subir a imagen)
+backups/
+examples/
+fradma_dashboard_base.zip
+Inventario*.xlsx
+FACTURAS*.xlsx

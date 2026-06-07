@@ -13,7 +13,7 @@ import os
 import bcrypt
 import psycopg2
 import psycopg2.extras
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 import streamlit as st
 from dataclasses import dataclass, field
@@ -21,10 +21,22 @@ from utils.logger import configurar_logger
 
 logger = configurar_logger("auth", nivel="INFO")
 
+# ------------------------------------------------------------------
+# Constantes de seguridad — configurables desde variables de entorno
+# ------------------------------------------------------------------
+MAX_LOGIN_ATTEMPTS: int = int(os.getenv("MAX_LOGIN_ATTEMPTS", "5"))
+SESSION_TTL_SECONDS: int = int(os.getenv("SESSION_TTL_SECONDS", "28800"))   # 8 horas
+LOGIN_LOCKOUT_SECONDS: int = int(os.getenv("LOGIN_LOCKOUT_SECONDS", "900")) # 15 minutos
+
 
 def _get_conn():
     """Obtiene conexión a Neon PostgreSQL."""
     return psycopg2.connect(os.environ["NEON_DATABASE_URL"])
+
+
+def _normalize_login_key(username: str) -> str:
+    """Normaliza el identificador de login para controles de seguridad."""
+    return (username or "").strip().lower()
 
 
 class UserRole:
@@ -135,6 +147,13 @@ class AuthManager:
             success     BOOLEAN,
             created_at  TIMESTAMP DEFAULT NOW()
         );
+
+        -- Tabla para bloqueo temporal por intentos fallidos
+        CREATE TABLE IF NOT EXISTS login_attempts (
+            username        VARCHAR(50) PRIMARY KEY,
+            failed_count    INTEGER NOT NULL DEFAULT 0,
+            last_failed_at  TIMESTAMP NOT NULL DEFAULT NOW()
+        );
         """
         try:
             conn = _get_conn()
@@ -244,25 +263,119 @@ class AuthManager:
         except Exception as e:
             logger.error(f"Error registrando login: {e}")
 
+    def _is_locked_out(self, username: str) -> bool:
+        """
+        Verifica si el usuario está en período de bloqueo temporal.
+        Retorna True si debe rechazarse el intento sin revelar el motivo.
+        """
+        username_key = _normalize_login_key(username)
+        if not username_key:
+            return False
+
+        try:
+            conn = _get_conn()
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT failed_count, last_failed_at FROM login_attempts WHERE username = %s",
+                (username_key,),
+            )
+            row = cur.fetchone()
+            cur.close(); conn.close()
+            if not row:
+                return False
+            failed_count, last_failed_at = row
+            if failed_count < MAX_LOGIN_ATTEMPTS:
+                return False
+            # Verificar si el bloqueo ya expiró
+            lockout_until = last_failed_at + timedelta(seconds=LOGIN_LOCKOUT_SECONDS)
+            if datetime.utcnow() >= lockout_until:
+                # Bloqueo expirado — limpiar contador
+                self._clear_failed_attempts(username_key)
+                return False
+            remaining = int((lockout_until - datetime.utcnow()).total_seconds() // 60) + 1
+            logger.warning(
+                f"Login bloqueado: '{username_key}' — {remaining} min restantes"
+            )
+            return True
+        except Exception as e:
+            logger.error(f"_is_locked_out error: {e}")
+            return False  # En caso de error de BD, no bloquear para evitar DOS inadvertido
+
+    def _record_failed_attempt(self, username: str) -> None:
+        """Incrementa el contador de intentos fallidos para el usuario."""
+        username_key = _normalize_login_key(username)
+        if not username_key:
+            return
+        try:
+            conn = _get_conn()
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO login_attempts (username, failed_count, last_failed_at)
+                VALUES (%s, 1, NOW())
+                ON CONFLICT (username) DO UPDATE
+                    SET failed_count   = login_attempts.failed_count + 1,
+                        last_failed_at = NOW()
+                """,
+                (username_key,),
+            )
+            conn.commit(); cur.close(); conn.close()
+        except Exception as e:
+            logger.error(f"_record_failed_attempt error: {e}")
+
+    def _clear_failed_attempts(self, username: str) -> None:
+        """Limpia el contador de intentos fallidos tras login exitoso."""
+        username_key = _normalize_login_key(username)
+        if not username_key:
+            return
+        try:
+            conn = _get_conn()
+            cur = conn.cursor()
+            cur.execute("DELETE FROM login_attempts WHERE username = %s", (username_key,))
+            conn.commit(); cur.close(); conn.close()
+        except Exception as e:
+            logger.error(f"_clear_failed_attempts error: {e}")
+
     # ------------------------------------------------------------------
     # Autenticación
     # ------------------------------------------------------------------
 
     def authenticate(self, username: str, password: str) -> Optional[User]:
-        """Autentica usuario; retorna User si válido, None si falla."""
+        """
+        Autentica usuario; retorna User si válido, None si falla.
+
+        Protecciones activas:
+        - Bloqueo temporal tras MAX_LOGIN_ATTEMPTS intentos fallidos.
+        - Mensaje genérico para no revelar si el usuario existe.
+        - Sin impresión de contraseñas ni hashes en logs.
+        """
+        username_clean = (username or "").strip()
+        username_key = _normalize_login_key(username_clean)
+
+        if not username_clean or not password:
+            self._log_login(username_key, success=False)
+            return None
+
+        # Guard 1: verificar bloqueo temporal ANTES de consultar la BD
+        # (evita fuerza bruta incluso si el usuario no existe)
+        if self._is_locked_out(username_key):
+            logger.warning(f"Intento durante bloqueo: '{username_key}'")
+            self._log_login(username_key, success=False)
+            return None
+
         try:
             conn = _get_conn()
             cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             cur.execute(
                 """
-                SELECT u.email, u.name, u.password_hash, u.role, u.is_active,
+                  SELECT u.username, u.email, u.name, u.password_hash, u.role, u.is_active,
                        u.empresa_id::text, u.rfc_empresa, u.created_at, u.last_login,
                        e.razon_social AS empresa_nombre
                 FROM users u
                 LEFT JOIN empresas e ON e.id = u.empresa_id
-                WHERE u.username = %s
+                  WHERE LOWER(u.username) = LOWER(%s)
                 """,
-                (username,),
+                  (username_clean,),
             )
             row = cur.fetchone()
             cur.close()
@@ -271,19 +384,25 @@ class AuthManager:
             logger.error(f"Error en authenticate: {e}")
             return None
 
+        # Guard 2: usuario no existe — mismo mensaje genérico para no revelar existencia
         if not row:
-            logger.warning(f"Login fallido: usuario '{username}' no existe")
-            self._log_login(username, success=False)
+            logger.warning(f"Login fallido: usuario no encontrado [oscurecido]")
+            self._record_failed_attempt(username_key)
+            self._log_login(username_key, success=False)
             return None
 
+        # Guard 3: cuenta desactivada — mismo mensaje genérico
         if not row["is_active"]:
-            logger.warning(f"Login fallido: usuario '{username}' desactivado")
-            self._log_login(username, success=False)
+            logger.warning(f"Login fallido: cuenta inactiva [oscurecido]")
+            self._record_failed_attempt(username_key)
+            self._log_login(username_key, success=False)
             return None
 
+        # Guard 4: contraseña incorrecta
         if not self._verify_password(password, row["password_hash"]):
-            logger.warning(f"Login fallido: password incorrecta para '{username}'")
-            self._log_login(username, success=False)
+            logger.warning(f"Login fallido: credenciales inválidas [oscurecido]")
+            self._record_failed_attempt(username_key)
+            self._log_login(username_key, success=False)
             return None
 
         # Actualizar last_login
@@ -291,7 +410,8 @@ class AuthManager:
             conn = _get_conn()
             cur = conn.cursor()
             cur.execute(
-                "UPDATE users SET last_login = NOW() WHERE username = %s", (username,)
+                "UPDATE users SET last_login = NOW() WHERE LOWER(username) = LOWER(%s)",
+                (username_clean,),
             )
             conn.commit()
             cur.close()
@@ -299,11 +419,14 @@ class AuthManager:
         except Exception as e:
             logger.error(f"Error actualizando last_login: {e}")
 
-        self._log_login(username, success=True)
-        logger.info(f"Login exitoso: {username} ({row['role']})")
+        # Login exitoso — limpiar intentos fallidos
+        db_username = row["username"]
+        self._clear_failed_attempts(username_key)
+        self._log_login(username_key, success=True)
+        logger.info(f"Login exitoso: {db_username} ({row['role']})")
 
         # Cargar todas las empresas del usuario desde user_empresas
-        empresas = self.get_user_empresas(username)
+        empresas = self.get_user_empresas(db_username)
 
         # empresa_id principal: usar user_empresas si existe, sino el de users
         empresa_id = row["empresa_id"]
@@ -315,8 +438,8 @@ class AuthManager:
             rfc_empresa = empresas[0]["rfc"]
             empresa_nombre = empresas[0]["razon_social"]
 
-        return User(
-            username=username,
+        user = User(
+            username=db_username,
             email=row["email"],
             name=row["name"],
             role=row["role"],
@@ -327,6 +450,11 @@ class AuthManager:
             last_login=datetime.now(),
             empresas=empresas,
         )
+
+        # Registrar timestamp de inicio de sesión para control de TTL
+        st.session_state["_session_login_ts"] = datetime.utcnow()
+
+        return user
 
     # ------------------------------------------------------------------
     # CRUD de usuarios
@@ -867,6 +995,56 @@ class AuthManager:
 def get_current_user() -> Optional[User]:
     """Obtiene usuario actual de la sesión"""
     return st.session_state.get('user')
+
+
+def check_session_expiry() -> bool:
+    """
+    Verifica si la sesión actual ha expirado.
+
+    - Lee el timestamp de inicio de sesión desde ``st.session_state``.
+    - Si pasó más de SESSION_TTL_SECONDS, limpia la sesión y retorna True.
+    - Debe llamarse al inicio de cada carga de la app (después del login).
+
+    Returns:
+        True si la sesión expiró y fue limpiada (el caller debe pedir login de nuevo).
+        False si la sesión sigue vigente.
+    """
+    login_ts = st.session_state.get("_session_login_ts")
+    if not login_ts:
+        return False  # Sin sesión activa — nada que verificar
+
+    elapsed = (datetime.utcnow() - login_ts).total_seconds()
+    if elapsed > SESSION_TTL_SECONDS:
+        current_user = st.session_state.get("user")
+        username = getattr(current_user, "username", "anon")
+        logger.info(
+            f"Sesión expirada para '{username}' "
+            f"tras {elapsed:.0f}s (límite={SESSION_TTL_SECONDS}s)"
+        )
+        logout()
+        return True
+    return False
+
+
+def logout() -> None:
+    """
+    Cierra la sesión activa limpiando st.session_state.
+    Preserva solo las claves no sensibles de UI.
+    """
+    keys_to_clear = [
+        "user", "_session_login_ts", "empresa_id", "empresa_nombre",
+        "rfc_empresa", "nl2sql_engine", "nl2sql_messages",
+        "sovereign_index", "sovereign_desde", "sovereign_hasta",
+        "df", "_df_fuente",
+    ]
+    for key in keys_to_clear:
+        st.session_state.pop(key, None)
+    try:
+        st.cache_data.clear()
+    except Exception:
+        pass
+    logger.info("Sesión cerrada (logout)")
+
 
 
 def require_auth(func):

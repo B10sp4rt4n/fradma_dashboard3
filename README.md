@@ -156,8 +156,155 @@ pytest --durations=10          # Top 10 más lentos
 ```
 
 Ver [TESTING_GUIDE.md](TESTING_GUIDE.md) para más detalles.
+## 🔒 Seguridad de Sesión
 
-## 📊 Calidad del Código
+El sistema de autenticación incluye dos protecciones de producción configurables desde variables de entorno.
+
+### Bloqueo por intentos fallidos
+
+Después de `MAX_LOGIN_ATTEMPTS` intentos fallidos consecutivos, la cuenta queda bloqueada temporalmente por `LOGIN_LOCKOUT_SECONDS` segundos.
+
+- El mensaje de error es genérico: no revela si el usuario existe o no.
+- El bloqueo se registra en la tabla `login_attempts` de Neon.
+- Al expirar el bloqueo se restablece automáticamente.
+- Un login exitoso limpia el contador de intentos.
+
+### Expiración de sesión
+
+Cada sesión tiene un TTL de `SESSION_TTL_SECONDS` segundos (8 horas por defecto).
+
+- El timestamp de inicio se guarda en `st.session_state` al hacer login.
+- En cada carga de la app se verifica si la sesión sigue vigente.
+- Al expirar, la sesión se limpia completamente y se solicita login de nuevo.
+- Los datos de empresa y CFDIs del tenant se eliminan de la sesión al cerrar.
+
+### Variables configurables en Railway
+
+| Variable | Default | Descripción |
+|---|---|---|
+| `MAX_LOGIN_ATTEMPTS` | `5` | Intentos antes de bloqueo |
+| `SESSION_TTL_SECONDS` | `28800` | Duración de sesión (8 horas) |
+| `LOGIN_LOCKOUT_SECONDS` | `900` | Duración del bloqueo (15 minutos) |
+## � Deploy en Railway
+
+### Prerequisitos
+
+- Cuenta en [Railway.app](https://railway.app)
+- Repositorio conectado a GitHub
+- Variables de entorno listas (ver `.env.example`)
+
+### 1. Crear proyecto en Railway
+
+1. Ir a [railway.app/new](https://railway.app/new)
+2. Elegir **Deploy from GitHub repo**
+3. Seleccionar `fradma_dashboard3`
+4. Railway detecta automáticamente el `Procfile` o el `Dockerfile`
+
+### 2. Configurar variables de entorno
+
+En **Settings → Variables**, agregar:
+
+| Variable | Descripción | Requerida |
+|---|---|---|
+| `NEON_DATABASE_URL` | `postgresql://user:pass@ep-xxx.neon.tech/fradma?sslmode=require` | ✅ |
+| `OPENAI_API_KEY` | API key de OpenAI | Opcional |
+| `PASSKEY_PREMIUM` | Clave para funciones premium (cambiar el default) | Recomendada |
+| `APP_ENV` | `production` | Recomendada |
+| `LOG_LEVEL` | `INFO` | Opcional |
+| `GUIDED_CATALOG_SOURCE` | `json` o `db` | Opcional |
+
+### 3. Confirmar comando de arranque
+
+Railway lo toma del `Procfile`:
+
+```
+web: streamlit run app.py --server.address=0.0.0.0 --server.port=$PORT --server.headless=true --server.enableCORS=false
+```
+
+Si prefieres Docker, Railway usa el `Dockerfile` automáticamente al detectarlo.
+
+### 4. Primer deploy
+
+Railway hace deploy automático al conectar el repo. Para forzar uno manual:
+
+```
+railway up
+```
+
+O desde la UI: **Deploy → Trigger Deploy**.
+
+### 5. Ver logs
+
+En la UI de Railway: **Deployments → seleccionar deploy → Logs**.
+
+Para seguir logs en tiempo real desde CLI:
+
+```bash
+railway logs --follow
+```
+
+Señales de arranque exitoso en los logs:
+
+```
+[config] APP_ENV=production
+[config] [OK] NEON_DATABASE_URL=postgre***
+You can now view your Streamlit app in your browser.
+```
+
+### 6. Validar URL pública
+
+Railway asigna automáticamente un dominio `*.railway.app`. Para dominio propio:
+**Settings → Networking → Custom Domain**.
+
+Checklist de validación post-deploy:
+
+- [ ] Login de usuario funciona
+- [ ] Datos CFDI cargan para al menos un tenant
+- [ ] Módulo KPI CxC muestra datos
+- [ ] Exportación a Excel genera archivo
+- [ ] Asistente de datos responde (si hay `OPENAI_API_KEY`)
+- [ ] No se ven datos de otro tenant al cambiar empresa
+
+### 7. Revisar errores comunes
+
+| Error en logs | Causa probable | Solución |
+|---|---|---|
+| `NEON_DATABASE_URL` faltante | Variable no cargada | Revisar Railway Variables |
+| `ModuleNotFoundError` | Dependencia faltante | Verificar `requirements.txt` |
+| `OSError: [Errno 98] Address in use` | Puerto ocupado | Railway asigna `$PORT` automáticamente |
+| `SSL SYSCALL error` | Neon requiere SSL | Confirmar `?sslmode=require` en URL |
+| Pantalla en blanco | Error de import silencioso | Ver logs de arranque completos |
+
+### 8. Rollback
+
+Para volver a un deploy anterior:
+
+1. Railway UI → **Deployments**
+2. Buscar el deploy estable anterior
+3. Click en **Redeploy**
+
+Desde CLI:
+
+```bash
+railway rollback
+```
+
+### Prueba local con el mismo patrón que Railway
+
+```bash
+# Instalar dependencias
+pip install -r requirements.txt
+
+# Correr con variables de entorno
+export NEON_DATABASE_URL="postgresql://..."
+export OPENAI_API_KEY="sk-..."
+streamlit run app.py --server.address=0.0.0.0 --server.port=8501
+
+# Smoke tests (sin threshold de coverage)
+pytest tests/test_railway_smoke.py --no-cov -v
+```
+
+## �📊 Calidad del Código
 
 **Score: 98/100** 🟢 Excelente
 

@@ -11,7 +11,7 @@ Proporciona interfaz para:
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from utils.auth import AuthManager, UserRole, get_current_user
+from utils.auth import AuthManager, UserRole, get_current_user, logout
 from utils.logger import configurar_logger
 
 logger = configurar_logger("admin_panel", nivel="INFO")
@@ -733,8 +733,7 @@ def mostrar_info_usuario():
     with col_logout:
         if st.button("🚪", help="Cerrar sesión", key="btn_logout_sidebar"):
             logger.info(f"Logout: {user.username}")
-            st.cache_data.clear()
-            st.session_state.clear()
+            logout()
             st.rerun()
     
     st.sidebar.markdown("---")

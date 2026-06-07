@@ -12,6 +12,7 @@ El DataFrame resultante usa el esquema estándar del dashboard:
 
 import os
 import pandas as pd
+import streamlit as st
 from utils.logger import configurar_logger
 
 logger = configurar_logger("neon_loader", nivel="INFO")
@@ -39,6 +40,7 @@ _COLUMN_MAP = {
 }
 
 
+@st.cache_data(ttl=900, show_spinner=False)  # 15 min — clave incluye empresa_id para aislar tenants
 def cargar_cfdi_como_df(empresa_id: str, neon_url: str | None = None) -> pd.DataFrame:
     """
     Lee cfdi_ventas de Neon filtrado por empresa_id y devuelve un DataFrame

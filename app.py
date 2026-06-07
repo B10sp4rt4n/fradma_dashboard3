@@ -47,14 +47,18 @@ from utils.filters import (
 )
 from utils.export_helper import crear_excel_metricas_cxc, crear_reporte_html
 from utils.cache_helper import GestorCache, decorador_medicion_tiempo
-from utils.auth import AuthManager, UserRole, get_current_user
+from utils.auth import AuthManager, UserRole, get_current_user, check_session_expiry, logout
 from utils.admin_panel import mostrar_info_usuario, mostrar_panel_usuarios, mostrar_panel_configuracion
 from utils.roi_tracker import init_roi_tracker
 from utils.neon_loader import cargar_cfdi_como_df
 from utils.sovereign_periods import build_sovereign_index
+from utils.config import validate_environment
 
 # Configurar logger de la aplicación
 logger = configurar_logger("dashboard_app", nivel="INFO")
+
+# Validar variables de entorno obligatorias antes de cualquier conexión
+_env_config = validate_environment()
 
 # Inicializar gestor de autenticación
 auth_manager = AuthManager()
@@ -396,8 +400,7 @@ if (
 
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("🚪 Cerrar sesión", key="btn_logout_selector", use_container_width=True):
-            st.cache_data.clear()
-            st.session_state.clear()
+            logout()
             st.rerun()
 
     st.stop()
@@ -1128,6 +1131,11 @@ if "passkey_valido" not in st.session_state:
 PASSKEY_PREMIUM = os.getenv("PASSKEY_PREMIUM", "fradma2026")
 
 st.sidebar.markdown("### 🧭 Navegación")
+
+# Verificar expiración de sesión antes de continuar
+if check_session_expiry():
+    st.warning("⏱️ Tu sesión ha expirado. Por favor inicia sesión de nuevo.")
+    st.stop()
 
 user = get_current_user()
 
