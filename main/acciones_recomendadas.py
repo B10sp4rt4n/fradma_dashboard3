@@ -402,6 +402,24 @@ def render_acciones_recomendadas(acciones: Optional[List[Dict[str, Any]]]) -> No
             return "🟢"
         return "⚪"
 
+    def _estado_normalizado(estado: str) -> str:
+        e = str(estado or "").strip().lower()
+        if e in {"sugerida", "en_proceso", "ejecutada", "descartada"}:
+            return e
+        return "sugerida"
+
+    def _estado_ui(estado: str) -> str:
+        e = _estado_normalizado(estado)
+        if e == "sugerida":
+            return "⚪ Sugerida"
+        if e == "en_proceso":
+            return "🔵 En proceso"
+        if e == "ejecutada":
+            return "✅ Ejecutada"
+        if e == "descartada":
+            return "⚫ Descartada"
+        return "⚪ Sugerida"
+
     def _render_card(item: Dict[str, Any]) -> None:
         registro = registrar_accion_en_memoria(item, estado="sugerida")
         prioridad = _texto(item, "prioridad").title() or "Sin prioridad"
@@ -410,12 +428,12 @@ def render_acciones_recomendadas(acciones: Optional[List[Dict[str, Any]]]) -> No
         accion = _texto(item, "accion_sugerida") or "No disponible"
         impacto = _texto(item, "impacto_estimado")
         fuente = _texto(item, "fuente")
-        estado_actual = _texto(registro, "estado") or "sugerida"
+        estado_actual = _estado_normalizado(_texto(registro, "estado") or "sugerida")
         id_rec = _texto(registro, "id_recomendacion") or f"tmp_{hash(hallazgo)}"
 
         with st.container(border=True):
             st.markdown(f"**{_emoji_prioridad(prioridad)} {rol} · Prioridad {prioridad}**")
-            st.caption(f"Estado: {estado_actual}")
+            st.caption(f"Estado: {_estado_ui(estado_actual)}")
             st.markdown("**Hallazgo:**")
             st.markdown(hallazgo)
             st.markdown("**Acción sugerida:**")
@@ -427,16 +445,20 @@ def render_acciones_recomendadas(acciones: Optional[List[Dict[str, Any]]]) -> No
                 st.markdown("**Fuente:**")
                 st.markdown(fuente)
 
-            c1, c2, c3 = st.columns(3)
-            if c1.button("Marcar en proceso", key=f"act_proc_{id_rec}"):
-                actualizar_estado_accion(id_rec, "en_proceso")
-                st.rerun()
-            if c2.button("Marcar ejecutada", key=f"act_exec_{id_rec}"):
-                actualizar_estado_accion(id_rec, "ejecutada")
-                st.rerun()
-            if c3.button("Descartar", key=f"act_desc_{id_rec}"):
-                actualizar_estado_accion(id_rec, "descartada")
-                st.rerun()
+            acciones_estado = []
+            if estado_actual != "en_proceso":
+                acciones_estado.append(("Marcar en proceso", "en_proceso", f"act_proc_{id_rec}"))
+            if estado_actual != "ejecutada":
+                acciones_estado.append(("Marcar ejecutada", "ejecutada", f"act_exec_{id_rec}"))
+            if estado_actual != "descartada":
+                acciones_estado.append(("Descartar", "descartada", f"act_desc_{id_rec}"))
+
+            if acciones_estado:
+                cols = st.columns(len(acciones_estado))
+                for col, (label, nuevo_estado, key_btn) in zip(cols, acciones_estado):
+                    if col.button(label, key=key_btn):
+                        actualizar_estado_accion(id_rec, nuevo_estado)
+                        st.rerun()
 
     visibles = acciones_ordenadas[:5]
     resto = acciones_ordenadas[5:]

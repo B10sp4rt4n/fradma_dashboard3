@@ -44,6 +44,26 @@ def _safe_float(value: Any) -> float:
         return 0.0
 
 
+def _estado_normalizado(estado: Any) -> str:
+    e = _safe_text(estado).lower()
+    if e in {"sugerida", "en_proceso", "ejecutada", "descartada"}:
+        return e
+    return "sugerida"
+
+
+def _estado_limpio(estado: Any) -> str:
+    e = _estado_normalizado(estado)
+    if e == "sugerida":
+        return "Sugerida"
+    if e == "en_proceso":
+        return "En proceso"
+    if e == "ejecutada":
+        return "Ejecutada"
+    if e == "descartada":
+        return "Descartada"
+    return "Sugerida"
+
+
 def _get_store() -> Dict[str, Dict[str, Any]]:
     store = st.session_state.get(_SESSION_KEY)
     if not isinstance(store, dict):
@@ -130,7 +150,7 @@ def actualizar_estado_accion(id_recomendacion: Optional[str], nuevo_estado: str)
     if not isinstance(registro, dict):
         return None
 
-    registro["estado"] = _safe_text(nuevo_estado) or registro.get("estado", "sugerida")
+    registro["estado"] = _estado_normalizado(nuevo_estado)
     registro["fecha_actualizacion"] = _now_iso()
     store[rid] = registro
     return registro
@@ -230,7 +250,7 @@ def render_formulario_resultado_accion(accion: Optional[Dict[str, Any]]) -> None
         c1, c2 = st.columns(2)
         with c1:
             monto_recuperado = st.number_input(
-                "Monto recuperado",
+                "Impacto logrado",
                 min_value=0.0,
                 value=float(monto_default),
                 step=1000.0,
@@ -279,16 +299,16 @@ def render_tracking_acciones() -> None:
     c2.metric("En proceso", resumen["en_proceso"])
     c3.metric("Ejecutadas", resumen["ejecutadas"])
     c4.metric("Descartadas", resumen["descartadas"])
-    c5.metric("Monto recuperado total", f"${resumen['monto_recuperado_total']:,.2f}")
+    c5.metric("Impacto logrado total", f"${resumen['monto_recuperado_total']:,.2f}")
 
     st.markdown("**Últimas acciones actualizadas**")
     for item in registros[:5]:
         prioridad = _safe_text(item.get("prioridad")) or "Sin prioridad"
         rol = _safe_text(item.get("rol")) or "Sin rol"
-        estado = _safe_text(item.get("estado")) or "sugerida"
+        estado = _estado_normalizado(item.get("estado"))
         hallazgo = _safe_text(item.get("hallazgo")) or "No disponible"
         with st.container(border=True):
-            st.markdown(f"**{rol} · Prioridad {prioridad} · Estado {estado}**")
+            st.markdown(f"**{rol} · Prioridad {prioridad} · Estado: {_estado_limpio(estado)}**")
             st.markdown(hallazgo)
             comentario = _safe_text(item.get("comentario"))
             resultado = _safe_text(item.get("resultado"))
@@ -299,7 +319,12 @@ def render_tracking_acciones() -> None:
             if resultado:
                 st.caption(f"Resultado: {resultado}")
             if monto_recuperado > 0:
-                st.caption(f"Monto recuperado: ${monto_recuperado:,.2f}")
+                st.caption(f"Impacto logrado: ${monto_recuperado:,.2f}")
             if proxima_fecha:
                 st.caption(f"Próxima fecha: {proxima_fecha}")
+            if estado == "ejecutada" and monto_recuperado <= 0 and proxima_fecha:
+                st.info(
+                    "Esta acción está marcada como ejecutada, pero aún tiene seguimiento pendiente. "
+                    "Considera cambiarla a En proceso si todavía no está cerrada."
+                )
             render_formulario_resultado_accion(item)
