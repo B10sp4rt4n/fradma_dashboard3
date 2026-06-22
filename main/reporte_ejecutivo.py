@@ -163,29 +163,31 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
     # Normalización de saldo manejada internamente por prepare_cxc_metrics.
     # No se pre-procesa df_cxc aquí para evitar doble normalización.
 
+    st.title("📊 Reporte Ejecutivo")
+    st.markdown("### Vista Consolidada del Negocio — Dashboard para Dirección")
+
     # =====================================================================
-    # CONFIGURACIÓN: Selector de tema visual en sidebar
+    # CONFIGURACIÓN: Selector de tema visual
     # =====================================================================
-    st.sidebar.markdown("---")
-    st.sidebar.header("⚙️ Configuración del Reporte")
-    
-    tema_visual = st.sidebar.selectbox(
-        "🎨 Modo Visual",
-        options=['monocromatico', 'azul', 'negro'],
-        index=0,
-        format_func=lambda x: {
-            'monocromatico': '⚪ Monocromático (Blanco)',
-            'azul': '🔵 Fondo Azul',
-            'negro': '⚫ Fondo Negro'
-        }[x],
-        help="Selecciona el tema visual para el dashboard",
-        key="ejecutivo_tema_visual"
-    )
+    col_config, col_space = st.columns([2, 3])
+    with col_config:
+        tema_visual = st.selectbox(
+            "🎨 Modo Visual",
+            options=['monocromatico', 'azul', 'negro'],
+            index=0,
+            format_func=lambda x: {
+                'monocromatico': '⚪ Monocromático (Blanco)',
+                'azul': '🔵 Fondo Azul',
+                'negro': '⚫ Fondo Negro'
+            }[x],
+            help="Selecciona el tema visual para el dashboard",
+            key="ejecutivo_tema_visual"
+        )
     
     # Guardar en session para usarlo globalmente
     st.session_state["tema_visual"] = tema_visual
-
-    st.title("📊 Reporte Ejecutivo")
+    
+    st.markdown("---")
     st.markdown("### Vista Consolidada del Negocio — Dashboard para Dirección")
 
     # Capa prescriptiva v1: acciones recomendadas + seguimiento en sesión.
