@@ -19,17 +19,17 @@ from main.acciones_recomendadas import generar_acciones_recomendadas, render_acc
 logger = configurar_logger("reporte_ejecutivo", nivel="INFO")
 
 
-def _obtener_paleta_colores(modo_monocromatico=False):
+def _obtener_paleta_colores(tema='monocromatico'):
     """
-    Retorna paleta de colores según el modo visual.
+    Retorna paleta de colores según el tema visual.
     
     Args:
-        modo_monocromatico: Si True, retorna escala de grises; False, colores vibrantes
+        tema: 'monocromatico' (blanco), 'azul', o 'negro'
         
     Returns:
-        dict con 'primario', 'secundario', 'success', 'warning', 'danger', 'neutral'
+        dict con 'primario', 'secundario', 'success', 'warning', 'danger', 'neutral', 'fondo'
     """
-    if modo_monocromatico:
+    if tema == 'monocromatico':
         return {
             'primario': '#1a1a1a',      # Negro
             'secundario': '#4a4a4a',    # Gris oscuro
@@ -37,9 +37,10 @@ def _obtener_paleta_colores(modo_monocromatico=False):
             'warning': '#888888',       # Gris claro
             'danger': '#aaaaaa',        # Gris más claro
             'neutral': '#d0d0d0',       # Gris muy claro
+            'fondo': '#ffffff',         # Fondo blanco
             'scale': ['#f5f5f5', '#e0e0e0', '#cccccc', '#999999', '#666666', '#333333'],
         }
-    else:
+    elif tema == 'azul':
         return {
             'primario': '#1F4E79',      # Azul corporativo
             'secundario': '#6ba3c1',    # Azul claro
@@ -47,8 +48,23 @@ def _obtener_paleta_colores(modo_monocromatico=False):
             'warning': '#f39c12',       # Naranja
             'danger': '#e74c3c',        # Rojo
             'neutral': '#95a5a6',       # Gris neutral
-            'scale': 'Viridis',         # Escala de colores vibrante
+            'fondo': '#0d47a1',         # Fondo azul profundo
+            'scale': 'Blues',           # Escala de azules
         }
+    elif tema == 'negro':
+        return {
+            'primario': '#ffffff',      # Blanco (texto)
+            'secundario': '#e0e0e0',    # Gris claro
+            'success': '#00ff00',       # Verde brillante
+            'warning': '#ffaa00',       # Naranja brillante
+            'danger': '#ff4444',        # Rojo brillante
+            'neutral': '#888888',       # Gris neutral
+            'fondo': '#1a1a1a',         # Fondo negro
+            'scale': ['#f0f0f0', '#d0d0d0', '#a0a0a0', '#606060', '#303030', '#000000'],
+        }
+    else:
+        # Fallback a monocromatico
+        return _obtener_paleta_colores('monocromatico')
 
 
 def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_key=None):
@@ -161,21 +177,9 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
     st.markdown("---")
 
     # =====================================================================
-    # SELECTOR DE MODO: MONOCROMÁTICO vs COLORES
+    # OBTENER TEMA VISUAL DE CONFIGURACIÓN (SIDEBAR)
     # =====================================================================
-    col_titulo, col_modo = st.columns([4, 1])
-    with col_modo:
-        modo_visual = st.radio(
-            "Modo visual",
-            options=["⚫ Monocromático", "🎨 Colores"],
-            index=1,
-            horizontal=True,
-            help="Cambia entre vista monocromática y a colores",
-        )
-        modo_monocromatico = modo_visual == "⚫ Monocromático"
-    
-    # Guardar en session para usarlo en gráficas
-    st.session_state["reporte_modo_monocromatico"] = modo_monocromatico
+    tema_visual = st.session_state.get("tema_visual", "monocromatico")
 
     # =====================================================================
     # SELECTOR DE PERIODO (global, aplica a las 3 tabs)
@@ -484,8 +488,8 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
             df_v_tmp["mes"] = df_v_tmp["fecha"].dt.to_period("M").astype(str)
             ventas_mes = df_v_tmp.groupby("mes").agg(Ventas=("valor_mxn", "sum"), Ops=("valor_mxn", "count")).reset_index()
 
-            # Obtener paleta de colores según modo
-            _paleta = _obtener_paleta_colores(st.session_state.get("reporte_modo_monocromatico", False))
+            # Obtener paleta de colores según tema
+            _paleta = _obtener_paleta_colores(tema_visual)
             
             fig_ventas = go.Figure()
             fig_ventas.add_trace(go.Bar(
@@ -648,9 +652,9 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
             })
             cartera_df = cartera_df[cartera_df["Monto"] > 0]
             if not cartera_df.empty:
-                # Obtener paleta de colores según modo
-                _paleta = _obtener_paleta_colores(st.session_state.get("reporte_modo_monocromatico", False))
-                _colores_pie = [_paleta['success'], _paleta['warning'], _paleta['danger'], '#F44336'] if st.session_state.get("reporte_modo_monocromatico") else ['#4CAF50', '#FFC107', '#FF9800', '#F44336']
+                # Obtener paleta de colores según tema
+                _paleta = _obtener_paleta_colores(tema_visual)
+                _colores_pie = [_paleta['success'], _paleta['warning'], _paleta['danger'], '#F44336']
                 
                 fig_pie = go.Figure(data=[go.Pie(
                     labels=cartera_df["Categoría"],
@@ -683,7 +687,7 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
                     y=conc.head(10).index,
                     orientation="h",
                     color=conc.head(10).values,
-                    color_continuous_scale="Greys" if st.session_state.get("reporte_modo_monocromatico") else "Reds",
+                    color_continuous_scale="Greys" if tema_visual == "monocromatico" else ("Blues" if tema_visual == "azul" else "Greys"),
                     labels={"x": "Saldo ($)", "y": ""},
                 )
                 fig_conc.update_layout(height=220, showlegend=False,
