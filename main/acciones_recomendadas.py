@@ -12,7 +12,11 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 import streamlit as st
-from main.acciones_tracking import registrar_accion_en_memoria, render_tracking_acciones
+from main.acciones_tracking import (
+    actualizar_estado_accion,
+    registrar_accion_en_memoria,
+    render_tracking_acciones,
+)
 
 
 def _pick_col(df: Optional[pd.DataFrame], candidates: List[str]) -> Optional[str]:
@@ -425,13 +429,13 @@ def render_acciones_recomendadas(acciones: Optional[List[Dict[str, Any]]]) -> No
 
             c1, c2, c3 = st.columns(3)
             if c1.button("Marcar en proceso", key=f"act_proc_{id_rec}"):
-                registrar_accion_en_memoria(item, estado="en_proceso")
+                actualizar_estado_accion(id_rec, "en_proceso")
                 st.rerun()
             if c2.button("Marcar ejecutada", key=f"act_exec_{id_rec}"):
-                registrar_accion_en_memoria(item, estado="ejecutada")
+                actualizar_estado_accion(id_rec, "ejecutada")
                 st.rerun()
             if c3.button("Descartar", key=f"act_desc_{id_rec}"):
-                registrar_accion_en_memoria(item, estado="descartada")
+                actualizar_estado_accion(id_rec, "descartada")
                 st.rerun()
 
     visibles = acciones_ordenadas[:5]
