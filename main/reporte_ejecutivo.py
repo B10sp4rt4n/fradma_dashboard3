@@ -169,26 +169,24 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
     # =====================================================================
     # CONFIGURACIÓN: Selector de tema visual
     # =====================================================================
-    col_config, col_space = st.columns([2, 3])
-    with col_config:
-        tema_visual = st.selectbox(
-            "🎨 Modo Visual",
-            options=['monocromatico', 'azul', 'negro'],
-            index=0,
-            format_func=lambda x: {
-                'monocromatico': '⚪ Monocromático (Blanco)',
-                'azul': '🔵 Fondo Azul',
-                'negro': '⚫ Fondo Negro'
-            }[x],
-            help="Selecciona el tema visual para el dashboard",
-            key="ejecutivo_tema_visual"
-        )
+    st.markdown("**🎨 Modo Visual:**")
+    tema_visual = st.radio(
+        "Tema",
+        options=['monocromatico', 'azul', 'negro'],
+        format_func=lambda x: {
+            'monocromatico': '⚪ Monocromático (Blanco)',
+            'azul': '🔵 Fondo Azul',
+            'negro': '⚫ Fondo Negro'
+        }[x],
+        horizontal=True,
+        help="Selecciona el tema visual para el dashboard",
+        key="ejecutivo_tema_visual"
+    )
     
     # Guardar en session para usarlo globalmente
     st.session_state["tema_visual"] = tema_visual
     
     st.markdown("---")
-    st.markdown("### Vista Consolidada del Negocio — Dashboard para Dirección")
 
     # Capa prescriptiva v1: acciones recomendadas + seguimiento en sesión.
     _acciones = generar_acciones_recomendadas(
