@@ -13,6 +13,7 @@ from utils.logger import configurar_logger
 from utils.ai_helper_premium import generar_insights_ejecutivo_consolidado
 from utils.cxc_aging_engine import prepare_cxc_metrics  # fuente única de verdad CxC
 from utils.roi_tracker import init_roi_tracker
+from main.acciones_recomendadas import generar_acciones_recomendadas, render_acciones_recomendadas
 
 # Configurar logger para este módulo
 logger = configurar_logger("reporte_ejecutivo", nivel="INFO")
@@ -148,6 +149,16 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
 
     st.title("📊 Reporte Ejecutivo")
     st.markdown("### Vista Consolidada del Negocio — Dashboard para Dirección")
+
+    # Capa prescriptiva v1: acciones recomendadas + seguimiento en sesión.
+    _acciones = generar_acciones_recomendadas(
+        df_cxc=df_cxc,
+        df_ventas=df_ventas,
+        df_cfdi=None,
+        rol="todos",
+    )
+    render_acciones_recomendadas(_acciones)
+    st.markdown("---")
 
     # =====================================================================
     # SELECTOR DE MODO: MONOCROMÁTICO vs COLORES
