@@ -170,21 +170,18 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
     # CONFIGURACIÓN: Selector de tema visual
     # =====================================================================
     st.markdown("**🎨 Modo Visual:**")
-    tema_visual = st.radio(
-        "Tema",
-        options=['monocromatico', 'azul', 'negro'],
-        format_func=lambda x: {
-            'monocromatico': '⚪ Monocromático (Blanco)',
-            'azul': '🔵 Fondo Azul',
-            'negro': '⚫ Fondo Negro'
-        }[x],
-        horizontal=True,
-        help="Selecciona el tema visual para el dashboard",
-        key="ejecutivo_tema_visual"
-    )
+    col1, col2, col3, col_sp = st.columns([1, 1, 1, 1])
+    with col1:
+        if st.button("⚪ Monocromático", key="btn_mono", use_container_width=True):
+            st.session_state["tema_visual"] = "monocromatico"
+    with col2:
+        if st.button("🔵 Azul", key="btn_azul", use_container_width=True):
+            st.session_state["tema_visual"] = "azul"
+    with col3:
+        if st.button("⚫ Negro", key="btn_negro", use_container_width=True):
+            st.session_state["tema_visual"] = "negro"
     
-    # Guardar en session para usarlo globalmente
-    st.session_state["tema_visual"] = tema_visual
+    tema_visual = st.session_state.get("tema_visual", "monocromatico")
     
     st.markdown("---")
 
