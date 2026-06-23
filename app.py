@@ -1146,7 +1146,6 @@ _grupos = {
     "Análisis Comercial CIMA": {
         "icon": "speedometer2",
         "items": [
-            ("🗂️ Carga Inteligente de Datos", "cloud-upload-fill"),
             ("🎯 Reporte Ejecutivo",         "file-earmark-bar-graph"),
             ("📊 Reporte Consolidado",       "grid-1x2"),
             ("📈 Desempeño Comercial",       "bar-chart-line"),
@@ -1200,7 +1199,7 @@ if OPTION_MENU_AVAILABLE:
             _nav_destino = st.session_state.pop("_menu_navegar_a")
 
         # Si es destino de admin (fuera del menú visual), asignar directo
-        _ADMIN_PAGES = {"⚙️ Gestión de Usuarios", "🔧 Configuración"}
+        _ADMIN_PAGES = {"⚙️ Gestión de Usuarios", "🔧 Configuración", "🗂️ Carga Inteligente de Datos"}
         if _nav_destino and _nav_destino in _ADMIN_PAGES:
             menu = _nav_destino
             st.session_state["_menu_seleccion"] = menu
