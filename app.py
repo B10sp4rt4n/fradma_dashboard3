@@ -1243,6 +1243,9 @@ if OPTION_MENU_AVAILABLE:
                 _act_default = _seleccion_previa if _seleccion_previa in _act_items else _act_prev
                 if _act_default not in _act_items:
                     _act_default = _act_items[0]
+                # Limpiar estado del widget si tiene un valor que ya no existe en la lista
+                if st.session_state.get("menu_section_comercial") not in _act_items:
+                    st.session_state.pop("menu_section_comercial", None)
                 menu = option_menu(
                     menu_title="Análisis Comercial CIMA",
                     options=_act_items,
