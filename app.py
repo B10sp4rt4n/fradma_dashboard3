@@ -1199,7 +1199,7 @@ if OPTION_MENU_AVAILABLE:
             _nav_destino = st.session_state.pop("_menu_navegar_a")
 
         # Si es destino de admin (fuera del menú visual), asignar directo
-        _ADMIN_PAGES = {"⚙️ Gestión de Usuarios", "🔧 Configuración", "🗂️ Carga Inteligente de Datos"}
+        _ADMIN_PAGES = {"⚙️ Gestión de Usuarios", "🔧 Configuración"}
         if _nav_destino and _nav_destino in _ADMIN_PAGES:
             menu = _nav_destino
             st.session_state["_menu_seleccion"] = menu
@@ -1274,6 +1274,10 @@ if OPTION_MENU_AVAILABLE:
                     styles=_menu_styles,
                 )
                 st.session_state["_menu_cfdi_sel"] = menu
+
+            # Override de navegación especial (páginas fuera del menú visual)
+            if _nav_destino == "🗂️ Carga Inteligente de Datos":
+                menu = _nav_destino
 
             st.session_state["_menu_seleccion"] = menu
 else:
