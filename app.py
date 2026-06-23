@@ -1146,6 +1146,7 @@ _grupos = {
     "Análisis Comercial CIMA": {
         "icon": "speedometer2",
         "items": [
+            ("🗂️ Carga Inteligente de Datos", "cloud-upload-fill"),
             ("🎯 Reporte Ejecutivo",         "file-earmark-bar-graph"),
             ("📊 Reporte Consolidado",       "grid-1x2"),
             ("📈 Desempeño Comercial",       "bar-chart-line"),
