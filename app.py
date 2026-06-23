@@ -877,6 +877,10 @@ archivo = st.sidebar.file_uploader(
     type=["csv", "xlsx"],
     help="Formatos soportados: CSV, Excel (.xlsx). Detección automática de formato CONTPAQi"
 )
+if st.sidebar.button("🗂️ Validar con Carga Inteligente", use_container_width=True,
+                     help="Valida tu archivo con el motor de esquemas CIMA"):
+    st.session_state["_menu_navegar_a"] = "🗂️ Carga Inteligente de Datos"
+    st.rerun()
 
 if archivo:
     logger.info(f"Archivo subido: {archivo.name}, tamaño: {archivo.size / 1024:.2f} KB")
@@ -1051,8 +1055,6 @@ if archivo:
 
             if total_errores == 0 and total_advertencias == 0:
                 st.success("✅ Todas las columnas críticas presentes")
-
-
 
         if "fecha" in df.columns:
             df["fecha"] = pd.to_datetime(df["fecha"], errors="coerce")
@@ -1316,7 +1318,7 @@ with st.sidebar:
         roi_tracker = init_roi_tracker(st.session_state)
         roi_summary = roi_tracker.get_summary()
 
-        with st.expander("💰 Tu ROI", expanded=False):
+        with st.expander("💰 Ahorro Operativo Estimado", expanded=False):
 
             # ── Mini-tabla compacta con colores diferenciados ──────────
             _hoy_hrs  = roi_summary['today']['hrs']
@@ -1349,13 +1351,13 @@ with st.sidebar:
 </style>
 <table class="roi-mini-table">
   <tr><td class="roi-cl">⏱️ Hoy — horas</td><td class="roi-kp">{_hoy_hrs:.1f} h</td></tr>
-  <tr><td class="roi-cl">💵 Hoy — valor</td><td class="roi-kp">${_hoy_val:,.0f}</td></tr>
+    <tr><td class="roi-cl">💵 Hoy — ahorro</td><td class="roi-kp">${_hoy_val:,.0f}</td></tr>
   <tr class="roi-sep"><td colspan="2"></td></tr>
   <tr><td class="roi-cl">📅 Mes — horas</td><td class="roi-kp">{_mes_hrs:.1f} h</td></tr>
   <tr><td class="roi-cl">📅 Mes — días lab.</td><td class="roi-kp">{_mes_dias:.1f} d</td></tr>
-  <tr><td class="roi-cl">💵 Mes — valor</td><td class="roi-kp">${_mes_val:,.0f}</td></tr>
+    <tr><td class="roi-cl">💵 Mes — ahorro</td><td class="roi-kp">${_mes_val:,.0f}</td></tr>
   <tr class="roi-sep"><td colspan="2"></td></tr>
-  <tr><td class="roi-cl">📊 Año — valor</td><td class="roi-kp">${_año_val:,.0f}</td></tr>
+    <tr><td class="roi-cl">📊 Año — ahorro</td><td class="roi-kp">${_año_val:,.0f}</td></tr>
   <tr><td class="roi-cl">📊 Año — días lab.</td><td class="roi-kp">{_año_dias:.1f} d</td></tr>
 </table>
 """, unsafe_allow_html=True)
@@ -1388,7 +1390,7 @@ with st.sidebar:
                 else:
                     st.caption(f"✨ {roi_summary['today']['actions']} acción(es) hoy")
             else:
-                st.caption("💡 Completa acciones para ver tu ROI crecer")
+                st.caption("💡 Completa acciones para estimar tu ahorro operativo")
 
     except Exception as e:
         logger.warning(f"Error en widget ROI: {e}")

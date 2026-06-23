@@ -19,17 +19,17 @@ from main.acciones_recomendadas import generar_acciones_recomendadas, render_acc
 logger = configurar_logger("reporte_ejecutivo", nivel="INFO")
 
 
-def _obtener_paleta_colores(tema='monocromatico'):
+def _obtener_paleta_colores(modo_monocromatico=False):
     """
-    Retorna paleta de colores según el tema visual.
+    Retorna paleta de colores según el modo visual.
     
     Args:
-        tema: 'monocromatico' (blanco), 'azul', o 'negro'
+        modo_monocromatico: Si True, retorna escala de grises; False, colores vibrantes
         
     Returns:
-        dict con 'primario', 'secundario', 'success', 'warning', 'danger', 'neutral', 'fondo'
+        dict con 'primario', 'secundario', 'success', 'warning', 'danger', 'neutral'
     """
-    if tema == 'monocromatico':
+    if modo_monocromatico:
         return {
             'primario': '#1a1a1a',      # Negro
             'secundario': '#4a4a4a',    # Gris oscuro
@@ -37,10 +37,9 @@ def _obtener_paleta_colores(tema='monocromatico'):
             'warning': '#888888',       # Gris claro
             'danger': '#aaaaaa',        # Gris más claro
             'neutral': '#d0d0d0',       # Gris muy claro
-            'fondo': '#ffffff',         # Fondo blanco
             'scale': ['#f5f5f5', '#e0e0e0', '#cccccc', '#999999', '#666666', '#333333'],
         }
-    elif tema == 'azul':
+    else:
         return {
             'primario': '#1F4E79',      # Azul corporativo
             'secundario': '#6ba3c1',    # Azul claro
@@ -48,23 +47,8 @@ def _obtener_paleta_colores(tema='monocromatico'):
             'warning': '#f39c12',       # Naranja
             'danger': '#e74c3c',        # Rojo
             'neutral': '#95a5a6',       # Gris neutral
-            'fondo': '#0d47a1',         # Fondo azul profundo
-            'scale': 'Blues',           # Escala de azules
+            'scale': 'Viridis',         # Escala de colores vibrante
         }
-    elif tema == 'negro':
-        return {
-            'primario': '#ffffff',      # Blanco (texto)
-            'secundario': '#e0e0e0',    # Gris claro
-            'success': '#00ff00',       # Verde brillante
-            'warning': '#ffaa00',       # Naranja brillante
-            'danger': '#ff4444',        # Rojo brillante
-            'neutral': '#888888',       # Gris neutral
-            'fondo': '#1a1a1a',         # Fondo negro
-            'scale': ['#f0f0f0', '#d0d0d0', '#a0a0a0', '#606060', '#303030', '#000000'],
-        }
-    else:
-        # Fallback a monocromatico
-        return _obtener_paleta_colores('monocromatico')
 
 
 def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_key=None):
@@ -166,25 +150,6 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
     st.title("📊 Reporte Ejecutivo")
     st.markdown("### Vista Consolidada del Negocio — Dashboard para Dirección")
 
-    # =====================================================================
-    # CONFIGURACIÓN: Selector de tema visual
-    # =====================================================================
-    st.markdown("**🎨 Modo Visual:**")
-    col1, col2, col3, col_sp = st.columns([1, 1, 1, 1])
-    with col1:
-        if st.button("⚪ Monocromático", key="btn_mono", use_container_width=True):
-            st.session_state["tema_visual"] = "monocromatico"
-    with col2:
-        if st.button("🔵 Azul", key="btn_azul", use_container_width=True):
-            st.session_state["tema_visual"] = "azul"
-    with col3:
-        if st.button("⚫ Negro", key="btn_negro", use_container_width=True):
-            st.session_state["tema_visual"] = "negro"
-    
-    tema_visual = st.session_state.get("tema_visual", "monocromatico")
-    
-    st.markdown("---")
-
     # Capa prescriptiva v1: acciones recomendadas + seguimiento en sesión.
     _acciones = generar_acciones_recomendadas(
         df_cxc=df_cxc,
@@ -194,6 +159,23 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
     )
     render_acciones_recomendadas(_acciones)
     st.markdown("---")
+
+    # =====================================================================
+    # SELECTOR DE MODO: MONOCROMÁTICO vs COLORES
+    # =====================================================================
+    col_titulo, col_modo = st.columns([4, 1])
+    with col_modo:
+        modo_visual = st.radio(
+            "Modo visual",
+            options=["⚫ Monocromático", "🎨 Colores"],
+            index=1,
+            horizontal=True,
+            help="Cambia entre vista monocromática y a colores",
+        )
+        modo_monocromatico = modo_visual == "⚫ Monocromático"
+    
+    # Guardar en session para usarlo en gráficas
+    st.session_state["reporte_modo_monocromatico"] = modo_monocromatico
 
     # =====================================================================
     # SELECTOR DE PERIODO (global, aplica a las 3 tabs)
@@ -502,8 +484,8 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
             df_v_tmp["mes"] = df_v_tmp["fecha"].dt.to_period("M").astype(str)
             ventas_mes = df_v_tmp.groupby("mes").agg(Ventas=("valor_mxn", "sum"), Ops=("valor_mxn", "count")).reset_index()
 
-            # Obtener paleta de colores según tema
-            _paleta = _obtener_paleta_colores(tema_visual)
+            # Obtener paleta de colores según modo
+            _paleta = _obtener_paleta_colores(st.session_state.get("reporte_modo_monocromatico", False))
             
             fig_ventas = go.Figure()
             fig_ventas.add_trace(go.Bar(
@@ -654,6 +636,109 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
 
         st.markdown("---")
 
+        # ── FILA EXTRA: Mapa de calor cuenta vs tiempo de vencimiento ───
+        st.markdown("#### 🔥 Mapa de calor: Cuenta vs tiempo de vencimiento")
+        if _col_cliente_cxc and not df_cxc.empty and "saldo_adeudado" in df_cxc.columns:
+            heat_base = df_cxc.copy()
+            col_dias_hm = next(
+                (c for c in ["dias_overdue", "dias_vencido", "dias_vencidos", "overdue_days", "dias_mora"] if c in heat_base.columns),
+                None,
+            )
+            if col_dias_hm:
+                heat_base["__dias_overdue"] = pd.to_numeric(heat_base[col_dias_hm], errors="coerce")
+            else:
+                col_venc_hm = next(
+                    (c for c in ["fecha_vencimiento", "vencimiento", "fecha_venc", "due_date", "fecha_limite_pago"] if c in heat_base.columns),
+                    None,
+                )
+                if col_venc_hm:
+                    fecha_ref_hm = pd.to_datetime(fecha_corte_cxc, errors="coerce") if fecha_corte_cxc is not None else pd.Timestamp.today().normalize()
+                    _fv_hm = pd.to_datetime(heat_base[col_venc_hm], errors="coerce")
+                    heat_base["__dias_overdue"] = (fecha_ref_hm - _fv_hm).dt.days
+                else:
+                    heat_base["__dias_overdue"] = 0
+            heat_base["__dias_overdue"] = pd.to_numeric(heat_base["__dias_overdue"], errors="coerce").fillna(0)
+            heat_base["__saldo"] = pd.to_numeric(
+                heat_base.get("saldo_adeudado", 0), errors="coerce"
+            ).fillna(0)
+
+            bins_tiempo = [-1, 30, 60, 90, 120, float("inf")]
+            labels_tiempo = ["0-30 días", "31-60 días", "61-90 días", "91-120 días", ">120 días"]
+            heat_base["Banda_tiempo"] = pd.cut(
+                heat_base["__dias_overdue"],
+                bins=bins_tiempo,
+                labels=labels_tiempo,
+                include_lowest=True,
+                right=True,
+            )
+
+            heat_df = (
+                heat_base.groupby([_col_cliente_cxc, "Banda_tiempo"], observed=False)
+                .agg(Monto=("__saldo", "sum"))
+                .reset_index()
+            )
+            heat_df = heat_df[heat_df["Monto"] > 0]
+
+            if not heat_df.empty:
+                top_cuentas_heat = (
+                    heat_df.groupby(_col_cliente_cxc)["Monto"].sum().sort_values(ascending=False).head(25).index.tolist()
+                )
+                heat_df = heat_df[heat_df[_col_cliente_cxc].isin(top_cuentas_heat)]
+
+                pivot_heat = heat_df.pivot_table(
+                    index="Banda_tiempo",
+                    columns=_col_cliente_cxc,
+                    values="Monto",
+                    aggfunc="sum",
+                    fill_value=0,
+                )
+                pivot_heat = pivot_heat.reindex(labels_tiempo, fill_value=0)
+
+                if not pivot_heat.empty:
+                    zmax_heat = float(heat_df["Monto"].max()) if not heat_df.empty else None
+                    fig_heat = px.imshow(
+                        pivot_heat,
+                        color_continuous_scale="Reds",
+                        labels={"x": "Cuenta", "y": "Tiempo vencido", "color": "Monto"},
+                        aspect="auto",
+                        zmin=0,
+                        zmax=zmax_heat if zmax_heat and zmax_heat > 0 else None,
+                    )
+                    fig_heat.update_coloraxes(
+                        colorbar_tickprefix="$",
+                        colorbar_tickformat=",.0f",
+                    )
+                    fig_heat.update_traces(
+                        hovertemplate="Cuenta: %{x}<br>Tiempo vencido: %{y}<br>Monto: $%{z:,.0f}<extra></extra>"
+                    )
+                    fig_heat.update_layout(
+                        height=430,
+                        margin=dict(t=30, b=20, l=130, r=20),
+                        xaxis_title="Cuenta",
+                        yaxis_title="",
+                    )
+                    fig_heat.update_yaxes(automargin=True, tickfont=dict(size=12))
+                    fig_heat.update_xaxes(automargin=True, tickangle=-35)
+                    st.plotly_chart(fig_heat, use_container_width=True)
+                    monto_mas_90 = float(
+                        heat_df.loc[heat_df["Banda_tiempo"].isin(["91-120 días", ">120 días"]), "Monto"].sum()
+                    )
+                    st.caption(
+                        f"Monto en riesgo alto (>90 días): {formato_moneda(monto_mas_90)}"
+                    )
+                    st.caption(
+                        "Top 25 cuentas por adeudo total · Filas por bandas de antigüedad de vencimiento · "
+                        "Rojo más intenso = mayor monto."
+                    )
+                else:
+                    st.info("No hay datos suficientes para construir el mapa de calor.")
+            else:
+                st.info("No hay cuentas con adeudo para construir el mapa de calor.")
+        else:
+            st.info("No se encontró columna de cuenta/cliente para construir el mapa de calor.")
+
+        st.markdown("---")
+
         # ── FILA 2: Pie antigüedad + Concentración de riesgo ──────────────
         col_pie, col_conc = st.columns(2)
 
@@ -666,9 +751,9 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
             })
             cartera_df = cartera_df[cartera_df["Monto"] > 0]
             if not cartera_df.empty:
-                # Obtener paleta de colores según tema
-                _paleta = _obtener_paleta_colores(tema_visual)
-                _colores_pie = [_paleta['success'], _paleta['warning'], _paleta['danger'], '#F44336']
+                # Obtener paleta de colores según modo
+                _paleta = _obtener_paleta_colores(st.session_state.get("reporte_modo_monocromatico", False))
+                _colores_pie = [_paleta['success'], _paleta['warning'], _paleta['danger'], '#F44336'] if st.session_state.get("reporte_modo_monocromatico") else ['#4CAF50', '#FFC107', '#FF9800', '#F44336']
                 
                 fig_pie = go.Figure(data=[go.Pie(
                     labels=cartera_df["Categoría"],
@@ -701,7 +786,7 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
                     y=conc.head(10).index,
                     orientation="h",
                     color=conc.head(10).values,
-                    color_continuous_scale="Greys" if tema_visual == "monocromatico" else ("Blues" if tema_visual == "azul" else "Greys"),
+                    color_continuous_scale="Greys" if st.session_state.get("reporte_modo_monocromatico") else "Reds",
                     labels={"x": "Saldo ($)", "y": ""},
                 )
                 fig_conc.update_layout(height=220, showlegend=False,
@@ -729,7 +814,7 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
                     urg["Nivel"] = urg["Días"].apply(lambda x: "🔴 >90d" if x > 90 else "🟠 60-90d")
                     urg_d = urg.copy()
                     urg_d["Adeudo"] = urg_d["Adeudo"].apply(formato_moneda)
-                    urg_d["Días"]   = urg_d["Días"].apply(lambda x: f"{x:.0f}")
+                    urg_d["Días"] = pd.to_numeric(urg_d["Días"], errors="coerce").fillna(0).round(0).astype(int)
                     st.dataframe(urg_d, use_container_width=True, hide_index=True)
                     st.caption(f"Total en riesgo: **{formato_moneda(df_urgentes['saldo_adeudado'].sum())}**")
                 else:
@@ -740,20 +825,163 @@ def mostrar_reporte_ejecutivo(df_ventas, df_cxc, habilitar_ia=False, openai_api_
         with col_vend:
             st.markdown("#### 👤 Cartera Vencida por Vendedor")
             col_vend_cxc = next((c for c in ["vendedor", "agente"] if c in df_cxc.columns), None)
+            col_vend_ventas = next((c for c in ["vendedor", "agente"] if c in df_v.columns), None)
+            df_cxc_vend = df_cxc.copy()
+            col_vendedor_resuelto = "__vendedor_resuelto"
+
+            # 1) Prioridad: vendedor directo en CxC.
             if col_vend_cxc:
-                df_venc_vend = df_cxc[mask_no_pagado & (days_ov > 0)].groupby(col_vend_cxc).agg(
-                    Vencido=("saldo_adeudado", "sum"),
-                    Clientes=(_col_cliente_cxc, "nunique") if _col_cliente_cxc else ("saldo_adeudado", "count"),
-                ).reset_index()
-                df_venc_vend.columns = ["Vendedor", "Vencido", "Clientes"]
+                df_cxc_vend[col_vendedor_resuelto] = df_cxc_vend[col_vend_cxc]
+            else:
+                df_cxc_vend[col_vendedor_resuelto] = ""
+
+            # 2) Fallback: inferir vendedor por cliente (normalizado) desde ventas.
+            if (not col_vend_cxc) and _col_cliente_cxc and _col_cliente_v and col_vend_ventas and not df_v.empty:
+                ventas_map = df_v.copy()
+                ventas_map["__cli_key"] = (
+                    ventas_map[_col_cliente_v]
+                    .astype(str)
+                    .str.strip()
+                    .str.upper()
+                    .str.replace(r"\s+", " ", regex=True)
+                )
+                cxc_map = df_cxc_vend.copy()
+                cxc_map["__cli_key"] = (
+                    cxc_map[_col_cliente_cxc]
+                    .astype(str)
+                    .str.strip()
+                    .str.upper()
+                    .str.replace(r"\s+", " ", regex=True)
+                )
+
+                mapa_cli_vend = (
+                    ventas_map.groupby(["__cli_key", col_vend_ventas])["valor_mxn"]
+                    .sum()
+                    .reset_index()
+                    .sort_values(["__cli_key", "valor_mxn"], ascending=[True, False])
+                    .drop_duplicates(subset=["__cli_key"])
+                    [["__cli_key", col_vend_ventas]]
+                    .rename(columns={col_vend_ventas: "__vend_from_ventas"})
+                )
+
+                cxc_map = cxc_map.merge(mapa_cli_vend, on="__cli_key", how="left")
+                df_cxc_vend = cxc_map
+                df_cxc_vend[col_vendedor_resuelto] = df_cxc_vend["__vend_from_ventas"]
+
+            # 3) Valor por defecto para no perder cartera sin match.
+            df_cxc_vend[col_vendedor_resuelto] = (
+                df_cxc_vend[col_vendedor_resuelto]
+                .astype(str)
+                .str.strip()
+                .replace({"": "Sin vendedor asignado", "nan": "Sin vendedor asignado", "None": "Sin vendedor asignado"})
+                .fillna("Sin vendedor asignado")
+            )
+
+            # Alinear filtros al dataframe actual para evitar vacíos por desalineación de índice.
+            if len(df_cxc_vend) == len(mask_pagado):
+                _mask_no_pagado_vend = ~pd.Series(mask_pagado).reset_index(drop=True)
+            else:
+                _mask_no_pagado_vend = pd.Series([True] * len(df_cxc_vend))
+
+            _days_ov_vend = pd.to_numeric(df_cxc_vend.get("dias_overdue", 0), errors="coerce").fillna(0)
+            _filtro_vend = _mask_no_pagado_vend & (_days_ov_vend > 0)
+
+            df_venc_vend = df_cxc_vend[_filtro_vend].groupby(col_vendedor_resuelto).agg(
+                Vencido=("saldo_adeudado", "sum"),
+                Clientes=(_col_cliente_cxc, "nunique") if _col_cliente_cxc else ("saldo_adeudado", "count"),
+            ).reset_index()
+            df_venc_vend.columns = ["Vendedor", "Vencido", "Clientes"]
+
+            if df_venc_vend.empty:
+                st.info("Sin cartera vencida para mostrar por vendedor en este período.")
+            else:
                 df_venc_vend["% Total"] = (df_venc_vend["Vencido"] / critica * 100).round(1) if critica else 0
                 df_venc_vend = df_venc_vend.sort_values("Vencido", ascending=False)
                 df_venc_vend_d = df_venc_vend.copy()
                 df_venc_vend_d["Vencido"]  = df_venc_vend_d["Vencido"].apply(formato_moneda)
                 df_venc_vend_d["% Total"]  = df_venc_vend_d["% Total"].apply(lambda x: f"{x}%")
                 st.dataframe(df_venc_vend_d, use_container_width=True, hide_index=True)
-            else:
-                st.info("Sin columna de vendedor/agente en los datos de CxC.")
+
+                # Dropdown con detalle de cuentas/clientes por vendedor.
+                detalle_base = df_cxc_vend[_filtro_vend].copy()
+                if not detalle_base.empty:
+                    detalle_base["__dias_vencidos"] = pd.to_numeric(
+                        detalle_base.get("dias_overdue", 0), errors="coerce"
+                    ).fillna(0)
+                    vendedores_disponibles = sorted(
+                        detalle_base[col_vendedor_resuelto].dropna().astype(str).unique().tolist()
+                    )
+                    opciones_vendedor = ["Todos"] + vendedores_disponibles
+                    vendedor_sel = st.selectbox(
+                        "Ver cuentas por vendedor",
+                        options=opciones_vendedor,
+                        key="cxc_cuentas_por_vendedor_dropdown",
+                    )
+
+                    if vendedor_sel == "Todos":
+                        resumen_vendedores = (
+                            detalle_base.groupby(col_vendedor_resuelto).agg(
+                                Adeudo=("saldo_adeudado", "sum"),
+                                Cuentas=(_col_cliente_cxc, "nunique") if _col_cliente_cxc else ("saldo_adeudado", "count"),
+                            )
+                            .reset_index()
+                            .rename(columns={col_vendedor_resuelto: "Vendedor"})
+                            .sort_values("Adeudo", ascending=False)
+                        )
+                        resumen_vendedores_d = resumen_vendedores.copy()
+                        resumen_vendedores_d["Adeudo"] = resumen_vendedores_d["Adeudo"].apply(formato_moneda)
+                        st.dataframe(
+                            resumen_vendedores_d[["Vendedor", "Cuentas", "Adeudo"]],
+                            use_container_width=True,
+                            hide_index=True,
+                        )
+                        st.caption(
+                            f"{len(resumen_vendedores):,} vendedor(es) · "
+                            f"Adeudo total: {formato_moneda(resumen_vendedores['Adeudo'].sum())}"
+                        )
+                        detalle_sel = pd.DataFrame()
+                    else:
+                        detalle_sel = detalle_base[detalle_base[col_vendedor_resuelto].astype(str) == str(vendedor_sel)].copy()
+
+                    if not detalle_sel.empty:
+                        if _col_cliente_cxc and _col_cliente_cxc in detalle_sel.columns:
+                            detalle_cuentas = (
+                                detalle_sel.groupby(_col_cliente_cxc).agg(
+                                    Adeudo=("saldo_adeudado", "sum"),
+                                    Dias_vencidos=("__dias_vencidos", "max"),
+                                )
+                                .reset_index()
+                                .rename(columns={_col_cliente_cxc: "Cuenta"})
+                            )
+                        else:
+                            detalle_tmp = detalle_sel.reset_index(drop=True).copy()
+                            detalle_tmp["Cuenta"] = "Cuenta " + (detalle_tmp.index + 1).astype(str)
+                            detalle_cuentas = detalle_tmp[["Cuenta", "saldo_adeudado", "__dias_vencidos"]].rename(
+                                columns={
+                                    "saldo_adeudado": "Adeudo",
+                                    "__dias_vencidos": "Dias_vencidos",
+                                }
+                            )
+
+                        detalle_cuentas = detalle_cuentas.sort_values("Adeudo", ascending=False)
+                        detalle_cuentas_d = detalle_cuentas.copy()
+                        detalle_cuentas_d["Adeudo"] = detalle_cuentas_d["Adeudo"].apply(formato_moneda)
+                        detalle_cuentas_d["Dias_vencidos"] = (
+                            pd.to_numeric(detalle_cuentas_d["Dias_vencidos"], errors="coerce")
+                            .fillna(0)
+                            .round(0)
+                            .astype(int)
+                        )
+
+                        st.dataframe(
+                            detalle_cuentas_d[["Cuenta", "Adeudo", "Dias_vencidos"]],
+                            use_container_width=True,
+                            hide_index=True,
+                        )
+                        st.caption(
+                            f"{len(detalle_cuentas):,} cuenta(s) para {vendedor_sel} · "
+                            f"Adeudo total: {formato_moneda(detalle_cuentas['Adeudo'].sum())}"
+                        )
 
     st.markdown("---")
 

@@ -211,7 +211,7 @@ def _preparar_datos_iniciales(df_ventas, df_cxc):
 
 def _obtener_configuracion_ui(habilitar_ia=False, openai_api_key=None):
     """
-    Obtiene configuración de periodicidad y tema visual desde sidebar.
+    Obtiene configuración de periodicidad desde sidebar.
     Los parámetros de IA vienen del passkey premium global.
     
     Args:
@@ -219,7 +219,7 @@ def _obtener_configuracion_ui(habilitar_ia=False, openai_api_key=None):
         openai_api_key: API key desde passkey premium
         
     Returns:
-        Dict con configuración {'tipo_periodo', 'tema_visual', 'habilitar_ia', 'api_key'}
+        Dict con configuración {'tipo_periodo', 'habilitar_ia', 'api_key'}
     """
     st.sidebar.markdown("---")
     st.sidebar.header("⚙️ Configuración del Reporte")
@@ -239,29 +239,11 @@ def _obtener_configuracion_ui(habilitar_ia=False, openai_api_key=None):
         key="consolidado_periodicidad"
     )
     
-    # Selector de tema visual
-    tema_visual = st.sidebar.selectbox(
-        "🎨 Modo Visual",
-        options=['monocromatico', 'azul', 'negro'],
-        index=0,
-        format_func=lambda x: {
-            'monocromatico': '⚪ Monocromático (Blanco)',
-            'azul': '🔵 Fondo Azul',
-            'negro': '⚫ Fondo Negro'
-        }[x],
-        help="Selecciona el tema visual para el dashboard",
-        key="consolidado_tema_visual"
-    )
-    
-    # Guardar en session para usarlo globalmente
-    st.session_state["tema_visual"] = tema_visual
-    
     # IA controlada desde el passkey premium global (no checkbox local)
 
     
     return {
         'tipo_periodo': tipo_periodo,
-        'tema_visual': tema_visual,
         'habilitar_ia': habilitar_ia,
         'api_key': openai_api_key
     }
