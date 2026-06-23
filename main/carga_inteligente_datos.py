@@ -824,9 +824,9 @@ Este validador **no modifica tus datos**. Solo evalúa estructura, contexto y co
             else:
                 st.caption("Sin desglose disponible para este esquema.")
 
-        # ── Modulos activables ────────────────────────────────────────
+        # ── Potencial de tu archivo ────────────────────────────────────
         st.markdown("---")
-        st.subheader("8. Módulos activables")
+        st.subheader("8. Potencial de tu archivo")
 
         _fuente_id = _TIPO_A_FUENTE.get(tipo_carga, "dataframe_flexible")
         try:
@@ -850,64 +850,234 @@ Este validador **no modifica tus datos**. Solo evalúa estructura, contexto y co
         _no_act = activable_result.get("modulos_no_activables", [])
         _total  = len(_act) + len(_parc) + len(_no_act)
 
-        # Resumen
-        if _total > 0:
-            st.info(
-                f"**Con este archivo puedes activar {len(_act)} de {_total} módulos.** "
-                + (
-                    f"Otros {len(_parc)} módulos pueden activarse parcialmente."
-                    if _parc else ""
+        # ── Tabla de potencial completo por módulo comercial ──────────
+        _MODULOS_COMERCIALES = [
+            {
+                "nombre":   "🎯 Reporte Ejecutivo",
+                "clave":    "reporte_ejecutivo",
+                "campos_minimos":  ["fecha", "monto"],
+                "campos_completos": ["fecha", "monto", "cliente", "vendedor",
+                                     "saldo_adeudado", "dias_vencido", "fecha_vencimiento"],
+                "campos_extra":    ["linea_de_negocio", "producto", "factura", "estatus"],
+                "outcome_minimo":  "KPIs de ventas + cartera básica",
+                "outcome_completo":"Reporte ejecutivo + Aging CxC + Score salud + Recomendaciones",
+            },
+            {
+                "nombre":   "📋 Reporte Consolidado",
+                "clave":    "reporte_consolidado",
+                "campos_minimos":  ["fecha", "monto"],
+                "campos_completos": ["fecha", "monto", "cliente", "vendedor",
+                                     "linea_de_negocio", "saldo_adeudado"],
+                "campos_extra":    ["producto", "region", "canal"],
+                "outcome_minimo":  "Vista de ventas por período",
+                "outcome_completo":"Consolidado multi-dimensión: ventas + CxC + vendedor + línea",
+            },
+            {
+                "nombre":   "📈 Desempeño Comercial",
+                "clave":    "desempeno_comercial",
+                "campos_minimos":  ["fecha", "monto"],
+                "campos_completos": ["fecha", "monto", "cliente", "vendedor"],
+                "campos_extra":    ["linea_de_negocio", "producto", "region"],
+                "outcome_minimo":  "Tendencia mensual de ventas",
+                "outcome_completo":"Top clientes, desempeño por vendedor, tendencia detallada",
+            },
+            {
+                "nombre":   "📊 Comparativo Año vs Año",
+                "clave":    "comparativo_anual",
+                "campos_minimos":  ["fecha", "monto"],
+                "campos_completos": ["fecha", "monto", "cliente"],
+                "campos_extra":    ["vendedor", "linea_de_negocio"],
+                "outcome_minimo":  "Comparativo total año actual vs anterior",
+                "outcome_completo":"Comparativo por cliente, vendedor y línea de negocio",
+            },
+            {
+                "nombre":   "📉 YTD por Línea de Negocio",
+                "clave":    "ytd_lineas",
+                "campos_minimos":  ["fecha", "monto", "linea_de_negocio"],
+                "campos_completos": ["fecha", "monto", "linea_de_negocio", "vendedor", "cliente"],
+                "campos_extra":    ["region", "canal"],
+                "outcome_minimo":  "YTD total por línea",
+                "outcome_completo":"YTD desglosado por línea + vendedor + cliente",
+            },
+            {
+                "nombre":   "🔷 YTD por Producto",
+                "clave":    "ytd_productos",
+                "campos_minimos":  ["fecha", "monto", "producto"],
+                "campos_completos": ["fecha", "monto", "producto", "vendedor", "cliente"],
+                "campos_extra":    ["linea_de_negocio", "region"],
+                "outcome_minimo":  "YTD total por producto",
+                "outcome_completo":"Ranking de productos + desglose vendedor + cliente",
+            },
+            {
+                "nombre":   "🔥 Heatmap de Ventas",
+                "clave":    "heatmap_ventas",
+                "campos_minimos":  ["fecha", "monto", "linea_de_negocio"],
+                "campos_completos": ["fecha", "monto", "linea_de_negocio", "producto", "cliente"],
+                "campos_extra":    ["vendedor", "region", "canal"],
+                "outcome_minimo":  "Mapa de calor básico línea vs mes",
+                "outcome_completo":"Heatmap completo: producto × línea × tiempo × cliente",
+            },
+            {
+                "nombre":   "💳 KPI Cartera CxC",
+                "clave":    "kpi_cartera_cxc",
+                "campos_minimos":  ["cliente", "saldo_adeudado"],
+                "campos_completos": ["cliente", "saldo_adeudado", "dias_vencido",
+                                     "fecha_vencimiento", "vendedor", "estatus"],
+                "campos_extra":    ["factura", "dias_credito", "fecha_emision"],
+                "outcome_minimo":  "Total adeudado + top deudores",
+                "outcome_completo":"Aging 4 buckets + Score salud + Plan cobranza + Mapa calor",
+            },
+            {
+                "nombre":   "👥 Vendedores + CxC",
+                "clave":    "vendedores_cxc",
+                "campos_minimos":  ["cliente", "saldo_adeudado", "vendedor", "monto"],
+                "campos_completos": ["cliente", "saldo_adeudado", "vendedor", "monto",
+                                     "dias_vencido", "estatus", "fecha"],
+                "campos_extra":    ["factura", "linea_de_negocio"],
+                "outcome_minimo":  "Cartera vencida por vendedor",
+                "outcome_completo":"Desempeño vendedor: ventas + cartera + scoring cobranza",
+            },
+        ]
+
+        # ── Evaluar estado de cada módulo con los campos detectados ───
+        def _evaluar_modulo(mod, detectados_set):
+            minimos  = set(mod["campos_minimos"])
+            completos = set(mod["campos_completos"])
+            presentes = detectados_set
+
+            tiene_minimos  = minimos.issubset(presentes)
+            tiene_completos = completos.issubset(presentes)
+            campos_faltantes_min  = sorted(minimos - presentes)
+            campos_faltantes_max  = sorted(completos - presentes)
+
+            if tiene_completos:
+                return "completo", [], []
+            elif tiene_minimos:
+                return "parcial", [], campos_faltantes_max
+            else:
+                return "bloqueado", campos_faltantes_min, campos_faltantes_max
+
+        # ── Selector de vista ─────────────────────────────────────────
+        _vista_opciones = ["🔍 Ver todos", "✅ Solo activados", "⚠️ Parciales y bloqueados"]
+        _vista_sel = st.radio(
+            "Mostrar módulos:",
+            options=_vista_opciones,
+            index=0,
+            horizontal=True,
+            key="cid_vista_modulos",
+        )
+
+        # Métricas resumen
+        _estados = [_evaluar_modulo(m, _detected_set)[0] for m in _MODULOS_COMERCIALES]
+        _n_completo = _estados.count("completo")
+        _n_parcial  = _estados.count("parcial")
+        _n_bloqueado = _estados.count("bloqueado")
+
+        _mc1, _mc2, _mc3 = st.columns(3)
+        _mc1.metric("✅ Potencial completo", _n_completo)
+        _mc2.metric("⚠️ Potencial parcial",  _n_parcial)
+        _mc3.metric("🔒 Bloqueados",          _n_bloqueado)
+
+        st.markdown("")
+
+        # ── Cards por módulo ──────────────────────────────────────────
+        for mod in _MODULOS_COMERCIALES:
+            _estado, _falt_min, _falt_max = _evaluar_modulo(mod, _detected_set)
+
+            # Filtro de vista
+            if _vista_sel == "✅ Solo activados" and _estado != "completo":
+                continue
+            if _vista_sel == "⚠️ Parciales y bloqueados" and _estado == "completo":
+                continue
+
+            if _estado == "completo":
+                _borde   = "#27ae60"
+                _icono   = "✅"
+                _badge   = "POTENCIAL COMPLETO"
+                _bg      = "#0a1f0a"
+            elif _estado == "parcial":
+                _borde   = "#f39c12"
+                _icono   = "⚠️"
+                _badge   = "POTENCIAL PARCIAL"
+                _bg      = "#1f1500"
+            else:
+                _borde   = "#c0392b"
+                _icono   = "🔒"
+                _badge   = "BLOQUEADO"
+                _bg      = "#1f0a0a"
+
+            # Campos presentes del módulo
+            _todos_campos = set(mod["campos_completos"]) | set(mod["campos_minimos"])
+            _presentes_mod = sorted(_todos_campos & _detected_set)
+            _ausentes_mod  = sorted(_todos_campos - _detected_set)
+
+            with st.container():
+                st.markdown(
+                    f"<div style='border-left:4px solid {_borde};background:{_bg};"
+                    f"border-radius:0 8px 8px 0;padding:10px 16px;margin-bottom:10px;'>"
+                    f"<div style='display:flex;justify-content:space-between;align-items:center;'>"
+                    f"<span style='font-size:15px;font-weight:700;color:#f0f0f0;'>"
+                    f"{_icono} {mod['nombre']}</span>"
+                    f"<span style='background:{_borde};color:white;border-radius:4px;"
+                    f"padding:2px 10px;font-size:11px;font-weight:700;'>{_badge}</span>"
+                    f"</div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
                 )
-            )
 
-        col_m1, col_m2, col_m3 = st.columns(3)
-        with col_m1:
-            st.metric("Activables", len(_act))
-        with col_m2:
-            st.metric("Parciales", len(_parc))
-        with col_m3:
-            st.metric("No activables", len(_no_act))
-
-        # A) Activables
-        if _act:
-            with st.expander(f"✅ Módulos activables ({len(_act)})", expanded=True):
-                for m in _act:
-                    st.markdown(f"- ✅ **{m}**")
-
-        # B) Parciales
-        if _parc:
-            with st.expander(f"⚠️ Módulos parcialmente activables ({len(_parc)})", expanded=False):
-                for item in _parc:
-                    if isinstance(item, dict):
-                        _m = item.get("modulo", item)
-                        _lim = item.get("limitacion", "")
-                        _falt = item.get("campos_recomendados_faltantes", [])
-                        st.markdown(f"- 🟠 **{_m}**")
-                        if _lim:
-                            st.caption(f"  Limitación: {_lim}")
-                        if _falt:
-                            st.caption(f"  Para mejorar, agrega: `{'`, `'.join(_falt)}`")
+                _ca, _cb, _cc = st.columns([2, 2, 3])
+                with _ca:
+                    if _presentes_mod:
+                        st.markdown(
+                            "**Campos detectados:**  \n"
+                            + "  \n".join(
+                                f"<code style='color:#27ae60;font-size:12px;'>{c}</code>"
+                                for c in _presentes_mod
+                            ),
+                            unsafe_allow_html=True,
+                        )
+                with _cb:
+                    if _ausentes_mod:
+                        st.markdown(
+                            "**Campos faltantes:**  \n"
+                            + "  \n".join(
+                                f"<code style='color:#e74c3c;font-size:12px;'>{c}</code>"
+                                for c in _ausentes_mod
+                            ),
+                            unsafe_allow_html=True,
+                        )
+                with _cc:
+                    if _estado == "bloqueado":
+                        st.markdown(
+                            f"**Con los campos mínimos obtienes:**  \n"
+                            f"<span style='color:#888;font-size:12px;'>"
+                            f"{mod['outcome_minimo']}</span>  \n\n"
+                            f"**Para desbloquearlo agrega:** "
+                            + " · ".join(
+                                f"`{c}`" for c in _falt_min
+                            ),
+                            unsafe_allow_html=True,
+                        )
+                    elif _estado == "parcial":
+                        st.markdown(
+                            f"**Hoy obtienes:**  \n"
+                            f"<span style='color:#f39c12;font-size:12px;'>"
+                            f"{mod['outcome_minimo']}</span>  \n\n"
+                            f"**Para potencial total agrega:** "
+                            + " · ".join(
+                                f"`{c}`" for c in _falt_max
+                            ),
+                            unsafe_allow_html=True,
+                        )
                     else:
-                        st.markdown(f"- 🟠 **{item}**")
+                        st.markdown(
+                            f"**Obtienes:**  \n"
+                            f"<span style='color:#27ae60;font-size:13px;'>"
+                            f"{mod['outcome_completo']}</span>",
+                            unsafe_allow_html=True,
+                        )
 
-        # C) No activables
-        if _no_act:
-            with st.expander(f"❌ Módulos no activables ({len(_no_act)})", expanded=False):
-                for item in _no_act:
-                    if isinstance(item, dict):
-                        _m = item.get("modulo", item)
-                        _fuente_falt = item.get("fuente_faltante", "")
-                        _campos_falt = item.get("campos_obligatorios_faltantes", [])
-                        st.markdown(f"- ❌ **{_m}**")
-                        if _fuente_falt:
-                            st.caption(f"  Fuente requerida: `{_fuente_falt}`")
-                        if _campos_falt:
-                            st.caption(
-                                f"  Campos obligatorios faltantes: "
-                                f"`{'`, `'.join(_campos_falt)}`"
-                            )
-                    else:
-                        st.markdown(f"- ❌ **{item}**")
+                st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
 
         # ── Reporte descargable ───────────────────────────────────────
         st.markdown("---")
